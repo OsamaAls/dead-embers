@@ -1,0 +1,5 @@
+.blender-toolkit/
+.claude/
+node_modules/
+.impeccable/
+artifact/_check.js

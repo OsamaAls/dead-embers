@@ -1,0 +1,11 @@
+const fs = require('fs'), path = require('path');
+const S = f => fs.readFileSync(path.join(__dirname, 'src', f), 'utf8');
+const js = ['data.js', 'content.js', 'encounters.js', 'arcs.js', 'engine.js', 'ui.js'].map(f => `/* ---- ${f} ---- */\n` + S(f)).join('\n');
+const frag = S('shell.html').replace('<!--SCRIPTS-->', () => `<script>\n${js}\n</script>`);
+fs.mkdirSync(path.join(__dirname, 'artifact'), { recursive: true });
+fs.writeFileSync(path.join(__dirname, 'artifact', 'dead-embers.html'), frag);
+const i = frag.indexOf('<div id="app">');
+fs.writeFileSync(path.join(__dirname, 'Dead Embers.html'), `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n${frag.slice(0, i)}</head><body style="margin:0">\n${frag.slice(i)}\n</body></html>\n`);
+fs.writeFileSync(path.join(__dirname, 'index.html'), fs.readFileSync(path.join(__dirname, 'Dead Embers.html')));
+if (process.argv.includes('--check')) fs.writeFileSync(path.join(__dirname, 'artifact', '_check.js'), js);
+console.log('built', (frag.length / 1024).toFixed(0) + 'KB');
