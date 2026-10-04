@@ -13,7 +13,7 @@ You're continuing work on **Dead Embers**, my browser zombie survival RPG. It's 
   - `src/` holds shell.html (markup + CSS), data.js, engine.js, ui.js, content.js (story, lore, radio, names, shelter events), encounters.js, arcs.js (character story arcs) and API.md (the content ↔ engine contract).
   - `node build.js` bundles everything into `index.html`, `Dead Embers.html` and `artifact/dead-embers.html`.
 - **Who else touches the repo:** my friend Abdulaziz Bukhari posts design input as GitHub issues.
-  - A desktop scheduled task, `dead-embers-github-input`, merges those issues every 30 minutes. It works in `C:\Users\computerh\dead-embers` and its instructions are in `C:\Users\computerh\.claude\scheduled-tasks\dead-embers-github-input\SKILL.md`.
+  - A desktop scheduled task, `dead-embers-github-input`, merges those issues twice a week (Sunday and Wednesday at 10:00). It works in `C:\Users\computerh\dead-embers` and its instructions are in `C:\Users\computerh\.claude\scheduled-tasks\dead-embers-github-input\SKILL.md`.
   - Run `git pull` first.
   - Read the open issues (`gh issue list --repo OsamaAls/dead-embers`) and fold any pending requests into this rebuild. Comment and close them like the task would.
 
