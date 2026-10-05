@@ -43,6 +43,8 @@ Everything about this game is driven from this repo's issues.
 | `build.js` | Bundles everything into `index.html`, `Dead Embers.html` and `artifact/dead-embers.html` |
 | `test.js` | Headless checks: every encounter and callback, item/enemy ids, world reachability, 14 simulated days, save/load |
 | `tools/browser-check.js` | Headless Edge/Chrome smoke test: loads the built page, plays a scenario, reports page errors, saves screenshots |
+| `tools/scenarios/` | Browser-check scenarios: `playthrough.js` (end-to-end route), `world.js`, `combat.js`, `ui.js` |
+| `tools/harness.js` | In-page test harness (deterministic frames, pathing, bots); never bundled |
 
 ## Build and check
 
@@ -51,4 +53,7 @@ node build.js
 node test.js
 node tools/browser-check.js
 node tools/browser-check.js --mobile
+node tools/browser-check.js --scenario tools/scenarios/playthrough.js
 ```
+
+`test.js` checks the rules and every piece of content headless. `browser-check.js` loads the built page in headless Edge or Chrome, reports page errors and saves screenshots. The playthrough scenario plays the whole core route (search, fights, building, moments, a decision, sleep, a horde night, an ending) and fails on any broken step. `tools/harness.js` is the in-page test harness it uses; see `src/API.md` §4.

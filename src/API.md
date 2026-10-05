@@ -101,6 +101,7 @@ Trader: `makeTrader()`, `buyPrice(id)`, `sellPrice(id)`. Save: `saveGame`, `load
 - `R.follow(x,y,face)` sets the camera target. `R.zoom(delta)` uses the wheel or pinch. `R.shake(amount)`.
 - `R.setTime(hour, minute)` drives the day/night lighting curve. `R.setFlashlight(on, x, y, face)` is the cone light at night.
 - `R.update(dt)` smooths the camera and lighting. `R.render()`.
+- Also: `R.pinch(scale)`, `R.nightK` (0 day..1 night, `R.dayK`), `R.time`, `R.touch`, `R.camDist`, `R.flashK`, `R.lookTarget`.
 
 ### `World3D`: world.js (static city from WORLD)
 - `World3D.build()` builds everything from `WORLD` into `R.scene` with instanced meshes: roads, walls, roofs, props, trees, cars, river, bridges, lamps, fields, the bunker, the yard, the Tollmen camp and the bus.
@@ -109,11 +110,16 @@ Trader: `makeTrader()`, `buyPrice(id)`, `sellPrice(id)`. Save: `saveGame`, `load
 - `World3D.refreshShelter()` rebuilds yard structures from `G.buildings`: bunks, garden, workbench, barricade ring, tower, radio mast and so on, plus a ghost "build here" marker on each unlocked, unbuilt slot.
 - `World3D.highlight(kind, id|null)` outlines or glows the current interactable.
 - `World3D.barricade` exposes the barricade ring geometry info for horde waves: `{x0,y0,x1,y1}` in tiles.
+- Also: `World3D.setObjective({x,y}|false|null)` (the beacon follows `objectiveInfo()` automatically; null = automatic), `World3D.marker(key, {x,y}|null, hex)` (extra ground beacon for moments),
+  `World3D.highlight('point', {x,y})`, `barricade.level`, `heightAt(i)`, `cutBuilding`, `fires`.
+- How it is drawn: static geometry merged into 32 m chunks (frustum culled); trees, cars, lamps and grass are InstancedMeshes; a material patch does lamp/window glow,
+  the roof cutaway for the building you are in (shader discard above a height) and a dithered see-through hole between the camera and the player.
 
 ### `Actors`: actors.js (procedural low-poly models + animation)
 - `Actors.make(kind, opts)`. kind: `player | survivor | raider | tollman | warden | walker | runner | bloater | screamer | brute | dog`. opts: `{tint}`.
   Returns `{ root:THREE.Group, anim(name), update(dt, speed), flash(), die(), setAware(v|null), setCarry(itemId|null), dispose() }`.
   anim names: `idle, walk, run, crouch, attack, lunge, shoot, hit, die, work, scream`. Each zombie type has a distinct silhouette.
+  Also: `anim('attack', {wind})` stretches the wind-up; extra anims `roll` (dodge), `grab`, `held`; `actor.aiming`; `Actors.itemMesh(id)` (pickup model); `Actors.night` (eyes glow).
 
 ### `Combat`: combat.js (everything that moves)
 - `Combat.init()`, `Combat.reset()`, `Combat.update(dt)` (call only while unpaused).
@@ -128,10 +134,15 @@ Trader: `makeTrader()`, `buyPrice(id)`, `sellPrice(id)`. Save: `saveGame`, `load
 - `Combat.startWave(count, onEnd({held,kills,breaches}))` runs a horde-night wave. Zombies come from the yard edges and hit the barricade ring (HP from `bl('walls')`). Guards (`job==='guard'|'tower'`) shoot from the yard.
 - `Combat.survivors` are shelter NPCs that walk to their job slot and loop a work animation. They are visible only near the shelter.
 - `Combat.nearestDrop(x,y,r)` → `{uid,x,y,id,qty}|null`, `Combat.pickupDrop(drop)`, `Combat.enemiesNear(x,y,r)`, `Combat.inFight()` (true while any aware enemy is chasing within ~14 tiles, or a wave/fight group is alive), `Combat.clear()`.
+- UI-facing state: `Combat.grabbed`, `grabNeed/grabMash`, `dodging`, `barricadeHp/barricadeMax` (0/0 when no wave), `aware`, `threat` (0..1), `wave`.
+- Extras: `spawnAt(id,x,y,{aware,screamTime})`, `kill(e)`, `despawn(e)`, `hurtEnemy(e,n,opts)`. `spawnFight` opts may carry `screamTime` and `at:{x,y}`.
+- Pathing: enemies follow a BFS flow field from the player over walkable tiles (refreshed 4x/s). Horde-wave zombies far from the ring follow it too,
+  and `walkTo` slides along one axis before detouring, so nobody jams in one-tile gaps.
 
 ### `Moments`: moments.js (encounter `play` runner)
 - `Moments.start(enc, done(resultLine))` runs `enc.play`, calling `onWin`/`onLose` and then `done` with the line. It uses Combat for spawns, UI for overlays (`UI.lockpick`, `UI.barter`, `UI.timer`) and R/World3D for markers.
 - `Moments.active` (bool), `Moments.update(dt)`.
+- Also: `Moments.abort()` (silent end on title/end/death), `Moments.target` (`{x,y,label}` the HUD arrow points at during a moment).
 
 ### `UI`: ui.js + shell.html (DOM HUD, panels, input, audio)
 - `INPUT` global: `{mx,my}` (move, -1..1; WASD, arrows or the virtual joystick), `sprint, crouch, attack` (held), `attackPressed, dodgePressed, interactPressed` (edges; whoever handles one sets it false), `interact` (held), `aimX, aimY` (screen px or null), `touch` (bool).
@@ -146,6 +157,23 @@ Trader: `makeTrader()`, `buyPrice(id)`, `sellPrice(id)`. Save: `saveGame`, `load
 - Minigames: `UI.lockpick({mode,diff}, done(ok))`, `UI.barter(stock, done)`. Timer: `UI.timer(label, seconds|null)`.
 - `UI.title()` is the title screen with Continue, New game (quick start: pick a background, no stat page needed) and Help.
 - `SFX.play(name)` is Web Audio synth, started after the first input: `swing, hit, shoot, shotgun, hurt, pickup, open, build, levelup, scream, groan, step, ui`.
+- Also: `SFX.unlock()`, `SFX.toggle(on?)`, `UI.momentPrompt(text,progress)`, `UI.worldBar(key,x,y,frac,label)`, `UI.tollcamp()` (sets `G.flags.warden_met`),
+  `UI.swapWeapon()` (Q), `UI.spendPoint(attr)`, `UI.craft(i)`. Dialogue `lines` may be strings or `{who,line}` beats; a visible choice picks on the first click even mid-typewriter.
 
 ### `main.js`: boot + loop + glue
 It wires Hooks, runs the game loop, advances time (1 real second = 1 game minute outside, faster indoors at the shelter when sleeping), handles interaction (containers, drops, hatch, gate, build markers, bus), the encounter queue, horde nights, death and saving.
+
+---------------------------------------------------------------------------------------------------
+## 4. Checks (run all of them after any change)
+
+1. `node build.js` regenerates `index.html`, `Dead Embers.html` and `artifact/dead-embers.html` (Three.js inlined).
+2. `node test.js` (headless, no browser): every encounter, choice and `play` callback, item/enemy ids, world reachability, 14 simulated days, save/load. Must print `OK`.
+3. `node tools/browser-check.js` and `node tools/browser-check.js --mobile`: headless Edge/Chrome (SwiftShader) loads the built page, plays a short scenario,
+   prints page errors (there must be none) and saves screenshots (`--shots dir`) you can open and look at.
+4. `node tools/browser-check.js --scenario tools/scenarios/playthrough.js`: the end-to-end route (cold open, walk to the objective, hold-E search, melee and gun
+   fights, build, screamer and rescue moments, a decision, sleep to day 2, a horde night, the Haven ending). Prints `STEP name: ok|FAIL` and exits 1 on any FAIL.
+   Other scenarios: `tools/scenarios/world.js` (city/lighting shots), `combat.js` (actor lineup, fights), `ui.js` (every panel, minigame and moment).
+- `tools/harness.js` is the in-page harness those scenarios use (never bundled). In any running page: `fetch('tools/harness.js').then(r=>r.text()).then(eval)`, then
+  `sim(sec, ctl)` steps the game deterministically at 20 fps without drawing, `goto(x,y)` walks there by BFS, `fightBot(ids, gun)`, `searchNearest()`, `holdE(sec)`, `state()`.
+  Use it in the Browser pane too: a hidden pane pauses requestAnimationFrame, so drive the loop with `sim()` instead of waiting.
+- Dev console: `__skipTo(2)` (radio built) and `__skipTo(3)` (last night) jump the story forward.

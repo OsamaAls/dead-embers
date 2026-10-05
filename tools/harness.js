@@ -1,7 +1,11 @@
 /* In-page test harness for Dead Embers (dev only, never bundled). Load in a running page: fetch("tools/harness.js").then(r=>r.text()).then(eval)
    Deterministic frames (20/s via sim), BFS walking (goto), fight/search bots and state(). */
 window.__T = 1e6;
-window.sim = (sec, ctl) => { const n = Math.round(sec * 20); for (let i = 0; i < n; i++) { if (ctl && ctl(i) === 'stop') return i / 20; __T += 50; frame(__T); } return sec; };
+/* sim(sec, ctl): run sec seconds of game at 20 fps without drawing (ctl(i) may return 'stop'); the last frame is drawn. */
+/* frame() re-queues itself with requestAnimationFrame; stub it while stepping or every simulated frame leaves a real render queued behind. */
+window.sim = (sec, ctl) => { const n = Math.round(sec * 20), draw = R.render, raf = window.requestAnimationFrame; R.render = () => { }; window.requestAnimationFrame = () => 0; let i = 0;
+  try { for (; i < n; i++) { if (ctl && ctl(i) === 'stop') break; __T += 50; frame(__T); } } finally { R.render = draw; window.requestAnimationFrame = raf; }
+  try { R.render(); } catch (e) { } return i / 20; };
 window.kd = c => dispatchEvent(new KeyboardEvent('keydown', { code: c })); window.ku = c => dispatchEvent(new KeyboardEvent('keyup', { code: c }));
 window.skipDlg = () => { if (UI.blocking()) { kd('Space'); ku('Space'); } };
 window.go = (pts, near, maxS) => { let i = 0; const t = sim(maxS || 40, () => { const [tx, ty] = pts[i], p = G.p, dx = tx - p.x, dy = ty - p.y, d = Math.hypot(dx, dy); skipDlg(); if (d < (i === pts.length - 1 ? near : 0.5)) { i++; if (i >= pts.length) { INPUT.mx = INPUT.my = 0; return 'stop'; } return; } INPUT.mx = dx / d; INPUT.my = dy / d; }); INPUT.mx = INPUT.my = 0; return t; };
