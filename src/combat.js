@@ -144,6 +144,17 @@ const Combat = (function () {
       return best ? Math.atan2(best.x - p.x, best.y - p.y) : null;
     }
     if (INPUT.aimX != null && typeof R !== 'undefined' && has(R, 'screenToTile')) {
+      /* players point at bodies, not at the ground under them: snap to an enemy whose chest is near the cursor */
+      if (has(R, 'tileToScreen')) {
+        const rng = prof.ranged ? (prof.rng || 8) + 2 : (prof.reach || 1) + 3;
+        let best = null, bd = 48 * 48;
+        for (const e of C.enemies) {
+          if (e.dead || dist(p.x, p.y, e.x, e.y) > rng) continue;
+          const s = R.tileToScreen(e.x, e.y, 1); if (!s.on) continue;
+          const d2 = (s.x - INPUT.aimX) ** 2 + (s.y - INPUT.aimY) ** 2; if (d2 < bd) { bd = d2; best = e; }
+        }
+        if (best) return Math.atan2(best.x - p.x, best.y - p.y);
+      }
       const t = R.screenToTile(INPUT.aimX, INPUT.aimY);
       if (t && dist(t.x, t.y, p.x, p.y) > 0.15) return Math.atan2(t.x - p.x, t.y - p.y);
     }

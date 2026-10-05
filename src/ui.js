@@ -542,8 +542,13 @@ const UI = (() => {
     if (cls === 'loot') SFX.play('pickup'); else if (cls === 'story') SFX.play('good');
   }
   function fade(d) { d.classList.add('out'); setTimeout(() => d.remove(), 520); }
+  /* hints are written for keyboard; on touch name the on-screen buttons instead */
+  const TOUCH_WORDS = [[/Click or J to attack\. Space to dodge\./, 'Tap ATTACK. DODGE rolls clear.'], [/Mouse aims\./, 'ATTACK aims at the nearest one.'],
+    [/C to crouch\./, 'CROUCH to sneak.'], [/Mash attack/, 'Mash ATTACK'], [/[Hh]old E/g, m => m[0] + 'old USE'], [/\(I\)/, '(PACK)'], [/\(B\)/, '(CHAR)']];
+  function touchWords(t) { for (const [re, to] of TOUCH_WORDS) t = t.replace(re, to); return t; }
   function hint(text) {
     if (!text || !D.hint) return;
+    if (INPUT.touch) text = touchWords(text);
     if (S.hintCur === text || S.hintQ.includes(text)) return;
     S.hintQ.push(text); if (!S.hintOn) nextHint();
   }
