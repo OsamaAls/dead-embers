@@ -145,3 +145,62 @@ const TRAITS = {
   steady:{n:'Steady',d:'Never panics, even on horde nights'},
 };
 const JOBS_BASE = {idle:'Idle',guard:'Guard',scavenge:'Scavenge runs'};
+
+/* ===================== 3D GAMEPLAY PARAMS ===================== */
+/* Units: distances in tiles (1 tile = 2 m in the 3D world), times in real seconds. */
+/* Melee: reach, wind (wind-up before the hit lands), cd (recovery), sta (stamina per swing), arc (radians).
+   Guns: rng (max range), spread (radians), pellets, cd. Unarmed uses WEAPON_FISTS. */
+const WEAPON_FISTS = { n: 'Fists', dmg: [2, 4], reach: 1.0, wind: 0.15, cd: 0.45, sta: 3, arc: 1.4 };
+Object.assign(ITEMS.knife, { reach: 1.0, wind: 0.12, cd: 0.35, sta: 4, arc: 1.2 });
+Object.assign(ITEMS.pipe, { reach: 1.35, wind: 0.28, cd: 0.6, sta: 8, arc: 1.6 });
+Object.assign(ITEMS.bat, { reach: 1.4, wind: 0.3, cd: 0.65, sta: 9, arc: 1.7 });
+Object.assign(ITEMS.machete, { reach: 1.3, wind: 0.2, cd: 0.5, sta: 7, arc: 1.5 });
+Object.assign(ITEMS.axe, { reach: 1.5, wind: 0.4, cd: 0.8, sta: 12, arc: 1.8 });
+Object.assign(ITEMS.crossbow, { rng: 9, wind: 0.2, cd: 1.2, sta: 2, spread: 0.03 });
+Object.assign(ITEMS.pistol, { rng: 10, wind: 0.05, cd: 0.35, sta: 1, spread: 0.06 });
+Object.assign(ITEMS.shotgun, { rng: 6, wind: 0.1, cd: 0.9, sta: 2, spread: 0.22, pellets: 5 });
+
+/* Enemies: spd (tiles/s when chasing), sense (detection radius in tiles, halved when player crouches),
+   reach (attack range), lunge (dash speed multiplier for the lunge), grab (chance a hit becomes a grab),
+   rng/cd for ranged humans. hue/scale/shape drive the procedural model. */
+Object.assign(ENEMIES.walker, { spd: 1.1, sense: 6, reach: 0.9, lunge: 2.0, grab: 0.25, shape: 'walker', scale: 1.0 });
+Object.assign(ENEMIES.runner, { spd: 3.3, sense: 8, reach: 0.9, lunge: 2.4, grab: 0.15, shape: 'runner', scale: 0.95 });
+Object.assign(ENEMIES.bloater, { spd: 0.8, sense: 5, reach: 1.0, lunge: 1.5, grab: 0.1, shape: 'bloater', scale: 1.25 });
+Object.assign(ENEMIES.screamer, { spd: 1.4, sense: 9, reach: 0.9, lunge: 1.8, grab: 0.1, shape: 'screamer', scale: 0.9 });
+Object.assign(ENEMIES.brute, { spd: 1.3, sense: 6, reach: 1.3, lunge: 2.2, grab: 0.0, shape: 'brute', scale: 1.5, knock: true });
+Object.assign(ENEMIES.zdog, { spd: 3.8, sense: 9, reach: 0.8, lunge: 2.6, grab: 0.0, shape: 'dog', scale: 0.7 });
+Object.assign(ENEMIES.raider, { spd: 2.4, sense: 9, reach: 1.0, lunge: 1.6, grab: 0, shape: 'human', scale: 1.0, rng: 8, cd: 1.5, drop: ['pipe', 'pistol'] });
+Object.assign(ENEMIES.tollman, { spd: 2.4, sense: 9, reach: 1.0, lunge: 1.6, grab: 0, shape: 'human', scale: 1.05, rng: 8, cd: 1.3, drop: ['machete', 'pistol'] });
+Object.assign(ENEMIES.warden, { spd: 2.0, sense: 10, reach: 1.1, lunge: 1.6, grab: 0, shape: 'human', scale: 1.15, rng: 6, cd: 1.6, drop: ['shotgun'] });
+/* Zombie types unlock over the first days so the threat grows gradually. */
+const ZTIERS = [[1, ['walker']], [2, ['zdog', 'runner']], [3, ['screamer', 'bloater']], [4, ['brute']]];
+
+/* Searchable containers. t = base seconds to search (PER shortens), r = loot rolls, cats = item categories they favour */
+const CONTAINERS = {
+  shelf: { n: 'Shelf', t: 1.6, r: 2, cats: null },
+  cabinet: { n: 'Cabinet', t: 2.0, r: 2, cats: ['med', 'mat', 'misc'] },
+  fridge: { n: 'Fridge', t: 1.4, r: 2, cats: ['food', 'water'] },
+  crate: { n: 'Crate', t: 2.4, r: 3, cats: null },
+  locker: { n: 'Locker', t: 2.2, r: 2, cats: ['ammo', 'weapon', 'med', 'gear', 'misc'] },
+  desk: { n: 'Desk', t: 1.5, r: 1, cats: ['misc', 'med', 'mat'] },
+  toolbox: { n: 'Toolbox', t: 1.8, r: 2, cats: ['mat'] },
+  trunk: { n: 'Car Trunk', t: 2.2, r: 2, cats: null },
+  rubble: { n: 'Rubble', t: 2.6, r: 2, cats: ['mat', 'misc', 'weapon'] },
+  nets: { n: 'Fishing Nets', t: 3.0, r: 2, cats: ['food', 'water', 'mat'] },
+  stash: { n: "Hunter's Stash", t: 2.0, r: 2, cats: null },
+};
+const CONT_KINDS = {
+  supermarket: ['shelf', 'shelf', 'fridge', 'crate'], hospital: ['cabinet', 'locker', 'desk', 'cabinet'], police: ['locker', 'desk', 'cabinet'],
+  gas: ['shelf', 'fridge', 'toolbox'], factory: ['toolbox', 'crate', 'locker'], farm: ['crate', 'toolbox', 'shelf'], apartments: ['cabinet', 'fridge', 'desk', 'shelf'],
+  electronics: ['shelf', 'desk', 'crate'], radiotower: ['locker', 'toolbox', 'desk'], military: ['locker', 'crate', 'crate'], depot: ['toolbox', 'locker', 'crate'],
+  street: ['rubble', 'crate', 'shelf'], forest: ['stash'], river: ['nets'],
+};
+const CONT_REFILL_DAYS = 6;
+
+/* Shelter yard layout, in tiles relative to the shelter rect's top-left (x0,y0). [x, y, w, h].
+   The bunker (concrete block with the hatch) sits at x 3..5, y 0..1; the hatch is the door tile at (4, 2). */
+const BUILD_SLOTS = {
+  bed: [0.2, 0.2, 2.5, 1.5], rain: [7, 0.2, 1, 1], tower: [9, 0, 1, 1], bench: [6.5, 2.6, 1.5, 1], forge: [0.2, 3, 1.5, 1],
+  purifier: [8.6, 2.6, 1, 1], kitchen: [6.5, 4.6, 1.5, 1], woodshop: [8.4, 4.6, 1.5, 1.4], garden: [0.2, 5, 3, 2.5],
+  infirmary: [3.6, 5.6, 2, 1.5], radio: [5.2, 0.3, 0.7, 0.7],
+};

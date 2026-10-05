@@ -11,9 +11,10 @@ let G = null;
 const Hooks = { log: () => {}, refresh: () => {}, queue: () => {}, onDeath: () => {} };
 
 /* ---------- World generation (deterministic from seed) ---------- */
-const W = 64, H = 48;
-const T_GRASS = 0, T_ROAD = 1, T_WALL = 3, T_DOOR = 4, T_TREE = 5, T_WATER = 6, T_BRIDGE = 7, T_RUBBLE = 8, T_CAR = 9, T_YARD = 10, T_FIELD = 11, T_ROOF = 12;
-const SOLID = new Set([T_WALL, T_TREE, T_WATER, T_CAR, T_ROOF]);
+/* Logical grid: W x H tiles. In 3D, tile (x,y) maps to world (x*TILE, 0, y*TILE); +x east, +y (world +z) south. */
+const W = 64, H = 48, TILE = 2;
+const T_GRASS = 0, T_ROAD = 1, T_WALL = 3, T_DOOR = 4, T_TREE = 5, T_WATER = 6, T_BRIDGE = 7, T_RUBBLE = 8, T_CAR = 9, T_YARD = 10, T_FIELD = 11, T_ROOF = 12, T_FLOOR = 13, T_PROP = 14;
+const SOLID = new Set([T_WALL, T_TREE, T_WATER, T_CAR, T_ROOF, T_PROP]);
 const ROADS_Y = [4, 14, 24, 34, 44], ROADS_X = [4, 16, 28, 40, 52];
 const BLOCKS_X = [[6, 15], [18, 27], [30, 39], [42, 48], [54, 63]], BLOCKS_Y = [[6, 13], [16, 23], [26, 33], [36, 43]];
 const BLOCK_PLAN = {
@@ -22,8 +23,10 @@ const BLOCK_PLAN = {
   '0,2': 'factory', '1,2': 'gas', '2,2': 'farm', '3,2': 'electronics', '4,2': 'forest',
   '0,3': 'depot', '1,3': 'street', '2,3': 'supermarket', '3,3': 'gas', '4,3': 'tollcamp',
 };
-const RIVER_X = [44, 45, 46];
-let WORLD = null; // {tiles: Uint8Array, pois: {key:{type,x,y,label}}, shelterRect, roofs:[]}
+const RIVER_X = [50, 51];
+/* WORLD = {tiles, pois:{"x,y":{x,y,type,label,outdoor?}}, roofs:[{x,y,w,h,type,poi,closed?}] (building footprints incl. walls),
+   containers:[{id,x,y,kind,loc,poi}], shelterRect, bunker:{x,y,w,h}, hatch:{x,y}, bus:{x,y}, gate:{x,y}} */
+let WORLD = null;
 
 function seeded(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
@@ -34,63 +37,116 @@ function genWorld(seed) {
   const get = (x, y) => (x < 0 || y < 0 || x >= W || y >= H) ? T_WALL : tiles[y * W + x];
   for (const y of ROADS_Y) for (let x = 0; x < W; x++) { set(x, y, T_ROAD); set(x, y + 1, T_ROAD); }
   for (const x of ROADS_X) for (let y = 0; y < H; y++) { set(x, y, T_ROAD); set(x + 1, y, T_ROAD); }
-  // river runs N-S between block columns 3 and 4, replacing road x=52? no: river at 47..49 inside col3 east margin
-  const pois = {}, roofs = [];
-  const addPoi = (x, y, type, label) => { pois[x + ',' + y] = { x, y, type, label: label || LOCS[type].n }; set(x, y, T_DOOR); };
-  let shelterRect = null;
+  const pois = {}, roofs = [], containers = [];
+  let cid = 0, shelterRect = null, bunker = null, hatch = null, bus = null, gate = null;
+  const addPoi = (x, y, type, label, outdoor) => { const k = x + ',' + y; pois[k] = { x, y, type, label: label || LOCS[type].n }; if (outdoor) pois[k].outdoor = true; else set(x, y, T_DOOR); return k; };
+  const addCont = (x, y, kind, loc, poi) => { set(x, y, T_PROP); containers.push({ id: 'c' + (cid++), x, y, kind, loc, poi }); };
+  /* A walled building with a walkable floor, one door on the south wall, optional partition, wall-side containers. */
+  const addBuilding = (x0, y0, x1, y1, type, label, nCont) => {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, (x === x0 || x === x1 || y === y0 || y === y1) ? T_WALL : T_FLOOR);
+    const dx = Math.floor((x0 + x1) / 2);
+    const key = addPoi(dx, y1, type, label);
+    const w = x1 - x0 + 1;
+    let px = null, gapY = null;
+    if (w >= 8) {
+      px = x0 + Math.floor(w / 2); if (px === dx) px++;
+      gapY = ri(y0 + 1, y1 - 1);
+      for (let y = y0 + 1; y < y1; y++) if (y !== gapY) set(px, y, T_WALL);
+    }
+    roofs.push({ x: x0, y: y0, w, h: y1 - y0 + 1, type, poi: key });
+    const kinds = CONT_KINDS[type] || ['crate'];
+    const cand = [];
+    for (let y = y0 + 1; y < y1; y++) for (let x = x0 + 1; x < x1; x++) {
+      if (get(x, y) !== T_FLOOR) continue;
+      if (Math.abs(x - dx) <= 1 && y >= y1 - 2) continue;
+      if (px !== null && Math.abs(x - px) <= 1 && Math.abs(y - gapY) <= 1) continue;
+      const touch = get(x - 1, y) === T_WALL || get(x + 1, y) === T_WALL || get(x, y - 1) === T_WALL;
+      if (touch) cand.push([x, y]);
+    }
+    /* every floor tile and every container must stay reachable from inside the door */
+    const interiorOK = () => {
+      const seen = new Set([dx + ',' + (y1 - 1)]), q = [[dx, y1 - 1]];
+      while (q.length) { const [x, y] = q.pop(); for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + a, ny = y + b, k = nx + ',' + ny; if (!seen.has(k) && get(nx, ny) === T_FLOOR) { seen.add(k); q.push([nx, ny]); } } }
+      for (let y = y0 + 1; y < y1; y++) for (let x = x0 + 1; x < x1; x++) {
+        const t = get(x, y);
+        if (t === T_FLOOR && !seen.has(x + ',' + y)) return false;
+        if (t === T_PROP && ![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => seen.has((x + a) + ',' + (y + b)))) return false;
+      }
+      return true;
+    };
+    let placed = 0;
+    while (placed < nCont && cand.length) {
+      const j = Math.floor(R() * cand.length), [x, y] = cand.splice(j, 1)[0];
+      set(x, y, T_PROP);
+      if (!interiorOK()) { set(x, y, T_FLOOR); continue; }
+      set(x, y, T_FLOOR); addCont(x, y, kinds[placed % kinds.length], type, key); placed++;
+    }
+    return key;
+  };
   for (let by = 0; by < 4; by++) for (let bx = 0; bx < 5; bx++) {
     const [x0, x1] = BLOCKS_X[bx], [y0, y1] = BLOCKS_Y[by];
     const type = BLOCK_PLAN[bx + ',' + by];
-    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    const bw = x1 - x0 + 1;
     const scatter = (n, t) => { for (let i = 0; i < n; i++) { const x = ri(x0, x1), y = ri(y0, y1); if (get(x, y) === T_GRASS) set(x, y, t); } };
     if (type === 'shelter') {
       for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, T_YARD);
       shelterRect = { x0, y0, x1, y1 };
-      addPoi(x0 + 4, y0 + 3, 'shelter');
+      bunker = { x: x0 + 3, y: y0, w: 3, h: 2 };
+      for (let y = y0; y < y0 + 2; y++) for (let x = x0 + 3; x < x0 + 6; x++) set(x, y, T_WALL);
+      hatch = { x: x0 + 4, y: y0 + 2 };
+      addPoi(hatch.x, hatch.y, 'shelter');
     } else if (type === 'forest') {
       for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (R() < 0.42) set(x, y, T_TREE);
       const px = ri(x0 + 2, x1 - 2), py = ri(y0 + 2, y1 - 2);
       for (let y = py - 1; y <= py + 1; y++) for (let x = px - 1; x <= px + 1; x++) set(x, y, T_GRASS);
       for (let x = px; x <= x1 + 1; x++) if (get(x, py) === T_TREE) set(x, py, T_GRASS);
-      addPoi(px, py, 'forest', 'Hunting Stand');
+      const key = addPoi(px, py, 'forest', 'Hunting Stand', true);
+      addCont(px, py - 1, 'stash', 'forest', key);
     } else if (type === 'farm') {
-      for (let y = y0 + 1; y <= y1 - 1; y++) for (let x = x0 + 1; x <= x0 + 5; x++) set(x, y, T_FIELD);
-      const rx0 = x1 - 3, ry0 = y0 + 1; for (let y = ry0; y <= ry0 + 3; y++) for (let x = rx0; x <= rx0 + 2; x++) set(x, y, T_ROOF);
-      roofs.push({ x: rx0, y: ry0, w: 3, h: 4, type });
-      addPoi(rx0 + 1, ry0 + 4, 'farm', 'Barn');
+      for (let y = y0 + 1; y <= y1 - 1; y++) for (let x = x0 + 1; x <= x0 + 4; x++) set(x, y, T_FIELD);
+      addBuilding(x1 - 4, y0 + 1, x1, y0 + 5, 'farm', 'Barn', 4);
       scatter(4, T_TREE);
     } else if (type === 'tollcamp') {
       for (let x = x0 + 1; x <= x1 - 1; x++) { set(x, y0 + 1, T_WALL); set(x, y1 - 1, T_WALL); }
       for (let y = y0 + 1; y <= y1 - 1; y++) { set(x0 + 1, y, T_WALL); set(x1 - 1, y, T_WALL); }
-      for (let y = y0 + 2; y <= y1 - 2; y++) for (let x = x0 + 2; x <= x1 - 2; x++) set(x, y, T_ROOF);
-      roofs.push({ x: x0 + 2, y: y0 + 2, w: bw - 4, h: bh - 4, type });
-      addPoi(x0 + Math.floor(bw / 2), y1 - 1, 'tollcamp');
+      for (let y = y0 + 2; y <= y1 - 2; y++) for (let x = x0 + 2; x <= x1 - 2; x++) set(x, y, T_YARD);
+      for (let y = y0 + 2; y <= y0 + 4; y++) for (let x = x0 + 3; x <= x1 - 3; x++) set(x, y, T_ROOF);
+      roofs.push({ x: x0 + 3, y: y0 + 2, w: bw - 6, h: 3, type: 'tollcamp', closed: true });
+      gate = { x: x0 + Math.floor(bw / 2), y: y1 - 1 };
+      addPoi(gate.x, gate.y, 'tollcamp');
     } else if (type === 'street') {
-      scatter(10, T_RUBBLE); scatter(5, T_CAR); scatter(4, T_TREE);
-      const sx0 = x0 + 1, sy0 = y0 + 1; for (let y = sy0; y <= sy0 + 2; y++) for (let x = sx0; x <= sx0 + 3; x++) set(x, y, T_ROOF);
-      roofs.push({ x: sx0, y: sy0, w: 4, h: 3, type: 'ruin' });
-      addPoi(x0 + ri(2, bw - 3), y1, 'street', 'Rubble Pile'); addPoi(x1, y0 + ri(4, bh - 2), 'street', 'Wrecked Shop');
+      scatter(10, T_RUBBLE); scatter(4, T_TREE);
+      addBuilding(x0 + 1, y0 + 1, x0 + 5, y0 + 4, 'street', 'Wrecked Shop', 3);
+      const rx = x0 + ri(2, bw - 3), ry = y1 - 1;
+      const key = addPoi(rx, ry + 1, 'street', 'Rubble Pile', true);
+      addCont(rx, ry, 'rubble', 'street', key);
+      if ([T_GRASS, T_RUBBLE].includes(get(rx + 2, ry - 1))) addCont(rx + 2, ry - 1, 'rubble', 'street', key);
+      for (let i = 0; i < 4; i++) { const x = ri(x0 + 7, x1), y = ri(y0, y1 - 2); if ([T_GRASS, T_RUBBLE].includes(get(x, y))) addCont(x, y, 'crate', 'street', key); }
     } else {
-      const mx = type === 'radiotower' ? 3 : 1, my = 1;
-      const rx0 = x0 + mx, rx1 = x1 - mx, ry0 = y0 + my, ry1 = y1 - 2;
-      for (let y = ry0; y <= ry1; y++) for (let x = rx0; x <= rx1; x++) set(x, y, T_ROOF);
-      roofs.push({ x: rx0, y: ry0, w: rx1 - rx0 + 1, h: ry1 - ry0 + 1, type });
-      addPoi(Math.floor((rx0 + rx1) / 2), ry1 + 1, type);
-      // second entrance for big buildings
-      if (bw >= 10 && (type === 'apartments' || type === 'supermarket' || type === 'factory')) { /* single door is enough */ }
-      scatter(3, T_RUBBLE); scatter(2, T_CAR);
+      const mx = type === 'radiotower' ? 3 : 1;
+      const n = (LOCS[type].searches || 4) + 1;
+      addBuilding(x0 + mx, y0 + 1, x1 - mx, y1 - 1, type, null, n);
+      if (type === 'depot') bus = { x: x1 - 2, y: y1 };
+      scatter(3, T_RUBBLE);
     }
   }
-  // river: vertical band east of column 3 blocks (x 47..49) -> actually between ROADS_X[4]=52 and block col4 start. Use x=52..53 road? keep road; place river at x 56..57 in col 4? We put forest/military/tollcamp east, river at x=50..51 (inside col3 east edge)
-  for (let y = 0; y < H; y++) for (const x of [50, 51]) { const t = get(x, y); if (t === T_ROAD) set(x, y, T_BRIDGE); else if (t !== T_DOOR) set(x, y, T_WATER); }
-  // river dock POI
-  addPoi(49, 30, 'river', 'River Dock');
-  addPoi(49, 10, 'river', 'Fishing Pier');
-  // cars on roads
-  for (let i = 0; i < 26; i++) { const x = ri(0, W - 1), y = ri(0, H - 1); if (get(x, y) === T_ROAD && !(x >= 26 && x <= 42 && y >= 12 && y <= 26)) set(x, y, T_CAR); }
-  // ensure every door has a walkable approach
-  for (const k in pois) { const p = pois[k]; for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) { const t = get(p.x + dx, p.y + dy); if (t === T_CAR) set(p.x + dx, p.y + dy, T_ROAD); } }
-  return { tiles, pois, roofs, shelterRect };
+  for (let y = 0; y < H; y++) for (const x of RIVER_X) { const t = get(x, y); if (t === T_ROAD) set(x, y, T_BRIDGE); else set(x, y, T_WATER); }
+  for (const [y, label] of [[30, 'River Dock'], [10, 'Fishing Pier']]) { set(49, y, T_GRASS); const key = addPoi(49, y, 'river', label, true); addCont(49, y - 1, 'nets', 'river', key); }
+  for (let i = 0; i < 26; i++) {
+    const x = ri(0, W - 1), y = ri(0, H - 1);
+    if (get(x, y) !== T_ROAD || (x >= 26 && x <= 42 && y >= 12 && y <= 26)) continue;
+    set(x, y, T_CAR);
+    if (R() < 0.45) containers.push({ id: 'c' + (cid++), x, y, kind: 'trunk', loc: 'street', poi: null });
+  }
+  const clearCar = (x, y) => { if (get(x, y) === T_CAR) { set(x, y, T_ROAD); const ci = containers.findIndex(c => c.x === x && c.y === y); if (ci >= 0) containers.splice(ci, 1); } };
+  for (const k in pois) { const p = pois[k]; for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) clearCar(p.x + dx, p.y + dy); }
+  /* a clear path from every south-facing door (and outdoor POI) down to the next road */
+  for (const k in pois) {
+    const p = pois[k]; if (p.type === 'shelter') continue;
+    for (let y = p.y + 1; y < H; y++) { const t = get(p.x, y); if (t === T_ROAD || t === T_BRIDGE) break; if (t === T_CAR) clearCar(p.x, y); else if (SOLID.has(t)) set(p.x, y, T_GRASS); }
+  }
+  if (bus) for (let x = bus.x - 1; x <= bus.x + 1; x++) { clearCar(x, bus.y); clearCar(x, bus.y + 1); }
+  return { tiles, pois, roofs, containers, shelterRect, bunker, hatch, bus, gate };
 }
 function tileAt(x, y) { if (x < 0 || y < 0 || x >= W || y >= H) return T_WALL; return WORLD.tiles[y * W + x]; }
 function solidAt(x, y) { return SOLID.has(tileAt(Math.floor(x), Math.floor(y))); }
@@ -100,6 +156,11 @@ function districtAt(x, y) {
   if (bx < 0) bx = clamp(Math.round(x / 12), 0, 4); if (by < 0) by = clamp(Math.round(y / 11), 0, 3);
   return BLOCK_PLAN[bx + ',' + by] || 'street';
 }
+/* Index into WORLD.roofs of the building whose footprint contains (x,y), or -1. */
+function buildingAt(x, y) { const fx = Math.floor(x), fy = Math.floor(y); return WORLD.roofs.findIndex(r => fx >= r.x && fx < r.x + r.w && fy >= r.y && fy < r.y + r.h); }
+function indoors(x, y) { const t = tileAt(Math.floor(x), Math.floor(y)); return t === T_FLOOR || t === T_DOOR && buildingAt(x, y) >= 0; }
+function poiNear(x, y, r) { let best = null, bd = r * r; for (const k in WORLD.pois) { const p = WORLD.pois[k], d = (p.x + 0.5 - x) ** 2 + (p.y + 0.5 - y) ** 2; if (d <= bd) { bd = d; best = Object.assign({ key: k }, p); } } return best; }
+function nearestPoi(type, x, y) { let best = null, bd = Infinity; for (const k in WORLD.pois) { const p = WORLD.pois[k]; if (p.type !== type) continue; const d = (p.x - x) ** 2 + (p.y - y) ** 2; if (d < bd) { bd = d; best = p; } } return best; }
 
 /* ---------- New game ---------- */
 function newGame(name, bgId, attrs) {
@@ -108,22 +169,26 @@ function newGame(name, bgId, attrs) {
   for (const k in bg.bonus) a[k] = (a[k] || 0) + bg.bonus[k];
   const seed = Math.floor(Math.random() * 1e9);
   G = {
-    v: 1, seed, day: 1, hour: 7, minute: 0,
-    p: { name, bg: bgId, attr: a, hp: 100, maxHp: 100, sta: 0, maxSta: 0, hunger: 80, thirst: 70, morale: 60, inf: 0, xp: 0, level: 1, points: 0, weapon: null, x: 0, y: 0, status: {} },
+    v: 2, seed, day: 1, hour: 7, minute: 0,
+    p: { name, bg: bgId, attr: a, hp: 100, maxHp: 100, sta: 0, maxSta: 0, hunger: 80, thirst: 70, morale: 60, inf: 0, xp: 0, level: 1, points: 0, weapon: null, x: 0, y: 0, face: 0, status: {} },
     pack: {}, store: { canned: 2, water: 2, wood: 3 },
     survivors: [], buildings: {}, flags: {}, seenEnc: {}, seenScenes: {}, journal: [], loreRead: [], log: [],
-    locs: {}, fog: '', noise: 0, stepsToEnc: rnd(40, 70), nextId: 1, hordeDay: 0, stats: { kills: 0, searches: 0, encounters: 0, recruited: 0 },
+    locs: {}, cont: {}, unlocks: {}, hints: {}, fog: '', noise: 0, encTimer: rnd(70, 110), nextId: 1, hordeDay: 0, hordeNight: false, hordeResult: null,
+    stats: { kills: 0, searches: 0, encounters: 0, recruited: 0 },
   };
   WORLD = genWorld(seed);
-  const sp = Object.values(WORLD.pois).find(p => p.type === 'shelter');
-  G.p.x = sp.x + 0.5; G.p.y = sp.y + 1.5;
+  G.p.x = WORLD.hatch.x + 0.5; G.p.y = WORLD.hatch.y + 1.5;
   for (const k in bg.items) G.pack[k] = (G.pack[k] || 0) + bg.items[k];
   const w = Object.keys(G.pack).find(k => ITEMS[k].c === 'weapon'); G.p.weapon = w || null;
-  for (const k in WORLD.pois) { const p = WORLD.pois[k]; const L = LOCS[p.type]; if (L.searches) G.locs[k] = { left: L.searches, max: L.searches, visited: false }; }
+  for (const k in WORLD.pois) G.locs[k] = { visited: false };
   initFog();
   recalc(); G.p.sta = G.p.maxSta;
+  const intro = CONTENT_().story.intro; if (intro) journal(intro.title, storyText(intro));
   return G;
 }
+/* Long-form text of a scene for the journal (scenes may have beats[] and/or paras[]). */
+function storyText(sc) { return fmtName((sc.paras && sc.paras.length ? sc.paras : (sc.beats || []).map(b => (b.who ? b.who + ': ' : '') + b.line)).join('\n\n')); }
+function fmtName(s) { return String(s || '').replace(/\{name\}/g, G ? G.p.name : 'you'); }
 function initFog() { G._fog = new Uint8Array(W * H); if (G.fog) for (let i = 0; i < G.fog.length && i < W * H; i++) G._fog[i] = G.fog.charCodeAt(i) - 48; }
 function revealAround(cx, cy, r) {
   const f = G._fog, r2 = r * r;
@@ -199,9 +264,16 @@ function setStatus(name, v) { if (v <= 0) delete G.p.status[name]; else G.p.stat
 function flag(k) { return G.flags[k]; }
 function setFlag(k, v) { G.flags[k] = v === undefined ? true : v; return ''; }
 function journal(title, text) { G.journal.unshift({ day: G.day, title, text }); log(`Journal: ${title}`, 'story'); return ''; }
+/* fight() spawns real enemies around the player (Hooks.spawnFight, provided by combat.js).
+   opts: {onWin:()=>string, onLose:()=>string, onFlee:()=>string, noFlee:bool}. Returns undefined on purpose:
+   content uses `fight(...) || 'text'`. Headless (no hook) it is recorded in PENDING for tests. */
 let PENDING = { fight: null, trader: false };
-function fight(ids, opts) { PENDING.fight = { ids: ids.slice(), opts: opts || {} }; }
-function openTrader() { PENDING.trader = true; }
+function fight(ids, opts) {
+  ids = (ids || []).filter(id => ENEMIES[id]); if (!ids.length) return;
+  opts = opts || {};
+  if (Hooks.spawnFight) Hooks.spawnFight(ids, opts); else PENDING.fight = { ids, opts };
+}
+function openTrader() { if (Hooks.openTrader) Hooks.openTrader(); else PENDING.trader = true; }
 function makeSurvivor(opts) {
   opts = opts || {}; const C = CONTENT_();
   const skills = { farm: rnd(1, 3), scav: rnd(1, 3), build: rnd(1, 3), med: rnd(1, 2), combat: rnd(1, 3) };
@@ -214,6 +286,7 @@ function recruit(opts) {
   const s = makeSurvivor(opts);
   G.survivors.push(s); G.stats.recruited++;
   log(`${s.name} (${TRAITS[s.trait].n}) joined your shelter.`, 'good');
+  unlock('people');
   if (G.survivors.length > shelterCap()) log('The bunker is overcrowded. Build more bunks.', 'warn');
   return s;
 }
@@ -256,9 +329,26 @@ function tickHour(opts) {
   for (const k in p.status) { p.status[k]--; if (p.status[k] <= 0) delete p.status[k]; }
   G.noise = Math.max(0, G.noise - 0.5);
   recalc();
+  checkUnlocks();
   if (G.hour === 20) storyCheck();
+  if (G.hour === 21 && G.hordeNight && !G.hordeResult && !opts.sleep) { if (G.atShelter && Hooks.hordeStart) Hooks.hordeStart(hordeStrength()); }
   if (G.hour === 6) dailyTick();
 }
+
+/* ---------- Progressive unlocks & one-time hints ---------- */
+/* Keys: needs (hunger/thirst HUD), build, craft, people, horde, radio, journal, map. UI reads G.unlocks[k]. */
+function unlock(k) { if (!G || G.unlocks[k]) return false; G.unlocks[k] = G.day; Hooks.unlock && Hooks.unlock(k); return true; }
+function isUnlocked(k) { return !!(G && G.unlocks[k]); }
+function hintOnce(key, text) { if (!G || G.hints[key]) return false; G.hints[key] = 1; Hooks.hint && Hooks.hint(text); return true; }
+function checkUnlocks() {
+  const p = G.p;
+  if (p.hunger < 62 || p.thirst < 58) { if (unlock('needs')) hintOnce('needs', 'Hunger and thirst are dropping. Eat and drink from your pack (I).'); }
+  if ((G.stats.searches >= 2 && G.atShelter) || G.day >= 2) { if (unlock('build')) hintOnce('build', 'Walk to a marker in the yard and hold E to build.'); }
+  if (bl('bench') || G.day >= 3) unlock('craft');
+  if (G.flags.q_radio) unlock('radio');
+  if (G.journal.length > 1) unlock('journal');
+}
+function zombieTypes() { const out = []; for (const [d, ids] of ZTIERS) if (G.day >= d) out.push(...ids); return out; }
 
 /* ---------- Shelter ---------- */
 function bl(k) { return G.buildings[k] || 0; }
@@ -301,6 +391,26 @@ function defense() {
   return Math.round(d);
 }
 function hordeStrength() { return 10 + G.day * 3; }
+/* Zombies in a real-time horde wave: about strength/4, scaled down by barricades. */
+function hordeWaveSize() { return clamp(Math.round(hordeStrength() / 4) + 2, 5, 40); }
+function hordeDamage(P, gap, present) {
+  P(`Horde night: they broke through.`, 'bad');
+  const b1 = damageBuilding(); if (b1) P(`${b1} was wrecked.`, 'bad');
+  if (gap > 12) { const b2 = damageBuilding(); if (b2) P(`${b2} was wrecked.`, 'bad'); }
+  for (const s of G.survivors) if (chance(0.3)) s.hp -= rnd(15, 35);
+  if (gap > 15 && G.survivors.length) { const v = pick(G.survivors); killSurvivor(v, 'the horde'); P(`${v.name} was dragged into the dark.`, 'bad'); }
+  for (const f of ['canned', 'veg', 'meal']) if (G.store[f]) G.store[f] = Math.floor(G.store[f] * 0.7);
+  addMorale(-10);
+}
+/* Called by combat.js when a real-time horde wave ends. res = {held:bool, kills:int, breaches:int} */
+function resolveHorde(res) {
+  const lines = [], P = (msg, cls) => lines.push({ msg, cls: cls || '' });
+  G.stats.kills += 0; // kills are already counted per enemy by onKill
+  if (res.held) { P(`Horde night: you held the bunker. ${res.kills || 0} dead put down.`, 'good'); xp(25); addMorale(6); }
+  else hordeDamage(P, 6 + (res.breaches || 0) * 4, true);
+  G.hordeResult = { lines };
+  return lines;
+}
 
 function dailyTick() {
   G.day++;
@@ -356,21 +466,20 @@ function dailyTick() {
     if (s.hp <= 0) { killSurvivor(s, 'starvation and wounds'); P(`${s.name} died in the night.`, 'bad'); }
     else if (s.morale < 15 && s.trait !== 'loyal' && chance(0.4)) { G.survivors.splice(G.survivors.indexOf(s), 1); P(`${s.name} lost hope and left during the night.`, 'bad'); log(`${s.name} left the shelter.`, 'bad'); }
   }
-  // horde night
-  if (G.day % 5 === 0 || (G.hordeDay && G.day > G.hordeDay - 3 && G.day < G.hordeDay && chance(0.5))) {
-    const S = hordeStrength() + rnd(0, 10), D = defense();
-    if (D >= S) { P(`HORDE NIGHT: ${Math.round(S / 3)} dead hit the shelter. Defense ${D} vs ${S}. The line held.`, 'good'); xp(20); addMorale(5); G.stats.kills += Math.round(S / 4); }
+  // horde night (the night that just ended). Fought in real time if the player was home (G.hordeResult), else resolved by numbers.
+  if (G.hordeNight) {
+    const res = G.hordeResult;
+    if (res) { for (const l of res.lines || []) P(l.msg, l.cls); }
     else {
-      P(`HORDE NIGHT: Defense ${D} vs ${S}. They broke through.`, 'bad');
-      const b1 = damageBuilding(); if (b1) P(`${b1} was wrecked.`, 'bad');
-      if (S - D > 12) { const b2 = damageBuilding(); if (b2) P(`${b2} was wrecked.`, 'bad'); }
-      for (const s of G.survivors) if (chance(0.3)) s.hp -= rnd(15, 35);
-      if (S - D > 15 && G.survivors.length) { const v = pick(G.survivors); killSurvivor(v, 'the horde'); P(`${v.name} was dragged into the dark.`, 'bad'); }
-      for (const f of ['canned', 'veg', 'meal']) if (G.store[f]) G.store[f] = Math.floor(G.store[f] * 0.7);
-      if (saveAt) { hurt(rnd(8, 20), 'the horde'); if (chance(0.3)) bite(); }
-      addMorale(-10);
+      const S = hordeStrength() + rnd(0, 10), D = defense();
+      if (D >= S) { P(`Horde night: the line held without you. Defense ${D} vs ${S}.`, 'good'); xp(10); G.stats.kills += Math.round(S / 4); }
+      else hordeDamage(P, S - D, false);
     }
-  } else if (bl('tower') && (G.day + 1) % 5 === 0) P('Watchtower: a horde is gathering. It will hit tonight.', 'warn');
+  }
+  G.hordeNight = (G.day % 5 === 4) || !!(G.hordeDay && G.day > G.hordeDay - 3 && G.day < G.hordeDay && chance(0.5));
+  G.hordeResult = null;
+  if (G.hordeNight) { unlock('horde'); P('A horde is coming TONIGHT. Be at the bunker by dark.', 'bad'); hintOnce('horde_now', 'Horde tonight. Get back to the bunker before 21:00.'); }
+  else if ((G.day + 1) % 5 === 4) { unlock('horde'); P(bl('tower') ? 'Watchtower: the dead are massing. Horde tomorrow night.' : 'The dead are gathering in the north. A horde will hit tomorrow night.', 'warn'); hintOnce('horde_warn', 'A horde hits tomorrow night. Build Barricades and be home by dark.'); }
   // world regen
   if (G.day % 2 === 0) for (const k in G.locs) G.locs[k].left = Math.min(G.locs[k].max, G.locs[k].left + 1);
   // player morale
@@ -401,37 +510,41 @@ function eat(id) {
   recalc();
   log(`Used ${it.n}: ${out.filter(Boolean).join(', ')}`);
 }
-function searchLoc(key) {
-  const poi = WORLD.pois[key], L = LOCS[poi.type], st = G.locs[key];
-  if (G.p.sta < 10) return { text: 'You are too exhausted to search. Rest or eat something.' };
-  advance(90); tire(10); G.stats.searches++; st.visited = true;
-  if (G.p.hp <= 0) return { text: '' };
-  const depleted = st.left <= 0;
-  if (!depleted) st.left--;
-  const per = A('per');
-  let rolls = Math.round((2 + rnd(0, 2)) * (1 + per * 0.12) * (G.isNight ? 1.25 : 1) * (depleted ? 0.3 : 1));
+/* ---------- Containers (searching = opening things in the world) ---------- */
+function containerById(id) { return WORLD.containers.find(c => c.id === id) || null; }
+/* nearest container whose tile centre is within r tiles of (x,y) */
+function containerNear(x, y, r) { let best = null, bd = r * r; for (const c of WORLD.containers) { const d = (c.x + 0.5 - x) ** 2 + (c.y + 0.5 - y) ** 2; if (d <= bd) { bd = d; best = c; } } return best; }
+/* 'full' (never searched), 'refilled' (searched long ago, some loot again) or 'empty' */
+function containerState(c) { const d = G.cont[c.id]; if (d == null) return 'full'; return G.day - d >= CONT_REFILL_DAYS ? 'refilled' : 'empty'; }
+/* real seconds to hold E. Perception makes it faster. */
+function searchTime(c) { return +(CONTAINERS[c.kind].t * clamp(1.25 - A('per') * 0.06, 0.55, 1.2)).toFixed(2); }
+/* Opens a container. Returns {loot:[label], empty:bool, story:itemId|null, lore:{title,text}|null, enc:encounter|null}. */
+function searchContainer(c) {
+  const K = CONTAINERS[c.kind], L = LOCS[c.loc] || LOCS.street, st = containerState(c);
+  G.cont[c.id] = G.day; G.stats.searches++;
+  if (c.poi && G.locs[c.poi]) G.locs[c.poi].visited = true;
+  advance(10); tire(2);
+  if (st === 'empty') return { loot: [], empty: true, story: null, lore: null, enc: null };
+  const per = A('per'), pool = (L.loot || []).filter(e => !K.cats || K.cats.includes(ITEMS[e[0]].c));
+  const table = pool.length ? pool : (L.loot || LOCS.street.loot);
+  const rolls = Math.max(1, Math.round(K.r * (1 + per * 0.08) * (st === 'refilled' ? 0.5 : 1) + (chance(0.3) ? 1 : 0)));
   const got = {};
-  for (let i = 0; i < rolls; i++) { const e = wpick(L.loot, x => x[1]); got[e[0]] = (got[e[0]] || 0) + rnd(e[2], e[3]); }
-  if (L.rare && !depleted && chance(0.04 + per * 0.015)) { const r = pick(L.rare); got[r] = (got[r] || 0) + 1; }
-  const out = [];
-  for (const k in got) out.push(give(k, got[k]));
-  // story items
-  const sItem = storyItemHere(poi.type);
-  if (sItem && (st.storyTries = (st.storyTries || 0) + 1) && (st.storyTries >= 2 || chance(0.5))) { out.push(give(sItem, 1)); setFlag('got_' + sItem.replace('radio_', '')); log(`Found the ${itemName(sItem)}!`, 'story'); xp(20); }
-  // lore
+  for (let i = 0; i < rolls; i++) { const e = wpick(table, x => x[1]); got[e[0]] = (got[e[0]] || 0) + rnd(e[2], e[3]); }
+  if (L.rare && st === 'full' && chance(0.025 + per * 0.01)) { const r = pick(L.rare); got[r] = (got[r] || 0) + 1; }
+  const loot = []; for (const k in got) loot.push(give(k, got[k]));
+  let story = storyItemHere(c.loc);
+  if (story) { const tries = G.flags['tries_' + story] = (G.flags['tries_' + story] || 0) + 1; if (tries >= 3 || chance(0.4)) { loot.push(give(story, 1)); setFlag('got_' + story.replace('radio_', '')); log(`Found the ${itemName(story)}!`, 'story'); xp(20); } else story = null; }
   let lore = null; const C = CONTENT_();
   const unread = C.lore.map((l, i) => i).filter(i => !G.loreRead.includes(i));
-  if (unread.length && chance(0.16)) { const i = pick(unread); G.loreRead.push(i); lore = C.lore[i]; journal(lore.title, lore.text); }
-  xp(4); addNoise(1);
-  let text = depleted ? 'This place is picked clean. You scrape together a little.' : pick(['You work through the rooms carefully.', 'You search every drawer and shelf.', 'You move quietly, checking corners.', 'You pry open what you can.']);
-  // encounter
+  if (unread.length && chance(0.1)) { const i = pick(unread); G.loreRead.push(i); lore = C.lore[i]; journal(lore.title, lore.text); }
+  xp(2); addNoise(0.3);
   let enc = null;
-  const p = 0.14 + L.danger * 0.05 + (G.isNight ? 0.08 : 0) + G.noise * 0.02;
-  if (chance(p)) enc = pickEncounter(poi.type);
-  return { text, loot: out.filter(Boolean), lore, enc };
+  if (chance(0.04 + (L.danger || 0) * 0.015 + (G.isNight ? 0.03 : 0) + G.noise * 0.01)) enc = pickEncounter(c.loc);
+  if (G.stats.searches === 1) hintOnce('first_loot', 'Loot goes in your pack. Bring it home to the bunker to store and build.');
+  return { loot: loot.filter(Boolean), empty: false, story, lore, enc };
 }
 function storyItemHere(type) {
-  const L = LOCS[type]; if (!L.story) return null;
+  const L = LOCS[type]; if (!L || !L.story) return null;
   for (const it of L.story) {
     if (has(it) || G.store[it] || G.pack[it]) continue;
     if (it.startsWith('radio_') && G.flags.q_radio && !G.flags.radio_built && !(it === 'radio_coil' && G.flags.got_coil) && !(it === 'radio_cell' && G.flags.got_cell) && !(it === 'radio_antenna' && G.flags.got_antenna)) return it;
@@ -448,7 +561,20 @@ function sleep() {
   heal(8 + b * 5); addMorale(b ? 2 : -2);
   log(`You slept ${hours} hours${b ? ' in a bunk' : ' on cold concrete'}.`);
 }
+/* Can the player sleep now? Not on a horde night before the wave is over. */
+function canSleep() { if (G.hordeNight && !G.hordeResult && (G.hour >= 18 || G.hour < 6)) return { ok: false, why: 'The horde is coming. Hold the yard first.' }; return { ok: true }; }
 function restOutside() { advance(60); rest(12 + Math.round(A('end'))); return chance(0.12 + (G.isNight ? 0.1 : 0)) ? pickEncounter(districtAt(G.p.x, G.p.y)) : null; }
+/* Called by main loop as real time passes outside the shelter. Returns an encounter or null. */
+function fieldEncounterRoll(dtSec) {
+  if (G.atShelter) return null;
+  G.encTimer -= dtSec * (1 + G.noise * 0.08);
+  if (G.encTimer > 0) return null;
+  G.encTimer = rnd(80, 140);
+  if (!chance(0.7)) return null;
+  const e = pickEncounter(districtAt(G.p.x, G.p.y));
+  if (e) G.stats.encounters++;
+  return e;
+}
 
 /* ---------- Encounters ---------- */
 function allEncounters() { return [].concat(window.ENCOUNTERS || [], window.ARC_ENCOUNTERS || [], CONTENT_().shelterEvents || []); }
@@ -478,67 +604,58 @@ function pickEncounter(type) {
 function encById(id) { return allEncounters().find(e => e.id === id); }
 function checkChance(c) { return clamp(0.6 + (A(c.attr) - c.diff) * 0.09, 0.05, 0.95); }
 
-/* ---------- Fights (quick, narrated) ---------- */
-function fightOdds(ids, mode) {
-  const w = weaponOf(); const ranged = w && ITEMS[w].ammo;
-  let P = (w ? avgDmg(w) : 2.5) + A('str') * (ranged ? 0.3 : 1) + A('agi') * 0.7 + G.p.level + (G.p.sta / 30) + (G.p.hp / 25);
-  if (mode === 'shoot') P *= 1.7;
-  const E = ids.reduce((s, id) => s + ENEMIES[id].hp / 3 + (ENEMIES[id].dmg[0] + ENEMIES[id].dmg[1]) / 2, 0);
-  return clamp(P / (P + E * 0.9), 0.1, 0.95);
-}
-function fleeChance(ids) { const worst = Math.min(...ids.map(i => ENEMIES[i].flee)); return clamp(worst * (0.55 + A('agi') * 0.06) * (G.p.sta > 15 ? 1 : 0.6), 0.05, 0.95); }
-function resolveFight(ids, mode) {
-  const lines = [], foes = ids.map(id => ({ id, e: ENEMIES[id], hp: ENEMIES[id].hp }));
-  let w = weaponOf(); const it = w ? ITEMS[w] : null;
-  const shooting = mode === 'shoot' && it && it.ammo && G.pack[it.ammo];
-  const meleeW = shooting ? null : (it && !it.ammo ? w : (Object.keys(G.pack).filter(k => ITEMS[k].c === 'weapon' && !ITEMS[k].ammo).sort((a, b) => avgDmg(b) - avgDmg(a))[0] || null));
-  const armor = G.pack.vest ? 3 : 0;
-  let dmgTaken = 0, bitten = false, gassed = false, kills = 0, round = 0;
-  while (foes.some(f => f.hp > 0) && round < 14 && G.p.hp - dmgTaken > 0) {
-    round++;
-    const target = foes.find(f => f.hp > 0);
-    const hitC = 0.72 + A('agi') * 0.02;
-    if (chance(hitC)) {
-      let d;
-      if (shooting) { d = rnd(it.dmg[0], it.dmg[1]); G.pack[it.ammo]--; if (!G.pack[it.ammo]) delete G.pack[it.ammo]; addNoise(it.noise); }
-      else { const md = meleeW ? ITEMS[meleeW].dmg : [2, 4]; d = rnd(md[0], md[1]) + Math.round(A('str') * 0.6); if (G.p.sta < 5) d = Math.round(d * 0.6); }
-      target.hp -= d;
-      const wn = shooting ? it.n : (meleeW ? ITEMS[meleeW].n : 'bare fists');
-      if (target.hp <= 0) {
-        kills++; lines.push(`You drop the ${target.e.n} with your ${wn}.`);
-        if (target.e.gas && !shooting) { gassed = true; lines.push('It bursts. Green gas fills your lungs.'); }
-        if (shooting && it.aoe) { const t2 = foes.find(f => f.hp > 0); if (t2) { t2.hp -= Math.round(d / 2); lines.push(`The spread tears into the ${t2.e.n} behind it.`); if (t2.hp <= 0) kills++; } }
-      } else if (round <= 3) lines.push(`You hit the ${target.e.n} with your ${wn}.`);
-      if (!shooting && !G.pack.ammo) tire(3); else tire(2);
-    } else if (round <= 4) lines.push(`You swing and miss the ${target.e.n}.`);
-    // screamer
-    const sc = foes.find(f => f.hp > 0 && f.e.scream);
-    if (sc && chance(0.35) && foes.length < 7) { foes.push({ id: 'walker', e: ENEMIES.walker, hp: ENEMIES.walker.hp }); lines.push('The Screamer shrieks. Another walker stumbles in.'); addNoise(2); }
-    // enemies attack
-    for (const f of foes) {
-      if (f.hp <= 0) continue;
-      if (chance(f.e.acc - A('agi') * 0.025)) {
-        const d = Math.max(1, rnd(f.e.dmg[0], f.e.dmg[1]) - armor); dmgTaken += d;
-        if (f.e.z && chance(G.pack.vest ? 0.05 : 0.1)) bitten = true;
-      }
-    }
+/* ---------- Real-time combat rules (combat.js does movement and hit detection; numbers live here) ---------- */
+/* The weapon profile the player is using right now (falls back to fists, and to melee when a gun has no ammo). */
+function weaponProfile() {
+  const w = weaponOf(), it = w ? ITEMS[w] : null;
+  if (it && it.ammo && !G.pack[it.ammo]) {
+    const melee = Object.keys(G.pack).filter(k => ITEMS[k].c === 'weapon' && !ITEMS[k].ammo).sort((a, b) => avgDmg(b) - avgDmg(a))[0];
+    return melee ? Object.assign({ id: melee, ranged: false }, ITEMS[melee]) : Object.assign({ id: null, ranged: false }, WEAPON_FISTS);
   }
-  const won = !foes.some(f => f.hp > 0);
-  G.stats.kills += kills;
-  lines.push(won ? `It's over. You took ${dmgTaken} damage.` : `You are overwhelmed.`);
-  hurt(dmgTaken, 'a fight with ' + ENEMIES[ids[0]].n.toLowerCase() + 's');
-  if (G.p.hp <= 0) return { won: false, lines, dead: true };
-  if (!won) { const extra = ''; lines.push('You break away and run, bleeding.'); setStatus('bleeding', 4); }
-  if (dmgTaken > 20 && chance(0.4)) { setStatus('bleeding', 5); lines.push('You are bleeding.'); }
-  if (gassed) setStatus('sick', 16);
-  if (bitten) lines.push(bite());
-  const loot = [];
-  if (won) {
-    const xpg = foes.reduce((s, f) => s + f.e.xp, 0); xp(xpg);
-    for (const f of foes) if (f.e.loot && chance(0.7)) { const l = pick(f.e.loot); loot.push(give(l[0], rnd(1, l[1]))); }
-  }
-  return { won, lines, loot: loot.filter(Boolean) };
+  if (!it) return Object.assign({ id: null, ranged: false }, WEAPON_FISTS);
+  return Object.assign({ id: w, ranged: !!it.ammo }, it);
 }
+/* Damage the player deals with one hit (melee adds STR; exhausted swings are weak). */
+function playerHitDamage(prof) {
+  let d = rnd(prof.dmg[0], prof.dmg[1]);
+  if (!prof.ranged) { d += Math.round(A('str') * 0.6); if (G.p.sta < 5) d = Math.round(d * 0.6); }
+  return d;
+}
+/* Spend one round of ammo for the current gun; false if none. Adds noise. */
+function useAmmo(prof) { if (!prof.ranged) return true; if (!take(prof.ammo, 1)) return false; addNoise(prof.noise || 0); return true; }
+/* Player movement speed in tiles/s. mode: 'walk' | 'sprint' | 'crouch'. */
+function moveSpeed(mode) {
+  let s = 3.0 + A('agi') * 0.08;
+  if (mode === 'sprint') s *= 1.7; else if (mode === 'crouch') s *= 0.5;
+  if (packWeight() > carryCap()) s *= 0.6;
+  if (G.p.status.injured) s *= 0.85;
+  if (mode === 'sprint' && G.pack.boots) s *= 1.05;
+  return s;
+}
+/* Stamina per second while sprinting (boots help); dodge roll cost. */
+function sprintCost() { return G.pack.boots ? 7 : 10; }
+const DODGE_COST = 15;
+/* An enemy hit lands on the player. Applies armour, bites, bleeding. Returns damage dealt. */
+function enemyHitsPlayer(enemyId, mult) {
+  const e = ENEMIES[enemyId]; let d = rnd(e.dmg[0], e.dmg[1]) * (mult || 1) - (G.pack.vest ? 3 : 0);
+  d = Math.max(1, Math.round(d));
+  hurt(d, 'a ' + e.n.toLowerCase());
+  if (e.z && chance(G.pack.vest ? 0.04 : 0.08)) Hooks.toast && Hooks.toast(bite(), 'bad');
+  if (d >= 10 && chance(0.25)) setStatus('bleeding', 4);
+  return d;
+}
+/* An enemy died. Counts the kill, awards XP, returns drops [{id,qty}] to spawn as pickups. */
+function onKill(enemyId) {
+  const e = ENEMIES[enemyId]; G.stats.kills++; xp(e.xp);
+  const drops = [];
+  if (e.loot && chance(0.8)) { const l = pick(e.loot); drops.push({ id: l[0], qty: rnd(1, l[1]) }); }
+  if (e.drop && chance(enemyId === 'warden' ? 1 : 0.5)) { const w = pick(e.drop); drops.push({ id: w, qty: 1 }); if (ITEMS[w].ammo) drops.push({ id: ITEMS[w].ammo, qty: rnd(2, 6) }); }
+  if (e.z && chance(0.22)) drops.push({ id: pick(['cloth', 'cloth', 'cigs', 'snack', 'bandage', 'scrap', 'batteries']), qty: 1 });
+  if (e.gas) drops.gas = true;
+  return drops;
+}
+/* Pick up a drop. Returns the toast label. */
+function pickup(id, qty) { return give(id, qty); }
 
 /* ---------- Trader ---------- */
 function makeTrader() {
@@ -550,11 +667,11 @@ function buyPrice(id) { return Math.max(1, Math.ceil(ITEMS[id].v * (1.6 - A('cha
 function sellPrice(id) { return Math.max(1, Math.floor(ITEMS[id].v * (0.35 + A('cha') * 0.04))); }
 
 /* ---------- Story ---------- */
-function queueScene(id) { if (G.seenScenes[id]) return; G.seenScenes[id] = true; Hooks.queue({ type: 'scene', id }); }
+function queueScene(id) { if (G.seenScenes[id]) return; G.seenScenes[id] = true; const sc = CONTENT_().story[id]; if (sc) journal(sc.title, storyText(sc)); Hooks.queue({ type: 'scene', id }); }
 function storyCheck() {
   const f = G.flags;
   if ((G.day >= 2 || (G.day === 1 && G.hour >= 20)) && !G.seenScenes.first_night) queueScene('first_night');
-  if (G.seenScenes.first_night && G.day >= 2 && !f.q_radio) { f.q_radio = true; queueScene('radio_found'); journal('The dead radio', 'The old shortwave needs a coil (Tower Blocks or Volt & Co.), an antenna (KVAL Radio Tower) and a power cell (Precinct 9 or Volt & Co.).'); }
+  if (G.seenScenes.first_night && G.day >= 2 && !f.q_radio) { f.q_radio = true; unlock('radio'); queueScene('radio_found'); journal('The dead radio', 'The old shortwave needs a coil (Tower Blocks or Volt & Co.), an antenna (KVAL Radio Tower) and a power cell (Precinct 9 or Volt & Co.).'); }
   if (G.day >= 5 && !f.tollmen) { f.tollmen = true; queueScene('tollmen_demand'); }
   if (f.radio_built && !f.q_bus && G.survivors.length >= 4 && bl('walls') >= 1) {
     f.q_bus = true; G.hordeDay = G.day + 12; queueScene('haven_coords');
@@ -563,35 +680,87 @@ function storyCheck() {
   if (f.q_bus && G.hordeDay - G.day <= 4 && !G.seenScenes.horde_warning) queueScene('horde_warning');
   if (f.q_bus && G.day >= G.hordeDay && !f.final) { f.final = true; Hooks.queue({ type: 'final' }); }
 }
-function objective() {
-  const f = G.flags;
+const P_ = p => p ? { x: p.x + 0.5, y: p.y + 0.5 } : null;
+/* Current goal: {text, target:{x,y}|null} in tile coords. One short line; the UI draws a marker + compass arrow. */
+function objectiveInfo() {
+  const f = G.flags, home = P_(WORLD.hatch), me = G.p;
+  const near = type => P_(nearestPoi(type, me.x, me.y));
+  if (G.hordeNight && !G.hordeResult && !G.atShelter && G.hour >= 12) return { text: 'Horde tonight. Get back to the bunker.', target: home };
+  // first-day chain: loot -> bring it home -> bunks -> rain collector
+  if (G.stats.searches === 0) return { text: 'Find water. Search FreshMart.', target: near('supermarket') };
+  if (!bl('bed')) {
+    if (!G.atShelter && !isUnlocked('build')) return { text: 'Bring your loot home to the bunker.', target: home };
+    return { text: 'Build Bunks in the bunker yard.', target: slotCentre('bed') };
+  }
+  if (!bl('rain')) return { text: 'Build a Rain Collector.', target: slotCentre('rain') };
   if (f.q_bus) {
     const left = G.hordeDay - G.day;
-    if (f.bus_ready) return `The bus is ready. ${left} days until the horde. Leave from the shelter, or prepare to stand.`;
-    const need = [];
-    if (!has('engine_parts') && !G.store.engine_parts && !G.pack.engine_parts) need.push('Engine Parts (Bus Depot)');
-    if (!G.pack.haven_map && !G.store.haven_map) need.push('Route Map (Checkpoint Echo)');
-    if (count('fuel') < 6) need.push(`Fuel ${count('fuel')}/6`);
-    return `Horde in ${left} days. ` + (need.length ? 'Find: ' + need.join(', ') : 'Bring parts and fuel to the Bus Depot to repair the bus.');
+    if (f.bus_ready) return { text: `The bus is ready. Horde in ${left} days.`, target: home };
+    if (!has('engine_parts') && !G.store.engine_parts && !G.pack.engine_parts) return { text: `Find Engine Parts at the Bus Depot (${left}d).`, target: near('depot') };
+    if (!G.pack.haven_map && !G.store.haven_map) return { text: `Find the route map at Checkpoint Echo (${left}d).`, target: near('military') };
+    if (count('fuel') < 6) return { text: `Gather Fuel ${count('fuel')}/6 (${left}d).`, target: near('gas') };
+    return { text: 'Bring parts and fuel to the bus at the depot.', target: P_(WORLD.bus) };
   }
-  if (f.radio_built) return `Haven wants proof. Survivors ${G.survivors.length}/4, Barricades ${bl('walls')}/1.`;
+  if (f.radio_built) {
+    if (G.survivors.length < 4) return { text: `Haven wants a community. Survivors ${G.survivors.length}/4.`, target: null };
+    return { text: 'Haven wants walls. Build Barricades.', target: slotCentre('walls') };
+  }
   if (f.q_radio) {
-    const parts = ['radio_coil', 'radio_antenna', 'radio_cell'].filter(k => !G.pack[k] && !G.store[k]).map(itemName);
-    return parts.length ? `Repair the radio. Missing: ${parts.join(', ')}.` : 'You have every part. Build the Shortwave Radio at the shelter.';
+    const need = ['radio_coil', 'radio_antenna', 'radio_cell'].filter(k => !G.pack[k] && !G.store[k]);
+    if (!need.length) return { text: 'Build the Shortwave Radio at the bunker.', target: slotCentre('radio') };
+    const where = { radio_coil: ['apartments', 'electronics'], radio_antenna: ['radiotower'], radio_cell: ['police', 'electronics'] }[need[0]];
+    const tgt = where.map(near).sort((a, b) => ((a.x - me.x) ** 2 + (a.y - me.y) ** 2) - ((b.x - me.x) ** 2 + (b.y - me.y) ** 2))[0];
+    return { text: `Find the ${itemName(need[0])}.`, target: tgt };
   }
-  if (!bl('bed') || !bl('rain')) return 'Survive. Scavenge nearby, then build Bunks and a Rain Collector at the bunker.';
-  return 'Survive the night. Scavenge, build, find people.';
+  if (G.hour >= 19 || G.hour < 6) return { text: 'Night. Sleep in the bunker.', target: home };
+  return { text: 'Scavenge, build, find people.', target: null };
 }
+function objective() { return objectiveInfo().text; }
+/* centre of a shelter build slot in tile coords (walls: the yard gate) */
+function slotCentre(k) {
+  const r = WORLD.shelterRect;
+  if (k === 'walls') return { x: (r.x0 + r.x1 + 1) / 2, y: r.y1 + 0.5 };
+  const s = BUILD_SLOTS[k]; return s ? { x: r.x0 + s[0] + s[2] / 2, y: r.y0 + s[1] + s[3] / 2 } : P_(WORLD.hatch);
+}
+/* Can the bus be repaired here and now (player near WORLD.bus)? */
+function canRepairBus() { return !!(G.flags.q_bus && !G.flags.bus_ready && G.pack.engine_parts && (G.pack.fuel || 0) >= 6); }
 function repairBus() {
-  if (!G.pack.engine_parts || (G.pack.fuel || 0) < 6) return false;
+  if (!canRepairBus()) return false;
   take('engine_parts', 1); take('fuel', 6); setFlag('bus_ready'); advance(240); xp(40);
   queueScene('bus_ready'); return true;
 }
 
+/* ---------- Endings ---------- */
+function allyDiff() { const f = G.flags; return Math.max(3, 7 - (f.warden_secret ? 2 : 0) - (f.warden_trust ? 2 : 0) - (f.tollmen_secret ? 1 : 0) - Math.min(3, f.tribute || 0) - (G.survivors.length >= 6 ? 1 : 0)); }
+function standNeed() { return 60 + G.day * 2.5; }
+/* Options for the last night: [{id,label,ok,note}] */
+function finalOptions() {
+  const f = G.flags, D = defense() + G.survivors.length * 4;
+  const out = [
+    { id: 'bus', label: 'Load everyone on the bus. Drive north to Haven.', ok: !!(f.bus_ready && has('haven_map')), note: f.bus_ready && has('haven_map') ? 'Bus ready' : 'Needs the repaired bus and the route map' },
+    { id: 'stand', label: 'Stay. Hold the bunker against the great horde.', ok: true, note: `Defense ${D} vs ~${Math.round(standNeed())}` },
+    { id: 'ally', label: 'Go to the Warden. Propose an alliance.', ok: !!f.warden_met, note: f.warden_met ? `CHA · ${Math.round(checkChance({ attr: 'cha', diff: allyDiff() }) * 100)}%` : 'You never met the Warden' },
+  ];
+  if (G.day < G.hordeDay) out.push({ id: 'wait', label: 'Not yet. There is still time.', ok: true, note: '' });
+  return out;
+}
+/* Resolve a final choice. Returns an ending id ('end_haven', ...), 'wait', or 'wave' (UI should run the final wave
+   via Hooks.finalWave and then call finishStand(held)). */
+function chooseFinal(id) {
+  if (id === 'wait') { G.flags.final = false; return 'wait'; }
+  if (id === 'bus') return endGame('end_haven');
+  if (id === 'ally') return endGame(chance(checkChance({ attr: 'cha', diff: allyDiff() })) ? 'end_alliance' : 'end_alliance_fail');
+  if (id === 'stand') { if (Hooks.finalWave) return 'wave'; return finishStand(defense() + G.survivors.length * 4 + rnd(-10, 15) >= standNeed()); }
+  return null;
+}
+function finishStand(held) { return endGame(held ? 'end_stand' : 'end_stand_fail'); }
+function endGame(id) { G.endScene = id; G.flags.ended = id; saveGame(true); return id; }
+
 /* ---------- Save / load ---------- */
-const SAVE_KEY = 'deadembers_save_v1';
+const SAVE_KEY = 'deadembers_save_v2', OLD_SAVE_KEY = 'deadembers_save_v1';
 function serialize() { let s = ''; for (let i = 0; i < G._fog.length; i++) s += G._fog[i] ? '1' : '0'; G.fog = s; const o = Object.assign({}, G); delete o._fog; return JSON.stringify(o); }
 function saveGame(silent) { try { localStorage.setItem(SAVE_KEY, serialize()); if (!silent) log('Game saved.', 'good'); return true; } catch (e) { if (!silent) log('Could not save in this browser.', 'bad'); return false; } }
+function hasOldSave() { try { return !localStorage.getItem(SAVE_KEY) && !!localStorage.getItem(OLD_SAVE_KEY); } catch (e) { return false; } }
 function hasSave() { try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; } }
-function loadFrom(str) { G = JSON.parse(str); WORLD = genWorld(G.seed); initFog(); recalc(); }
+function loadFrom(str) { const o = JSON.parse(str); if (!o || o.v !== 2) throw new Error('old save'); G = o; WORLD = genWorld(G.seed); initFog(); recalc(); }
 function loadGame() { try { const s = localStorage.getItem(SAVE_KEY); if (!s) return false; loadFrom(s); return true; } catch (e) { return false; } }
