@@ -1,5 +1,7 @@
 # Next session prompt: Dead Embers 3D
 
+> **Status (2026-10-05): done.** The 3D rebuild described below shipped to `main`. For the current layout, contracts and checks, read `README.md` and `src/API.md` (§4 covers the checks). Keep this file as the design brief; don't run it again as a task.
+
 Copy everything below the line into a new Claude Code session opened in `C:\Users\computerh\Desktop\Dead Embers`.
 
 ---
