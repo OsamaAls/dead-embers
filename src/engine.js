@@ -171,7 +171,7 @@ function newGame(name, bgId, attrs) {
   G = {
     v: 2, seed, day: 1, hour: 7, minute: 0,
     p: { name, bg: bgId, attr: a, hp: 100, maxHp: 100, sta: 0, maxSta: 0, hunger: 80, thirst: 70, morale: 60, inf: 0, xp: 0, level: 1, points: 0, weapon: null, x: 0, y: 0, face: 0, status: {} },
-    pack: {}, store: { canned: 2, water: 2, wood: 3 },
+    pack: {}, store: { canned: 2, water: 2, wood: 6, cloth: 3 },
     survivors: [], buildings: {}, flags: {}, seenEnc: {}, seenScenes: {}, journal: [], loreRead: [], log: [],
     locs: {}, cont: {}, unlocks: {}, hints: {}, fog: '', noise: 0, encTimer: rnd(70, 110), nextId: 1, hordeDay: 0, hordeNight: false, hordeResult: null,
     stats: { kills: 0, searches: 0, encounters: 0, recruited: 0 },
@@ -691,9 +691,9 @@ function objectiveInfo() {
   if (G.stats.searches === 0) return { text: 'Find water. Search FreshMart.', target: near('supermarket') };
   if (!bl('bed')) {
     if (!G.atShelter && !isUnlocked('build')) return { text: 'Bring your loot home to the bunker.', target: home };
-    return { text: 'Build Bunks in the bunker yard.', target: slotCentre('bed') };
+    return buildGoal('bed', 'Build Bunks in the bunker yard.');
   }
-  if (!bl('rain')) return { text: 'Build a Rain Collector.', target: slotCentre('rain') };
+  if (!bl('rain')) return buildGoal('rain', 'Build a Rain Collector.');
   if (f.q_bus) {
     const left = G.hordeDay - G.day;
     if (f.bus_ready) return { text: `The bus is ready. Horde in ${left} days.`, target: home };
@@ -714,12 +714,23 @@ function objectiveInfo() {
     return { text: `Find the ${itemName(need[0])}.`, target: tgt };
   }
   if (G.hour >= 19 || G.hour < 6) return { text: 'Night. Sleep in the bunker.', target: home };
-  const pois = Object.keys(WORLD.pois).map(k => Object.assign({ key: k }, WORLD.pois[k])).filter(q => G.locs[q.key] && !G.locs[q.key].visited && LOCS[q.type] && q.type !== 'shelter' && !q.outdoor);
-  pois.sort((a, b) => ((a.x - me.x) ** 2 + (a.y - me.y) ** 2) - ((b.x - me.x) ** 2 + (b.y - me.y) ** 2));
-  if (pois[0]) return { text: `Scavenge ${pois[0].label || LOCS[pois[0].type].n}.`, target: P_(pois[0]) };
+  const nu = nearestUnvisited();
+  if (nu) return { text: `Scavenge ${nu.label}.`, target: nu };
   return { text: 'Scavenge, build, find people.', target: null };
 }
 function objective() { return objectiveInfo().text; }
+/* "Build X" when affordable, otherwise name what is missing and point at the nearest unvisited building. */
+function buildGoal(k, text) {
+  const c = buildCost(k) || {}, inv = r => (G.pack[r] || 0) + (G.store[r] || 0);
+  const miss = Object.keys(c).filter(r => inv(r) < c[r]).map(r => `${c[r] - inv(r)} ${itemName(r)}`);
+  if (!miss.length) return { text, target: slotCentre(k) };
+  return { text: `${BUILDINGS[k].n} needs ${miss.join(', ')}. Scavenge.`, target: nearestUnvisited() };
+}
+function nearestUnvisited() {
+  const me = G.p; let best = null, bd = Infinity;
+  for (const k in WORLD.pois) { const q = WORLD.pois[k]; if (q.type === 'shelter' || q.outdoor || !G.locs[k] || G.locs[k].visited) continue; const d = (q.x - me.x) ** 2 + (q.y - me.y) ** 2; if (d < bd) { bd = d; best = q; } }
+  return P_(best);
+}
 /* centre of a shelter build slot in tile coords (walls: the yard gate) */
 function slotCentre(k) {
   const r = WORLD.shelterRect;

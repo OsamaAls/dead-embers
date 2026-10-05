@@ -111,7 +111,7 @@ function openContainer(c) {
   if (r.empty) UI.toast('Nothing left.', 'dim');
   for (const l of r.loot) UI.toast(l, /left behind|pack full/.test(l) ? 'warn' : 'loot');
   if (!r.empty && !r.loot.length) UI.toast('Nothing useful.', 'dim');
-  if (r.lore) UI.toast(`Note found: ${r.lore.title} (journal)`, 'story');
+  if (r.lore) UI.toast(r.lore.short ? `${r.lore.title}: ${r.lore.short}` : `Note found: ${r.lore.title} (journal)`, 'story');
   if (r.enc) Game.Q.push({ type: 'enc', enc: r.enc });
 }
 function updateInteraction(dt) {
@@ -165,7 +165,8 @@ function frame(t) {
     if (!blocked && !Game.dead) {
       Combat.update(dt);
       Moments.update(dt);
-      G.atShelter = inShelter(G.p.x, G.p.y);
+      const wasHome = G.atShelter; G.atShelter = inShelter(G.p.x, G.p.y);
+      Game.unlockT = (Game.unlockT || 0) + dt; if (wasHome !== G.atShelter || Game.unlockT > 2) { Game.unlockT = 0; checkUnlocks(); }
       Game.timeAcc += dt * TIME_SCALE;
       if (Game.timeAcc >= 1) { const m = Math.floor(Game.timeAcc); Game.timeAcc -= m; advance(m); }
       revealAround(G.p.x, G.p.y, 7);
