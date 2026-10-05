@@ -13,7 +13,7 @@ window.path = (tx, ty) => { const sx = Math.floor(G.p.x), sy = Math.floor(G.p.y)
 window.goto = (tx, ty, near, maxS) => { const pts = path(tx, ty); if (!pts) return 'nopath'; pts.push([tx, ty]); return go(pts, near || 0.5, maxS || 60); };
 window.clearFoes = () => { for (const e of Combat.enemies.slice()) Combat.despawn && Combat.despawn(e); };
 window.fightBot = (ids, gun, maxS) => { if (ids) { clearFoes(); window.__won = 0; window.__lost = 0; fight(ids, { onWin: () => { __won = 1; return 'Won.'; }, onFlee: () => { __lost = 'flee'; return ''; } }); } const cv = document.querySelector('#view canvas'); let swings = 0, minHp = G.p.hp;
-  const t = sim(maxS || 40, i => { if (ids && (__won || __lost)) return 'stop'; minHp = Math.min(minHp, G.p.hp); if (UI.blocking()) { skipDlg(); return; } const p = G.p; let b = null, bd = 99; for (const e of Combat.enemies) { if (e.dead) continue; const d = Math.hypot(e.x - p.x, e.y - p.y); if (d < bd) { bd = d; b = e; } } if (!b) return ids ? undefined : 'stop'; const s = R.tileToScreen(b.x, b.y, 1); INPUT.aimX = s.x; INPUT.aimY = s.y;
+  const t = sim(maxS || 40, i => { if (ids && (__won || __lost)) return 'stop'; minHp = Math.min(minHp, G.p.hp); if (UI.blocking()) { skipDlg(); return; } const p = G.p; let b = null, bd = 99; for (const e of Combat.enemies) { if (e.dead) continue; const d = Math.hypot(e.x - p.x, e.y - p.y); if (d < bd) { bd = d; b = e; } } if (!b) return ids ? undefined : 'stop'; const s = R.tileToScreen(b.x, b.y, 1); INPUT.aimX = s.x; INPUT.aimY = s.y; INPUT.mouseAim = true;
     const want = gun ? 4.5 : 1.0; if (bd > want + 0.3) { INPUT.mx = (b.x - p.x) / bd; INPUT.my = (b.y - p.y) / bd; } else { INPUT.mx = INPUT.my = 0; }
     if (i % 4 === 0 && bd < (gun ? 7 : 1.7)) { swings++; if (gun) { cv.dispatchEvent(new PointerEvent('pointerdown', { clientX: s.x, clientY: s.y, button: 0, pointerType: 'mouse', bubbles: true })); dispatchEvent(new PointerEvent('pointerup', { clientX: s.x, clientY: s.y, button: 0, pointerType: 'mouse', bubbles: true })); dispatchEvent(new MouseEvent('mouseup')); } else { kd('KeyJ'); ku('KeyJ'); } }
     if (Combat.grabbed && i % 2) { kd('KeyJ'); ku('KeyJ'); } });
@@ -34,7 +34,7 @@ window.defendBot = (maxS) => { const t0 = __T; let minHp = G.p.hp;
     let tx = b.x, ty = b.y; if (!ins(b.x, b.y)) { tx = Math.min(r.x1 - 0.7, Math.max(r.x0 + 0.7, b.x)); ty = Math.min(r.y1 - 0.7, Math.max(r.y0 + 0.7, b.y)); }
     const want = gun ? 0.4 : 0.3, dm = Math.hypot(tx - p.x, ty - p.y);
     if (dm > want && !(gun && d < 5 && ins(p.x, p.y))) { INPUT.mx = (tx - p.x) / dm; INPUT.my = (ty - p.y) / dm; } else INPUT.mx = INPUT.my = 0;
-    const s = R.tileToScreen(b.x, b.y, 1); if (s.on) { INPUT.aimX = s.x; INPUT.aimY = s.y; } else { INPUT.aimX = INPUT.aimY = null; G.p.face = Math.atan2(b.x - p.x, b.y - p.y); }
+    const s = R.tileToScreen(b.x, b.y, 1); if (s.on) { INPUT.aimX = s.x; INPUT.aimY = s.y; INPUT.mouseAim = true; } else { INPUT.aimX = INPUT.aimY = null; INPUT.mouseAim = false; G.p.face = Math.atan2(b.x - p.x, b.y - p.y); }
     if (i % 3 === 0 && d < (gun ? 8 : 1.8)) INPUT.attackPressed = true;
     if (Combat.grabbed && i % 2) INPUT.attackPressed = true;
     if (gun && !(G.pack.ammo || G.pack.shells) && G.pack.machete) G.p.weapon = 'machete'; });

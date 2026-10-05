@@ -15,8 +15,16 @@
      UI.swapWeapon()                              cycle owned weapons (Q / tap the weapon chip)
      UI.spendPoint(attr)                          spend one attribute point (char panel)
      UI.craft(i)                                  craft RECIPES[i] (shelter panel)
+     UI.lockOn(enemy|null)                        ember chevron + slim HP bar over the locked target (combat calls it when the lock changes)
+     UI.enemyHit(enemy)                           show that enemy's HP bar for ~2 s (also inferred from UI.dmgNum(e.x,e.y,n,'hit'|'crit'))
+     UI.reducedMotion                             true when the player prefers reduced motion (combat should skip screen shake)
+   Input additions (combat consumes the edges and sets them false):
+     INPUT.mouseAim       true while the mouse is in use over the game (moved/clicked); false after ~2.5 s of no mouse movement once a
+                          move/attack key is pressed, and always on touch. When it turns false aimX/aimY become null (no stale cursor).
+     INPUT.cyclePressed   F: next lock-on target.   INPUT.clearLock: Shift+F, drop the lock.   INPUT.throwPressed: G, throw a bottle.
+   Keyboard: every panel, dialogue, title and end screen can be driven with arrows/WASD + E/Enter (+ X drop, 1-6, T trade, Esc).
    Dialogue `lines` may be strings or {who, line} beats. A choice is {label, note, disabled, onPick}. */
-const INPUT = { mx: 0, my: 0, sprint: false, crouch: false, attack: false, interact: false, attackPressed: false, dodgePressed: false, interactPressed: false, aimX: null, aimY: null, touch: false };
+const INPUT = { mx: 0, my: 0, sprint: false, crouch: false, attack: false, interact: false, attackPressed: false, dodgePressed: false, interactPressed: false, aimX: null, aimY: null, touch: false, mouseAim: false, cyclePressed: false, clearLock: false, throwPressed: false };
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -89,9 +97,13 @@ const UI = (() => {
     pr: { t: null, p: null }, mpr: null, prKey: '', hintQ: [], hintOn: false, hintT: 0, bannerT: 0,
     c: {}, dn: [], timer: null, wbars: {}, mmT: 0, fogT: 0, objText: '', joy: null, pinch: {}, crouchT: false,
     atk: { mouse: false, key: false, touch: false }, barMax: 0,
+    nav: {}, mouseT: -99, mx0: null, my0: null, lock: null, ehit: {}, ebars: {}, barLast: null, tsel: 0,
   };
+  const RM = safe0(() => matchMedia('(prefers-reduced-motion: reduce)'), null);
+  function safe0(f, d) { try { return f(); } catch (e) { return d; } }
   const K = {};
   const now = () => performance.now() / 1000;
+  const reducedMotion = () => !!(RM && RM.matches);
   const cl = (v, a, b) => Math.max(a, Math.min(b, v));
   const safe = (f, d) => { try { return f(); } catch (e) { return d; } };
   const has3D = () => typeof R !== 'undefined' && R && R.camera && R.renderer && typeof R.tileToScreen === 'function';
@@ -114,16 +126,27 @@ const UI = (() => {
     for (const x of sentences(s)) { if (cur && (cur + ' ' + x).length > max) { out.push(cur); cur = x; } else cur = cur ? cur + ' ' + x : x; }
     if (cur) out.push(cur); return out.length ? out : [''];
   }
+  /* empty states: a small line icon, a short title and one line of help */
+  const EICON = {
+    pack: 'M8 9V7a4 4 0 0 1 8 0v2M5 9h14v11H5zM9 13h6',
+    book: 'M5 4h9a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3zM5 17a3 3 0 0 1 3-3h9',
+    note: 'M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h5',
+    tool: 'M14 6a4 4 0 0 0 5 5l-9 9-3-3 9-9a4 4 0 0 0-2-2zM4 20l3-3',
+    people: 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M16 11a3 3 0 1 0 0-6M17 14a5 5 0 0 1 4 6',
+    food: 'M7 3v8M5 3v5a2 2 0 0 0 4 0V3M7 11v10M16 3c-2 2-2 6 0 8v10',
+  };
+  const emptyState = (ic, title, text) => `<div class="emptyst"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${EICON[ic] || EICON.note}"/></svg><b>${esc(title)}</b><span>${esc(text)}</span></div>`;
   const fmt = s => typeof fmtName === 'function' ? fmtName(s) : String(s || '');
   const pad2 = n => String(n).padStart(2, '0');
   const iname = id => typeof itemName === 'function' ? itemName(id) : id;
 
   /* ---------- blocking / input ---------- */
-  function blocking() { return !!(S.dlg || S.panel || S.mg || S.title || S.end); }
+  function blocking() { return !!(S.dlg || S.panel || S.mg || S.title || S.end || (typeof Cine !== 'undefined' && Cine.active)); }
   function clearInput() {
     for (const k in K) delete K[k];
     INPUT.mx = INPUT.my = 0; INPUT.sprint = INPUT.attack = INPUT.interact = false;
     INPUT.attackPressed = INPUT.dodgePressed = INPUT.interactPressed = false;
+    INPUT.cyclePressed = INPUT.clearLock = INPUT.throwPressed = false;
     INPUT.crouch = S.crouchT; S.atk.mouse = S.atk.key = S.atk.touch = false;
     if (S.joy) endJoy();
   }
@@ -137,25 +160,38 @@ const UI = (() => {
     INPUT.interact = !!K.KeyE || !!S.useHeld;
     INPUT.attack = S.atk.mouse || S.atk.key || S.atk.touch;
   }
-  function setTouch(v) { if (INPUT.touch === v) return; INPUT.touch = v; document.body.classList.toggle('touch', v); S.prKey = ''; }
+  function setTouch(v) {
+    if (INPUT.touch === v) return; INPUT.touch = v; document.body.classList.toggle('touch', v); S.prKey = '';
+    if (v) { INPUT.mouseAim = false; INPUT.aimX = INPUT.aimY = null; setKbd(false); }
+  }
   const running = () => typeof Game !== 'undefined' && Game.running && G && !Game.dead;
+  /* aim mode: the mouse aims while it is in use; keyboard-only play (mouse idle 2.5 s, then a move/attack key) drops the stale cursor */
+  function mouseActive(x, y) { if (INPUT.touch) return; S.mouseT = now(); INPUT.mouseAim = true; INPUT.aimX = x; INPUT.aimY = y; }
+  function idleMouse() { if (INPUT.mouseAim && now() - S.mouseT > 2.5) { INPUT.mouseAim = false; INPUT.aimX = INPUT.aimY = null; } }
+  function setKbd(v) { if (S.kbd === v) return; S.kbd = v; document.body.classList.toggle('kbd', v); }
+  const MOVEK = { KeyW: 1, KeyA: 1, KeyS: 1, KeyD: 1, ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1, KeyJ: 1, Space: 1 };
+  const SCROLLK = { ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1, Space: 1, Tab: 1, PageUp: 1, PageDown: 1, Home: 1, End: 1 };
 
   function onKey(e) {
     SFX.unlock();
-    const c = e.code;
+    const c = e.code, inField = !!(e.target && e.target.tagName === 'INPUT');
+    // never let keys scroll the page or reach the game while something modal is open (a text field keeps its own caret keys)
+    if (SCROLLK[c] && (blocking() || !inField) && !(inField && /^(ArrowLeft|ArrowRight|Space|Home|End)$/.test(c))) e.preventDefault();
+    if (!INPUT.touch || c.startsWith('Arrow') || c === 'Enter') setKbd(true);
     if (S.title) return titleKey(e);
-    if (S.end) { if (c === 'Enter') { const b = $('#end .btn.pri'); b && b.click(); } return; }
-    if (c === 'Tab') e.preventDefault();
+    if (S.end) return endKey(e);
     if (S.mg) { if (S.mg.key) S.mg.key(e); return; }
     if (S.dlg) return dlgKey(e);
     if (S.panel) return panelKey(e);
     if (!running()) return;
-    if (c === 'Space' || c.startsWith('Arrow')) e.preventDefault();
     if (e.repeat && K[c]) return;
     K[c] = true;
+    if (MOVEK[c]) idleMouse();
     if (c === 'KeyE') INPUT.interactPressed = true;
     if (c === 'KeyJ') { INPUT.attackPressed = true; S.atk.key = true; }
     if (c === 'Space') INPUT.dodgePressed = true;
+    if (c === 'KeyF') { if (e.shiftKey) INPUT.clearLock = true; else INPUT.cyclePressed = true; }
+    if (c === 'KeyG') INPUT.throwPressed = true;
     syncMove();
     const open = { KeyI: 'pack', Tab: 'journal', KeyB: 'char', KeyM: 'map', Escape: 'menu' }[c];
     if (open) { delete K[c]; U.open(open); }
@@ -166,7 +202,7 @@ const UI = (() => {
   /* ---------- dom refs + init ---------- */
   const D = {};
   function init() {
-    for (const id of ['hud', 'vig', 'flash', 'dmg', 'obj', 'timer', 'banner', 'mm', 'toasts', 'wpn', 'barri', 'prompt', 'hint', 'wmark', 'ohps', 'chips', 'clock', 'lvl', 'joy', 'dlg', 'pnl-wrap', 'pnl', 'mg', 'end', 'title'])
+    for (const id of ['hud', 'vig', 'flash', 'dmg', 'obj', 'timer', 'banner', 'mm', 'toasts', 'wpn', 'barri', 'prompt', 'hint', 'wmark', 'ohps', 'chips', 'clock', 'lvl', 'joy', 'dlg', 'pnl-wrap', 'pnl', 'mg', 'end', 'title', 'lock'])
       D[id.replace('-', '')] = el(id);
     D.bars = { hp: el('b-hp'), sta: el('b-sta'), food: el('b-food'), water: el('b-water') };
     // damage-number pool
@@ -176,7 +212,15 @@ const UI = (() => {
     addEventListener('blur', () => { clearInput(); });
     document.addEventListener('visibilitychange', () => { if (document.hidden) clearInput(); });
     const view = el('view');
-    addEventListener('mousemove', e => { if (!INPUT.touch) { INPUT.aimX = e.clientX; INPUT.aimY = e.clientY; } });
+    addEventListener('mousemove', e => {
+      if (INPUT.touch || (S.mx0 === e.clientX && S.my0 === e.clientY)) return; // ignore synthetic same-spot moves
+      S.mx0 = e.clientX; S.my0 = e.clientY;
+      if (e.target && e.target.closest && e.target.closest('#view')) mouseActive(e.clientX, e.clientY);
+      else if (INPUT.mouseAim) { INPUT.aimX = e.clientX; INPUT.aimY = e.clientY; }
+    });
+    addEventListener('pointerdown', e => { if (e.pointerType === 'mouse') setKbd(false); }, true);
+    try { RM && RM.addEventListener && RM.addEventListener('change', () => document.body.classList.toggle('rm', !!RM.matches)); } catch (e) { }
+    document.body.classList.toggle('rm', !!(RM && RM.matches));
     addEventListener('mouseup', () => { S.atk.mouse = false; syncMove(); });
     view.addEventListener('contextmenu', e => e.preventDefault());
     view.addEventListener('wheel', e => { e.preventDefault(); if (!blocking() && typeof R !== 'undefined' && R.zoom) R.zoom(e.deltaY); }, { passive: false });
@@ -197,14 +241,14 @@ const UI = (() => {
     D.pnl.addEventListener('click', panelClick);
     D.pnl.addEventListener('change', panelChange);
     restJoy();
-    addEventListener('resize', restJoy);
+    addEventListener('resize', () => { restJoy(); S.c.objh = null; topLayout(); });
   }
 
   /* ---------- touch: floating joystick on the left half, buttons on the right, pinch zoom ---------- */
   function restJoy() { if (S.joy) return; const j = D.joy; if (!j) return; j.style.left = '96px'; j.style.top = (innerHeight - 120) + 'px'; j.classList.remove('on', 'sprint'); j.firstChild.style.transform = ''; }
   function viewDown(e) {
     if (e.pointerType === 'mouse') {
-      if (e.button === 0 && running() && !blocking()) { INPUT.attackPressed = true; S.atk.mouse = true; syncMove(); }
+      if (e.button === 0 && running() && !blocking()) { mouseActive(e.clientX, e.clientY); INPUT.attackPressed = true; S.atk.mouse = true; syncMove(); }
       return;
     }
     if (blocking() || !running()) return;
@@ -256,6 +300,8 @@ const UI = (() => {
     hold('t-use', () => { INPUT.interactPressed = true; S.useHeld = true; INPUT.interact = true; }, () => { S.useHeld = false; INPUT.interact = !!K.KeyE; });
     hold('t-crouch', () => { S.crouchT = !S.crouchT; INPUT.crouch = S.crouchT; el('t-crouch').classList.toggle('lock', S.crouchT); el('t-crouch').style.borderColor = S.crouchT ? 'var(--ember)' : ''; });
     hold('t-pack', () => U.open('pack'));
+    hold('t-tgt', () => { INPUT.cyclePressed = true; });
+    hold('t-throw', () => { INPUT.throwPressed = true; });
   }
 
   /* ---------- HUD ---------- */
@@ -266,7 +312,7 @@ const UI = (() => {
     const fl = node.querySelector('.fl'), gh = node.querySelector('.gh');
     fl.style.transform = `scaleX(${pct})`; if (gh) gh.style.transform = `scaleX(${pct})`;
     node.querySelector('.v').textContent = Math.round(v);
-    node.classList.toggle('low', pct < 0.25);
+    node.classList.toggle('low', pct < 0.3);
   }
   function showHud(v) { if (S.hudShown === v) return; S.hudShown = v; D.hud.hidden = !v; if (!v) { D.prompt.hidden = true; D.vig.style.opacity = 0; } }
   function update(dt) {
@@ -288,7 +334,7 @@ const UI = (() => {
     setText(D.clock.querySelector('.d'), 'day', 'DAY ' + G.day);
     setText(D.clock.querySelector('.tm'), 'tm', pad2(G.hour) + ':' + pad2(Math.floor(G.minute)));
     const ppl = D.clock.querySelector('.ppl');
-    if (safe(() => isUnlocked('people'), false)) { ppl.hidden = false; setText(ppl, 'ppl', G.survivors.length + ' SURV'); } else ppl.hidden = true;
+    if (safe(() => isUnlocked('people'), false)) { ppl.hidden = false; setText(ppl.querySelector('b'), 'ppl', String(G.survivors.length)); } else ppl.hidden = true;
     chips(p);
     objective();
     weaponChip();
@@ -307,10 +353,17 @@ const UI = (() => {
     if (!mmOn && !D.mm.hidden) D.mm.hidden = true;
     S.mmT -= dt; if (mmOn && S.mmT <= 0) { S.mmT = 0.08; drawMinimap(); }
     // char button alert
-    const hb = el('hb-char'); if (hb) { const pts = p.points > 0; if (S.c.pts !== pts) { S.c.pts = pts; hb.style.borderColor = pts ? 'var(--ember)' : ''; hb.style.color = pts ? 'var(--ember2)' : ''; } }
+    const hb = el('hb-char'); if (hb) { const pts = p.points > 0; if (S.c.pts !== pts) { S.c.pts = pts; hb.classList.toggle('pts', pts); } }
+    if (S.c.nomap !== D.mm.hidden) { S.c.nomap = D.mm.hidden; D.toasts.classList.toggle('nomap', D.mm.hidden); }
     // touch use-button readiness
     const useB = el('t-use'); if (useB) { const r = !!(S.mpr || S.pr.t) && /E\s/.test((S.mpr || S.pr).t || ''); if (S.c.useR !== r) { S.c.useR = r; useB.classList.toggle('ready', r); } }
+    // touch: THROW only when there is something to throw
+    const thr = el('t-throw'); if (thr) { const v = !!(G.pack && G.pack.bottle > 0); if (S.c.thr !== v) { S.c.thr = v; thr.hidden = !v; el('touch').classList.toggle('throw', v); } } // THROW takes the PACK slot (pack stays in the top bar)
+    // low HP: pulsing red edge under 30%
+    const low = p.maxHp > 0 && p.hp / p.maxHp < 0.3 && p.hp > 0;
+    if (S.c.low !== low) { S.c.low = low; document.body.classList.toggle('lowhp', low); }
     tickDmg(dt);
+    tickEnemyBars(dt);
     for (const k in S.wbars) S.wbars[k].seen = (S.wbars[k].seen || 0) + 1;
   }
   function chips(p) {
@@ -338,6 +391,7 @@ const UI = (() => {
     if (S.objText !== o.text) {
       S.objText = o.text; D.obj.querySelector('.tx').textContent = o.text || '';
       D.obj.hidden = !o.text; D.obj.classList.remove('new'); void D.obj.offsetWidth; D.obj.classList.add('new');
+      topLayout();
     }
     const t = o.target, ar = D.obj.querySelector('.ar'), ds = D.obj.querySelector('.ds');
     if (!t || !has3D()) { if (S.c.tgt !== 0) { S.c.tgt = 0; ar.style.opacity = 0.25; ds.textContent = ''; D.wmark.hidden = true; } return; }
@@ -369,6 +423,12 @@ const UI = (() => {
     wm.querySelector('.chev').style.setProperty('--r', ang + 'rad');
     setText(wm.querySelector('.dl'), 'wdl', ds.textContent);
   }
+  /* phones: the objective may take two lines; the status block, minimap and toasts sit below whatever height it has */
+  function topLayout() {
+    if (!D.hud) return;
+    const h = D.obj && !D.obj.hidden ? D.obj.offsetHeight : 0, v = (h || 30) + 'px';
+    if (S.c.objh !== v) { S.c.objh = v; D.hud.style.setProperty('--objh', v); }
+  }
   function weaponChip() {
     const w = safe(() => weaponOf(), null), it = w && ITEMS[w];
     const name = it ? it.n : 'Fists';
@@ -384,10 +444,18 @@ const UI = (() => {
   function barricade() {
     const hp = typeof Combat !== 'undefined' ? Combat.barricadeHp : null;
     const on = hp != null && isFinite(hp) && !!((typeof Game !== 'undefined' && Game.wave) || Combat.wave);
-    if (!on) { if (!D.barri.hidden) { D.barri.hidden = true; S.barMax = 0; } return; }
+    if (!on) { if (!D.barri.hidden) { D.barri.hidden = true; S.barMax = 0; S.barLast = null; S.c.barri = null; } return; }
     D.barri.hidden = false; S.barMax = Math.max(S.barMax, hp, Combat.barricadeMax || 0);
     const pct = S.barMax ? cl(hp / S.barMax, 0, 1) : 0, q = Math.round(pct * 100);
-    if (S.c.barri !== q) { S.c.barri = q; D.barri.querySelector('.fl').style.transform = `scaleX(${pct})`; }
+    // a red tick flash whenever the barricade loses HP; the ghost segment shows what was just lost
+    if (S.barLast != null && hp < S.barLast - 0.01) { D.barri.classList.remove('hit'); void D.barri.offsetWidth; D.barri.classList.add('hit'); }
+    S.barLast = hp;
+    if (S.c.barri !== q) {
+      S.c.barri = q; D.barri.querySelector('.fl').style.transform = `scaleX(${pct})`;
+      const gh = D.barri.querySelector('.gh'); if (gh) gh.style.transform = `scaleX(${pct})`;
+      setText(D.barri.querySelector('.pc'), 'barpc', q + '%');
+      D.barri.classList.toggle('low', pct < 0.3);
+    }
   }
   function vignette() {
     if (!G || !D.vig) return;
@@ -412,13 +480,18 @@ const UI = (() => {
     if (S.prKey !== key) {
       S.prKey = key; D.prompt.hidden = false;
       D.prompt.classList.toggle('info', !m);
+      D.prompt.classList.toggle('hold', !!(m && m[1]));
+      // key chip: E on keyboard, USE on touch; the ring around it fills while a hold is in progress
+      const w = INPUT.touch ? 48 : 32, h = 32, sv = D.prompt.querySelector('.key svg'), rc = sv.querySelectorAll('rect');
+      D.prompt.querySelector('.key').style.width = w + 'px';
+      sv.setAttribute('width', w + 8); sv.setAttribute('height', h + 8);
+      rc.forEach(r => { r.setAttribute('width', w + 4); r.setAttribute('height', h + 4); });
       D.prompt.querySelector('.kt').textContent = INPUT.touch ? 'USE' : 'E';
-      D.prompt.querySelector('.kt').style.fontSize = INPUT.touch ? '8.5px' : '';
-      D.prompt.querySelector('.tx').innerHTML = m ? (m[1] ? '<span class="muted mono" style="font-size:11px;letter-spacing:.1em;margin-right:6px">HOLD</span>' : '') + esc(m[2]) : esc(t);
+      D.prompt.querySelector('.tx').innerHTML = m ? (m[1] ? '<span class="hl">Hold</span>' : '') + esc(m[2]) : esc(t);
       S.c.prp = -1;
     }
     const pr = src.p == null ? 0 : cl(src.p, 0, 1), q = Math.round(pr * 60);
-    if (S.c.prp !== q) { S.c.prp = q; D.prompt.querySelector('circle').style.strokeDashoffset = (113.1 * (1 - pr)).toFixed(1); }
+    if (S.c.prp !== q) { S.c.prp = q; D.prompt.querySelector('rect.pg').style.strokeDashoffset = (100 * (1 - pr)).toFixed(1); }
   }
 
   /* ---------- minimap / map ---------- */
@@ -500,6 +573,10 @@ const UI = (() => {
   /* ---------- floating numbers, overhead bars ---------- */
   function dmgNum(x, y, text, cls) {
     if (text == null || text === '' || !D.dmg) return;
+    // combat reports enemy hits as dmgNum(e.x, e.y, n, 'hit'|'crit'): show that enemy's HP bar for a moment
+    if ((cls === 'hit' || cls === 'crit') && typeof Combat !== 'undefined' && Array.isArray(Combat.enemies)) {
+      const e = Combat.enemies.find(q => q && q.x === x && q.y === y); if (e) enemyHit(e);
+    }
     let n = S.dn.find(d => d.t >= 0.9) || S.dn.reduce((a, b) => a.t > b.t ? a : b);
     n.t = 0; n.x = x + (Math.random() - 0.5) * 0.4; n.y = y; n.h = 1.9;
     n.el.className = 'dn ' + (cls || (typeof text === 'number' && text >= 15 ? 'big' : ''));
@@ -515,33 +592,70 @@ const UI = (() => {
       n.el.style.transform = `translate(${pt.x.toFixed(1)}px,${pt.y.toFixed(1)}px) translate(-50%,-50%) scale(${k < 0.12 ? 1.4 - k * 3 : 1})`;
     }
   }
+  /* one overhead bar element: <div class="ohp [cls]"><i></i><b>label</b></div>, placed over tile (x,y) at height h */
+  function makeBar(cls) { const e = document.createElement('div'); e.className = 'ohp' + (cls ? ' ' + cls : ''); e.innerHTML = '<i></i><b></b>'; D.ohps.appendChild(e); return { el: e }; }
+  function placeBar(b, x, y, h, frac, label) {
+    const pt = R.tileToScreen(x, y, h);
+    b.el.style.transform = `translate(${pt.x.toFixed(1)}px,${pt.y.toFixed(1)}px)`;
+    if (b.on !== pt.on) { b.on = pt.on; b.el.style.display = pt.on ? '' : 'none'; }
+    const f = frac == null ? 1 : cl(frac, 0, 1), q = Math.round(f * 200);
+    if (b.q !== q) { b.q = q; const i = b.el.firstChild; i.style.transform = `scaleX(${f})`; b.el.classList.toggle('lo', frac != null && f < 0.35); }
+    if (b.label !== label) { b.label = label; b.el.lastChild.textContent = label || ''; }
+  }
   function worldBar(key, x, y, frac, label) {
     let b = S.wbars[key];
     if (x == null) { if (b) { b.el.remove(); delete S.wbars[key]; } return; }
-    if (!b) { const e = document.createElement('div'); e.className = 'ohp'; e.innerHTML = '<i></i><b></b>'; D.ohps.appendChild(e); b = S.wbars[key] = { el: e }; }
+    if (!b) b = S.wbars[key] = makeBar('');
     if (!has3D()) return;
-    const pt = R.tileToScreen(x, y, 2.3);
-    b.el.style.transform = `translate(${pt.x.toFixed(1)}px,${pt.y.toFixed(1)}px)`;
-    b.el.style.display = pt.on ? '' : 'none';
-    const i = b.el.firstChild; i.style.transform = `scaleX(${frac == null ? 1 : cl(frac, 0, 1)})`; i.style.background = frac != null && frac < 0.35 ? 'var(--blood)' : '';
-    if (b.label !== label) { b.label = label; b.el.lastChild.textContent = label || ''; }
+    placeBar(b, x, y, 2.3, frac, label);
+  }
+  /* lock-on chevron + enemy HP bars (locked target always; any enemy for ~2 s after a hit) */
+  function lockOn(e) { S.lock = e && !e.dead ? e : null; }
+  function enemyHit(e) { if (!e || e.uid == null) return; S.ehit[e.uid] = { e, t: 2.2 }; }
+  function tickEnemyBars(dt) {
+    const show = {};
+    if (S.lock && (S.lock.dead || S.lock.hp <= 0)) S.lock = null;
+    if (S.lock) show[S.lock.uid] = S.lock;
+    for (const k in S.ehit) { const h = S.ehit[k]; h.t -= dt; if (h.t <= 0 || h.e.dead || h.e.hp <= 0) delete S.ehit[k]; else show[k] = h.e; }
+    const ok = has3D() && !blocking() && D.ohps;
+    for (const k in S.ebars) if (!ok || !show[k]) { S.ebars[k].el.remove(); delete S.ebars[k]; }
+    const lk = D.lock;
+    if (!ok) { if (lk && !lk.hidden) lk.hidden = true; return; }
+    for (const k in show) {
+      const e = show[k]; let b = S.ebars[k];
+      if (!b) b = S.ebars[k] = makeBar('ehp');
+      placeBar(b, e.x, e.y, 1.9, e.maxHp ? e.hp / e.maxHp : 1, '');
+      const fade = S.lock === e ? 1 : Math.min(1, (S.ehit[k] ? S.ehit[k].t : 1) / 0.4);
+      if (b.fade !== fade) { b.fade = fade; b.el.style.opacity = fade.toFixed(2); }
+    }
+    if (!lk) return;
+    if (!S.lock) { if (!lk.hidden) lk.hidden = true; return; }
+    const pt = R.tileToScreen(S.lock.x, S.lock.y, 1.9);
+    lk.hidden = !pt.on;
+    lk.style.transform = `translate(${pt.x.toFixed(1)}px,${pt.y.toFixed(1)}px)`;
   }
 
   /* ---------- toasts, hints, banner, flash, level up, unlocks, timer ---------- */
+  /* toasts: at most 3 on screen, a repeat merges into the visible one ("+1 Batteries ×2"), short life (story lines stay longer) */
+  const toastLife = (text, cls) => cls === 'story' ? 5200 + Math.min(2600, text.length * 30) : 2300 + Math.min(1700, text.length * 18);
   function toast(text, cls) {
     if (!text || !D.toasts) return;
     text = String(text);
-    const lastT = D.toasts.lastElementChild;
-    if (lastT && lastT.dataset.t === text && !lastT.classList.contains('out')) {
-      const n = (+lastT.dataset.n || 1) + 1; lastT.dataset.n = n; lastT.textContent = text + '  ×' + n; clearTimeout(lastT._t); lastT._t = setTimeout(() => fade(lastT), 3600); return;
+    const live = [...D.toasts.children].filter(t => !t.classList.contains('out'));
+    const same = live.find(t => t.dataset.t === text);
+    if (same) {
+      const n = (+same.dataset.n || 1) + 1; same.dataset.n = n;
+      same.innerHTML = esc(text) + `<span class="xn">×${n}</span>`;
+      D.toasts.appendChild(same); same.classList.remove('bump'); void same.offsetWidth; same.classList.add('bump');
+      clearTimeout(same._t); same._t = setTimeout(() => fade(same), toastLife(text, cls)); return;
     }
     const d = document.createElement('div'); d.className = 'toast ' + (cls || ''); d.textContent = text; d.dataset.t = text;
     D.toasts.appendChild(d);
-    while (D.toasts.children.length > 4) D.toasts.firstElementChild.remove();
-    d._t = setTimeout(() => fade(d), 3400 + Math.min(2500, text.length * 25));
+    for (let over = live.length + 1 - 3, i = 0; over > 0 && i < live.length; i++, over--) { clearTimeout(live[i]._t); live[i].remove(); }
+    d._t = setTimeout(() => fade(d), toastLife(text, cls));
     if (cls === 'loot') SFX.play('pickup'); else if (cls === 'story') SFX.play('good');
   }
-  function fade(d) { d.classList.add('out'); setTimeout(() => d.remove(), 520); }
+  function fade(d) { d.classList.add('out'); setTimeout(() => d.remove(), 420); }
   /* hints are written for keyboard; on touch name the on-screen buttons instead */
   const TOUCH_WORDS = [[/Click or J to attack\. Space to dodge\./, 'Tap ATTACK. DODGE rolls clear.'], [/Mouse aims\./, 'ATTACK aims at the nearest one.'],
     [/C to crouch\./, 'CROUCH to sneak.'], [/Mash attack/, 'Mash ATTACK'], [/[Hh]old E/g, m => m[0] + 'old USE'], [/\(I\)/, '(PACK)'], [/\(B\)/, '(CHAR)']];
@@ -566,10 +680,10 @@ const UI = (() => {
   }
   function flash(kind) {
     const f = D.flash; if (!f) return;
-    const k = { hurt: ['#b3170c', 0.42, 0.32], hit: ['#ffffff', 0.18, 0.15], heal: ['#6fbf4a', 0.3, 0.5], level: ['#e8742c', 0.45, 0.9], sleep: ['#000000', 1, 1.8] }[kind] || ['#ffffff', 0.2, 0.2];
+    const k = { hurt: ['radial-gradient(ellipse at center,rgba(179,23,12,.28) 35%,rgba(190,20,8,.95) 100%)', 0.85, 0.42], hit: ['#ffffff', 0.18, 0.15], heal: ['#6fbf4a', 0.3, 0.5], level: ['#e8742c', 0.45, 0.9], sleep: ['#000000', 1, 1.8] }[kind] || ['#ffffff', 0.2, 0.2];
     f.style.background = k[0]; f.style.setProperty('--fo', k[1]); f.style.animationDuration = k[2] + 's';
     f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
-    if (kind === 'hurt') { SFX.play('hurt'); if (typeof R !== 'undefined' && R.shake) safe(() => R.shake(0.18)); }
+    if (kind === 'hurt') { SFX.play('hurt'); if (!reducedMotion() && typeof R !== 'undefined' && R.shake) safe(() => R.shake(0.18)); }
   }
   function levelUp() {
     const p = G && G.p; if (!D.lvl) return;
@@ -618,7 +732,8 @@ const UI = (() => {
     s.sel = Math.max(0, ch.findIndex(c => !c.disabled));
     const tag = last && d.tag ? `<span class="tag ${d.tag.ok ? 'ok' : 'no'}">${esc(d.tag.text)}</span>` : '';
     D.dlg.innerHTML = `<div class="who">${esc(who)}</div>${tag}<div class="ln"></div>` +
-      (ch.length ? `<div class="ch">${ch.map((c, i) => `<button data-i="${i}" ${c.disabled ? 'disabled' : ''} class="${i === s.sel ? 'sel' : ''}"><span class="num">${i + 1}</span><span class="lb">${esc(c.label)}</span>${c.note ? `<span class="note">${esc(c.note)}</span>` : ''}</button>`).join('')}</div>`
+      (ch.length ? `<div class="ch${ch.length > 4 ? ' many' : ''}">${ch.map((c, i) => `<button data-i="${i}" ${c.disabled ? 'disabled' : ''} class="${i === s.sel ? 'sel' : ''}"><span class="num">${i + 1}</span><span class="lb">${esc(c.label)}</span>${c.note ? `<span class="note">${esc(c.note)}</span>` : ''}</button>`).join('')}</div>
+          ${ch.length > 1 ? `<div class="kh">↑↓ choose · Enter pick · 1–${Math.min(9, ch.length)}</div>` : ''}`
         : `<div class="nx"><button data-continue>${last ? (d.doneLabel || 'Continue') : 'Next'} ${INPUT.touch ? '' : '<span class="kc">E</span>'}</button></div>`);
     const ln = D.dlg.querySelector('.ln');
     // typewriter
@@ -628,7 +743,10 @@ const UI = (() => {
     const step = () => { if (S.dlg !== s || !s.typing) return; n += 3; draw(); if (n >= full.length) { s.typing = false; draw(); return; } requestAnimationFrame(step); };
     s.finish = () => { s.typing = false; n = full.length; draw(); };
     step();
-    D.dlg.querySelectorAll('.ch button').forEach(b => b.onclick = e => { e.stopPropagation(); pickChoice(+b.dataset.i); });
+    D.dlg.querySelectorAll('.ch button').forEach(b => {
+      b.onclick = e => { e.stopPropagation(); pickChoice(+b.dataset.i); };
+      b.onmouseenter = () => { if (!b.disabled) dlgSel(+b.dataset.i, true); };
+    });
     const nx = D.dlg.querySelector('[data-continue]'); if (nx) nx.onclick = e => { e.stopPropagation(); advance(); };
     ln.onclick = () => advance();
   }
@@ -648,13 +766,18 @@ const UI = (() => {
     if (c.onPick) c.onPick();
   }
   function closeDlg() { S.dlg = null; D.dlg.hidden = true; D.dlg.innerHTML = ''; syncBlock(); }
+  function dlgSel(j, quiet) {
+    const s = S.dlg; if (!s) return; s.sel = j;
+    D.dlg.querySelectorAll('.ch button').forEach((b, k) => { b.classList.toggle('sel', k === j); if (k === j && !quiet) scrollNear(b); });
+  }
   function dlgKey(e) {
     const s = S.dlg, c = e.code, last = s.i === s.pg.length - 1, ch = last ? (s.d.choices || []) : [];
-    if (/^(Digit|Numpad)[1-4]$/.test(c)) { if (ch.length) pickChoice(+c.slice(-1) - 1); else if (s.typing) s.finish(); return; }
-    if (ch.length > 1 && !s.typing && (c === 'ArrowDown' || c === 'KeyS' || c === 'ArrowUp' || c === 'KeyW')) {
-      e.preventDefault(); const dir = (c === 'ArrowDown' || c === 'KeyS') ? 1 : -1; let j = s.sel;
+    if (/^(Digit|Numpad)[1-9]$/.test(c)) { const i = +c.slice(-1) - 1; if (ch.length) { if (i < ch.length) pickChoice(i); } else if (s.typing) s.finish(); return; }
+    if (ch.length > 1 && /^(ArrowDown|KeyS|ArrowUp|KeyW|ArrowLeft|KeyA|ArrowRight|KeyD)$/.test(c)) {
+      e.preventDefault(); if (s.typing) s.finish();
+      const dir = /^(ArrowDown|KeyS|ArrowRight|KeyD)$/.test(c) ? 1 : -1; let j = s.sel;
       for (let k = 0; k < ch.length; k++) { j = (j + dir + ch.length) % ch.length; if (!ch[j].disabled) break; }
-      s.sel = j; D.dlg.querySelectorAll('.ch button').forEach((b, k) => b.classList.toggle('sel', k === j)); return;
+      dlgSel(j); SFX.play('ui'); return;
     }
     if (c === 'KeyE' || c === 'Space' || c === 'Enter' || c === 'NumpadEnter') {
       e.preventDefault(); if (e.repeat) return;
@@ -730,10 +853,10 @@ const UI = (() => {
         label: o.label, note: o.note, disabled: !o.ok,
         onPick: () => {
           const r = chooseFinal(o.id);
-          if (r === 'wait') done('');
-          else if (r === 'wave') { done(''); if (typeof Game !== 'undefined' && Game.finalWave) Game.finalWave(); }
-          else if (r) end(r);
-          else done('');
+          // 'wait' = not yet; a run kind ('wave', 'cure', 'storm', ...) is started by main's Game.finalRun; anything else is an ending id
+          if (r === 'wait' || !r) done('');
+          else if (typeof Game !== 'undefined' && Game.finalRun && Game.finalRun(r)) done('');
+          else end(r);
         },
       })),
     });
@@ -742,6 +865,7 @@ const UI = (() => {
     const sc = CONTENT_().story[id] || { title: id === 'death' ? 'You died' : 'The End', paras: [] };
     const dead = id === 'death' || id === 'end_stand_fail' || id === 'end_alliance_fail';
     const lines = sc.beats && sc.beats.length ? sc.beats.map(b => (b.who ? b.who + ': ' : '') + fmt(b.line)) : (sc.paras || []).slice(0, 4).map(p => firstSentence(fmt(p), 160));
+    const epi = (safe(() => typeof endingEpilogue === 'function' ? endingEpilogue(id) : [], []) || []).filter(Boolean).slice(0, 5).map(l => fmt(String(l)));
     if (typeof Moments !== 'undefined' && Moments.abort) safe(() => Moments.abort());
     closeDlg(); closePanel(true); closeMg();
     S.end = true; syncBlock();
@@ -750,9 +874,11 @@ const UI = (() => {
     D.end.className = dead ? 'dead' : '';
     D.end.innerHTML = `<div class="card"><div class="ey">${esc(ey)}</div><h1>${esc(sc.title)}</h1>
       <div class="bt2">${lines.map((l, i) => `<p style="animation-delay:${0.4 + i * 0.7}s">${esc(l)}</p>`).join('')}</div>
+      ${epi.length ? `<ul class="epi">${epi.map((l, i) => `<li style="animation-delay:${0.6 + (lines.length + i) * 0.45}s">${esc(l)}</li>`).join('')}</ul>` : ''}
       <div class="stats"><div><b>${G ? G.day : 0}</b>Days</div><div><b>${st.kills || 0}</b>Kills</div><div><b>${G ? G.survivors.length : 0}</b>Survivors</div><div><b>${G ? G.p.level : 1}</b>Level</div></div>
-      <div class="go"><button class="btn" data-e="title">Title</button><button class="btn pri" data-e="new">New game</button></div></div>`;
-    D.end.hidden = false; showHud(false);
+      <div class="go"><button class="btn" data-e="title">Title</button><button class="btn pri kf" data-e="new">New game</button></div>
+      <div class="kh">←→ choose · Enter</div></div>`;
+    D.end.hidden = false; showHud(false); S.esel = 1; S.endT = now();
     D.end.querySelectorAll('[data-e]').forEach(b => b.onclick = () => {
       SFX.play('ui');
       try { localStorage.removeItem(SAVE_KEY); } catch (e) { }
@@ -777,12 +903,102 @@ const UI = (() => {
     let tab = S.panelTab[S.panel];
     if (tabs && !tabs.some(t => t[0] === tab)) tab = S.panelTab[S.panel] = tabs[0][0];
     const scroll = D.pnl.querySelector('.pb-body'), st = scroll ? scroll.scrollTop : 0, same = S.lastRender === S.panel + tab;
+    const foot = sp.foot ? sp.foot(tab) : '', keys = sp.keys ? sp.keys(tab) : '';
     D.pnl.innerHTML = `<div class="ph"><h2>${esc(typeof sp.title === 'function' ? sp.title() : sp.title)}</h2><span class="sub">${esc(typeof sp.sub === 'function' ? sp.sub() : (sp.sub || ''))}</span><button class="x" data-a="close" aria-label="Close">×</button></div>
       ${tabs && tabs.length > 1 ? `<div class="tabs">${tabs.map(t => `<button data-a="tab:${t[0]}" class="${t[0] === tab ? 'on' : ''}">${esc(t[1])}</button>`).join('')}</div>` : ''}
-      <div class="pb-body">${sp.body(tab)}</div>${sp.foot ? `<div class="ft">${sp.foot(tab)}</div>` : ''}`;
+      <div class="pb-body">${sp.body(tab)}</div>${foot || keys ? `<div class="ft${foot ? '' : ' kh-only'}">${keys ? `<span class="kh">${keys}</span>` : ''}${foot}</div>` : ''}`;
     S.lastRender = S.panel + tab;
     if (same) { const b = D.pnl.querySelector('.pb-body'); if (b) b.scrollTop = st; }
     if (sp.after) sp.after(tab);
+    navApply();
+  }
+  /* footer key legend: kh(['↑↓','select'],['E','use']) */
+  const kh = (...pairs) => pairs.map(([k, t]) => `<b>${k}</b> ${t}`).join('<i>·</i>');
+
+  /* ---------- keyboard selection in panels ----------
+     Selectable rows carry data-row="id" (and data-col="group" for side-by-side lists, data-grp to allow vertical hops between groups).
+     One row per panel+tab is selected (S.nav) and drawn with the shared .kf focus ring. E/Enter = the row's primary action
+     (the row itself when it is a [data-a] button, else its [data-pri] / first [data-a]); data-acts=".sel" points at buttons elsewhere
+     (the pack detail box). 1-6 = the row's actions in order, X = its drop action, data-lr rows take left/right (a <select>). */
+  const navKey = () => S.panel + ':' + (S.panelTab[S.panel] || '');
+  const navRows = () => D.pnl ? [...D.pnl.querySelectorAll('[data-row]')].filter(r => r.getClientRects().length) : [];
+  function navCur(rows) { const n = S.nav[navKey()]; return n ? (rows || navRows()).find(r => r.dataset.row === n.id) || null : null; }
+  function navActs(r) {
+    if (!r) return [];
+    const list = r.dataset.acts ? [...D.pnl.querySelectorAll(r.dataset.acts + ' [data-a]')] : [...r.querySelectorAll('[data-a]')];
+    return list.filter(b => b.getClientRects().length);
+  }
+  function navPrimary(r) {
+    if (r.dataset.acts) return navActs(r).find(b => b.hasAttribute('data-pri')) || null;
+    if (r.matches('[data-a]')) return r;
+    return r.querySelector('[data-pri]') || navActs(r)[0] || null;
+  }
+  function navSet(r, callSel) {
+    const col = r.dataset.col || '', list = navRows().filter(x => (x.dataset.col || '') === col);
+    S.nav[navKey()] = { id: r.dataset.row, col, idx: Math.max(0, list.indexOf(r)) };
+    if (callSel && S.spec && S.spec.onSel) S.spec.onSel(r.dataset.row);
+  }
+  function navApply() {
+    if (!D.pnl) return;
+    D.pnl.querySelectorAll('.kf').forEach(x => x.classList.remove('kf'));
+    D.pnl.querySelectorAll('[data-kn]').forEach(x => x.removeAttribute('data-kn'));
+    const n = S.nav[navKey()]; if (!n) return;
+    const rows = navRows(); let r = rows.find(x => x.dataset.row === n.id);
+    if (!r && rows.length) { // that row is gone (item used up, moved): stay at the same place in the same list
+      const same = rows.filter(x => (x.dataset.col || '') === n.col), list = same.length ? same : rows;
+      r = list[Math.min(n.idx, list.length - 1)];
+      navSet(r, false); if (S.spec && S.spec.onSel) { S.spec.onSel(r.dataset.row); renderPanel(); return; }
+    }
+    if (!r) { delete S.nav[navKey()]; return; }
+    r.classList.add('kf'); scrollNear(r);
+    const acts = navActs(r); if (acts.length > 1 || r.dataset.acts) acts.forEach((b, i) => { if (i < 6) b.setAttribute('data-kn', i + 1); });
+  }
+  /* spatial pick: the nearest element in direction (dx,dy) from cur, preferring the same column/axis */
+  function spatial(list, cur, dx, dy) {
+    const a = cur.getBoundingClientRect(), ax = a.left + a.width / 2, ay = a.top + a.height / 2;
+    let best = null, bs = Infinity;
+    for (const r of list) {
+      if (r === cur) continue;
+      const b = r.getBoundingClientRect(); if (!b.width && !b.height) continue;
+      const bx = b.left + b.width / 2, by = b.top + b.height / 2;
+      if (dy && !(dy > 0 ? b.top >= a.bottom - 4 : b.bottom <= a.top + 4)) continue;
+      if (dx && !(dx > 0 ? b.left >= a.right - 4 : b.right <= a.left + 4)) continue;
+      const along = dx ? (bx - ax) * dx : (by - ay) * dy, off = dx ? Math.abs(by - ay) : Math.abs(bx - ax);
+      const sc = along + off * 2; if (sc < bs) { bs = sc; best = r; }
+    }
+    return best;
+  }
+  function navMove(dx, dy) {
+    const rows = navRows(); if (!rows.length) return false;
+    const cur = navCur(rows);
+    if (!cur) { navSet(dy < 0 ? rows[rows.length - 1] : rows[0], true); navRefresh(); SFX.play('ui'); return true; }
+    let pool = rows;
+    if (dy && cur.dataset.col != null) { // vertical moves stay in the column; hop to another group (barter offer box) only at its end
+      pool = rows.filter(r => r.dataset.col === cur.dataset.col);
+      if (!spatial(pool, cur, dx, dy)) pool = rows.filter(r => (r.dataset.grp || '') !== (cur.dataset.grp || ''));
+    }
+    const best = spatial(pool, cur, dx, dy); if (!best) return false;
+    navSet(best, true); navRefresh(); SFX.play('ui'); return true;
+  }
+  /* a panel that tracks the selection itself (pack detail box) re-renders; others only move the ring */
+  function navRefresh() { if (S.spec && S.spec.onSel) renderPanel(); else navApply(); }
+  function scrollNear(r) {
+    const p = r.closest('.pb-body, .ch, #title'); if (!p || p.scrollHeight <= p.clientHeight) return;
+    const a = r.getBoundingClientRect(), b = p.getBoundingClientRect(), m = 8;
+    if (a.top < b.top + m) p.scrollTop -= b.top + m - a.top; else if (a.bottom > b.bottom - m) p.scrollTop += a.bottom - b.bottom + m;
+  }
+  function switchTab(dx) {
+    const sp = S.spec, tabs = sp && sp.tabs ? sp.tabs() : null; if (!tabs || tabs.length < 2) return false;
+    const i = Math.max(0, tabs.findIndex(t => t[0] === S.panelTab[S.panel]));
+    S.panelTab[S.panel] = tabs[(i + dx + tabs.length) % tabs.length][0]; SFX.play('ui'); renderPanel(); return true;
+  }
+  function lrAdjust(r, dx) {
+    const sel = r.querySelector('select'); if (!sel) return;
+    for (let i = sel.selectedIndex + dx; i >= 0 && i < sel.options.length; i += dx) {
+      if (sel.options[i].disabled) continue;
+      sel.selectedIndex = i; sel.dispatchEvent(new Event('change', { bubbles: true })); return;
+    }
+    SFX.play('bad');
   }
   function closePanel(silent) {
     if (!S.panel) return;
@@ -791,6 +1007,7 @@ const UI = (() => {
     if (!silent && sp && sp.onClose) sp.onClose();
   }
   function panelClick(e) {
+    const row = e.target.closest('[data-row]'); if (row && e.isTrusted) navSet(row, false);
     const b = e.target.closest('[data-a]'); if (!b || b.disabled) return;
     const [a, ...rest] = b.dataset.a.split(':'), arg = rest.join(':');
     if (a === 'close') { SFX.play('ui'); closePanel(); return; }
@@ -799,11 +1016,40 @@ const UI = (() => {
   }
   function panelChange(e) { if (S.spec && S.spec.change) { S.spec.change(e); if (S.panel) renderPanel(); } }
   function panelKey(e) {
-    if (e.repeat) return;
-    const c = e.code, toggle = { pack: 'KeyI', journal: 'Tab', char: 'KeyB', map: 'KeyM', menu: 'Escape', shelter: 'KeyE' }[S.panel];
-    if (c === 'Escape' || c === toggle) { e.preventDefault(); closePanel(); return; }
-    if (S.panel === 'summary' && (c === 'Enter' || c === 'Space' || c === 'KeyE')) { e.preventDefault(); closePanel(); return; }
-    if (S.spec && S.spec.key) S.spec.key(e);
+    const c = e.code, sp = S.spec, arrow = /^(Arrow(Up|Down|Left|Right)|Key[WASD])$/.test(c);
+    if (e.repeat && !arrow) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const toggle = { pack: 'KeyI', journal: 'Tab', char: 'KeyB', map: 'KeyM' }[S.panel];
+    if (c === 'Escape') { e.preventDefault(); if (sp && sp.back && sp.back()) { renderPanel(); SFX.play('ui'); return; } closePanel(); return; }
+    if (c === toggle) { e.preventDefault(); closePanel(); return; }
+    if (S.panel === 'summary' || S.panel === 'map') { if (/^(Enter|NumpadEnter|Space|KeyE)$/.test(c)) { e.preventDefault(); closePanel(); } return; }
+    if (sp && sp.key && sp.key(e) === true) return;
+    const rows = navRows(), cur = navCur(rows);
+    if (/^(ArrowUp|KeyW|ArrowDown|KeyS)$/.test(c)) {
+      e.preventDefault(); const dy = /^(ArrowDown|KeyS)$/.test(c) ? 1 : -1;
+      if (!rows.length) { const b = D.pnl.querySelector('.pb-body'); if (b) b.scrollTop += dy * 90; return; }
+      if (!navMove(0, dy) && dy < 0 && cur && sp.tabs && sp.tabs().length > 1) { delete S.nav[navKey()]; navApply(); SFX.play('ui'); } // up past the top: back to the tabs
+      return;
+    }
+    if (/^(ArrowLeft|KeyA|ArrowRight|KeyD)$/.test(c)) {
+      e.preventDefault(); const dx = /^(ArrowRight|KeyD)$/.test(c) ? 1 : -1;
+      if (cur && cur.dataset.lr && !e.shiftKey) { lrAdjust(cur, dx); return; }
+      if (cur && !e.shiftKey && navMove(dx, 0)) return;
+      switchTab(dx); return;
+    }
+    if (c === 'PageUp' || c === 'PageDown') { e.preventDefault(); switchTab(c === 'PageDown' ? 1 : -1); return; }
+    if (c === 'KeyE' || c === 'Enter' || c === 'NumpadEnter') {
+      e.preventDefault();
+      if (!cur) {
+        if (S.panel === 'shelter' && c === 'KeyE') { closePanel(); return; } // E opened the hatch; E again leaves (until a row is picked)
+        if (rows.length) { navSet(rows[0], true); navRefresh(); SFX.play('ui'); }
+        return;
+      }
+      const b = navPrimary(cur); if (!b || b.disabled) { SFX.play('bad'); return; }
+      b.click(); return;
+    }
+    if (c === 'KeyX') { const b = navActs(cur).find(x => /^drop:/.test(x.dataset.a || '')); if (b && !b.disabled) b.click(); else SFX.play('bad'); return; }
+    if (/^(Digit|Numpad)[1-6]$/.test(c)) { const b = navActs(cur)[+c.slice(-1) - 1]; if (b && !b.disabled) b.click(); else SFX.play('bad'); }
   }
 
   function open(panel) {
@@ -817,7 +1063,7 @@ const UI = (() => {
       case 'journal': return openPanel('journal', journalPanel());
       case 'shelter': return openPanel('shelter', shelterPanel());
       case 'map': return openPanel('map', mapPanel());
-      case 'menu': return openPanel('menu', menuPanel());
+      case 'menu': S.nav['menu:'] = { id: 'resume', col: '', idx: 0 }; return openPanel('menu', menuPanel());
       case 'trader': return barter(null, () => { });
       case 'tollcamp': return tollcamp();
     }
@@ -864,19 +1110,21 @@ const UI = (() => {
         if (sel && !G.pack[sel]) sel = null;
         const w = safe(() => packWeight(), 0), cap = safe(() => carryCap(), 1), over = w > cap;
         let h = `<div class="wbar ${over ? 'over' : ''}"><span>WEIGHT</span><div class="tr"><div class="fl" style="width:${Math.min(100, w / cap * 100)}%"></div></div><span>${w}/${cap} kg${over ? ' · SLOW' : ''}</span></div>`;
-        if (!ids.length) return h + '<p class="empty">Empty. Search cabinets, crates and fridges with E.</p>';
-        h += `<div class="grid">${ids.map(k => `<button class="it c-${ITEMS[k].c} ${k === sel ? 'sel' : ''}" data-a="sel:${k}">${G.p.weapon === k ? '<span class="eq">EQUIPPED</span>' : ''}<span class="n">${esc(ITEMS[k].n)}</span><span class="q">×${G.pack[k]}</span></button>`).join('')}</div>`;
+        if (!ids.length) return h + emptyState('pack', 'Your pack is empty.', INPUT.touch ? 'Hold USE on cabinets, crates and fridges to search them.' : 'Hold E on cabinets, crates and fridges to search them.');
+        h += `<div class="grid">${ids.map(k => `<button class="it c-${ITEMS[k].c} ${k === sel ? 'sel' : ''}" data-a="sel:${k}" data-row="${k}" data-acts=".det">${G.p.weapon === k ? '<span class="eq">EQUIPPED</span>' : ''}<span class="n">${esc(ITEMS[k].n)}</span><span class="q">×${G.pack[k]}</span></button>`).join('')}</div>`;
         if (sel) {
           const it = ITEMS[sel], acts = [];
-          if (it.eat) acts.push(`<button class="btn pri sm" data-a="use:${sel}">${it.c === 'water' ? 'Drink' : 'Eat'}</button>`);
-          if (it.use) acts.push(`<button class="btn pri sm" data-a="use:${sel}">Use</button>`);
-          if (it.c === 'weapon' && G.p.weapon !== sel) acts.push(`<button class="btn pri sm" data-a="equip:${sel}">Equip</button>`);
+          if (it.eat) acts.push(`<button class="btn pri sm" data-a="use:${sel}" data-pri>${it.c === 'water' ? 'Drink' : 'Eat'}</button>`);
+          if (it.use) acts.push(`<button class="btn pri sm" data-a="use:${sel}" ${it.eat ? '' : 'data-pri'}>Use</button>`);
+          if (it.c === 'weapon' && G.p.weapon !== sel) acts.push(`<button class="btn pri sm" data-a="equip:${sel}" data-pri>Equip</button>`);
           if (G.atShelter && it.c !== 'story') acts.push(`<button class="btn sm" data-a="store:${sel}">Store</button>`);
           if (it.c !== 'story') { acts.push(`<button class="btn ghost sm" data-a="drop:${sel}:1">Drop 1</button>`); if (G.pack[sel] > 1) acts.push(`<button class="btn ghost sm" data-a="drop:${sel}:all">Drop all</button>`); }
-          h += `<div class="det"><div class="dn2"><b>${esc(it.n)}</b><div>${esc(itemDesc(sel))}</div></div>${acts.join('')}</div>`;
-        }
+          h += `<div class="det"><div class="dn2"><b>${esc(it.n)}</b><div>${esc(itemDesc(sel))}</div></div><div class="acts">${acts.join('')}</div></div>`;
+        } else h += `<p class="hintline">${INPUT.touch ? 'Tap an item to see what you can do with it.' : 'Pick an item to see what you can do with it.'}</p>`;
         return h;
       },
+      keys: () => kh(['↑↓←→', 'select'], ['E', 'use'], ['X', 'drop'], ['1–4', 'actions'], ['Esc', 'close']),
+      onSel: id => { sel = id; },
       act: (a, arg) => {
         const [id, n] = arg.split(':');
         if (a === 'sel') { sel = sel === id ? null : id; SFX.play('ui'); }
@@ -899,14 +1147,15 @@ const UI = (() => {
         const p = G.p, need = safe(() => xpNeed(), 100);
         let h = `<div class="xp"><span>XP</span><div class="tr"><div class="fl" style="width:${Math.min(100, p.xp / need * 100)}%"></div></div><span>${p.xp}/${need}</span></div>
           <div class="kv"><span>HP <b>${Math.round(p.hp)}/${p.maxHp}</b></span><span>STA <b>${Math.round(p.maxSta)}</b></span><span>CARRY <b>${safe(() => carryCap(), 0)} kg</b></span><span>KILLS <b>${G.stats.kills}</b></span><span>DAY <b>${G.day}</b></span></div>`;
-        h += `<h3>Attributes ${p.points ? `<span class="mono" style="color:var(--ember2);font-size:12px">${p.points} to spend</span>` : ''}</h3>`;
+        h += `<h3>Attributes ${p.points ? `<span class="pts">${p.points} to spend</span>` : ''}</h3>`;
         for (const k in ATTR_LINES) {
           const [ab, n, d] = ATTR_LINES[k], v = p.attr[k] || 0;
-          h += `<div class="attr"><span class="k">${ab}</span><span class="d"><b>${n}</b><span>${d}</span></span><span class="v">${v}</span>${p.points && v < 10 ? `<button data-a="up:${k}" aria-label="Raise ${n}">+</button>` : '<span></span>'}</div>`;
+          h += `<div class="attr" data-row="${k}"><span class="k">${ab}</span><span class="d"><b>${n}</b><span>${d}</span></span><span class="v">${v}</span>${p.points && v < 10 ? `<button data-a="up:${k}" aria-label="Raise ${n}">+</button>` : '<span></span>'}</div>`;
         }
-        if (!p.points) h += `<p class="muted" style="margin-top:10px;font-size:13px">Level up to earn points. Kills, searches and building give XP.</p>`;
+        if (!p.points) h += `<p class="hintline">Level up to earn points. Kills, searches and building give XP.</p>`;
         return h;
       },
+      keys: () => G.p.points ? kh(['↑↓', 'select'], ['E', 'spend point'], ['Esc', 'close']) : kh(['B', 'close'], ['Esc', 'close']),
       act: (a, arg) => { if (a === 'up') spendPoint(arg); },
     };
   }
@@ -926,7 +1175,7 @@ const UI = (() => {
       body: tab => {
         if (tab === 'story' || tab === 'notes') {
           const st = storyTitles(), list = G.journal.filter(j => tab === 'story' ? st[j.title] : !st[j.title]);
-          if (!list.length) return `<p class="empty">${tab === 'story' ? 'Nothing yet.' : 'Notes you find in the city end up here.'}</p>`;
+          if (!list.length) return tab === 'story' ? emptyState('book', 'Nothing yet.', 'Story moments are written down here as they happen.') : emptyState('note', 'No notes yet.', 'Letters and notes you find in the city end up here.');
           return list.map(j => `<div class="jt"><span class="h">${esc(j.title)}</span><span class="d">DAY ${j.day}</span>${String(j.text || '').split(/\n\n+/).map(t => `<p>${esc(t)}</p>`).join('')}</div>`).join('');
         }
         if (tab === 'people') {
@@ -943,9 +1192,10 @@ const UI = (() => {
         if (safe(() => isUnlocked('needs'), false)) notes.push(`Food ${Math.round(G.p.hunger)} · Water ${Math.round(G.p.thirst)} · Morale ${Math.round(G.p.morale)}`);
         if (notes.length) h += '<h3>Keep in mind</h3>' + notes.map(n => `<p>${esc(n)}</p>`).join('');
         const recent = G.log.slice(-6).reverse();
-        if (recent.length) h += '<h3>Recent</h3>' + recent.map(l => `<p class="muted mono" style="font-size:12px;margin:0 0 4px">${esc(l.t)} · ${esc(l.msg)}</p>`).join('');
+        if (recent.length) h += '<h3>Recent</h3>' + recent.map(l => `<p class="logl">${esc(l.t)} · ${esc(l.msg)}</p>`).join('');
         return h;
       },
+      keys: () => kh(['←→', 'tabs'], ['↑↓', 'scroll'], ['Esc', 'close']),
     };
   }
   /* shelter */
@@ -980,35 +1230,35 @@ const UI = (() => {
       body: tab => {
         if (tab === 'store') {
           const pk = sortIds(Object.keys(G.pack).filter(k => ITEMS[k] && G.pack[k] > 0)), sk = sortIds(Object.keys(G.store).filter(k => ITEMS[k] && G.store[k] > 0));
-          const li = (ids, bag, dir) => ids.length ? ids.map(k => `<button data-a="mv:${dir}:${k}"><span>${esc(ITEMS[k].n)}</span><span class="q">×${bag[k]}</span></button>`).join('') : '<p class="empty">Empty.</p>';
-          return `<p class="muted" style="font-size:13px">Tap to move one. Building uses what is stored here.</p>
-            <div class="cols"><div><h3>Pack</h3><div class="mini">${li(pk, G.pack, 'in')}</div></div><div><h3>Storage</h3><div class="mini">${li(sk, G.store, 'out')}</div></div></div>`;
+          const li = (ids, bag, dir) => ids.length ? ids.map(k => `<button data-a="mv:${dir}:${k}" data-row="${dir}:${k}" data-col="${dir}"><span>${esc(ITEMS[k].n)}</span><span class="q">×${bag[k]}</span></button>`).join('') : '<p class="empty">Empty.</p>';
+          return `<p class="hintline">${INPUT.touch ? 'Tap' : 'Click or press E'} to move one. Building uses what is stored here.</p>
+            <div class="cols"><div><h3>Pack <span class="dir">→</span></h3><div class="mini">${li(pk, G.pack, 'in')}</div></div><div><h3><span class="dir">←</span> Storage</h3><div class="mini">${li(sk, G.store, 'out')}</div></div></div>`;
         }
         if (tab === 'craft') {
           const list = RECIPES.map((r, i) => [r, i]).filter(([r]) => r.bench <= bl('bench') + 1);
-          return `<p class="muted" style="font-size:13px">Workbench level ${bl('bench')} · INT ${G.p.attr.int || 0}. Crafted items go to your pack.</p>` + list.map(([r, i]) => {
+          return `<p class="hintline">Workbench level ${bl('bench')} · INT ${G.p.attr.int || 0}. Crafted items go to your pack.</p>` + (list.length ? list.map(([r, i]) => {
             const ck = canCraft(r);
-            return `<div class="row"><span class="grow"><span class="t1">${esc(r.label || iname(r.out))}${r.q > 1 ? ' ×' + r.q : ''}</span><br><span class="cost">${costHtml(r.in)}</span></span>${ck.ok ? '' : `<span class="mono muted" style="font-size:11px">${esc(ck.why)}</span>`}<button class="btn sm ${ck.ok ? 'pri' : ''}" data-a="craft:${i}" ${ck.ok ? '' : 'disabled'}>Craft</button></div>`;
-          }).join('');
+            return `<div class="row" data-row="craft:${i}"><span class="grow"><span class="t1">${esc(r.label || iname(r.out))}${r.q > 1 ? ' ×' + r.q : ''}</span><br><span class="cost">${costHtml(r.in)}</span></span>${ck.ok ? '' : `<span class="why">${esc(ck.why)}</span>`}<button class="btn sm ${ck.ok ? 'pri' : ''}" data-a="craft:${i}" ${ck.ok ? '' : 'disabled'}>Craft</button></div>`;
+          }).join('') : emptyState('tool', 'Nothing to craft yet.', 'Build a workbench in the yard to unlock recipes.'));
         }
         if (tab === 'people') {
-          if (!G.survivors.length) return '<p class="empty">Nobody else lives here yet. Survivors in the city can be talked into joining.</p>';
-          let h = `<p class="muted" style="font-size:13px">Beds ${G.survivors.length}/${safe(() => shelterCap(), 2)}. Give everyone a job; production arrives each morning.</p>`;
+          if (!G.survivors.length) return emptyState('people', 'Nobody else lives here yet.', 'Survivors in the city can be talked into joining.');
+          let h = `<p class="hintline">Beds ${G.survivors.length}/${safe(() => shelterCap(), 2)}. Give everyone a job; production arrives each morning.</p>`;
           for (const s of G.survivors) {
             const best = Object.keys(s.skills).sort((a, b) => s.skills[b] - s.skills[a])[0];
             const opts = [['idle', 'Resting'], ['guard', 'Guard'], ['scavenge', 'Scavenge runs']];
             for (const k in BUILDINGS) if (BUILDINGS[k].workers && bl(k)) opts.push([k, `${BUILDINGS[k].n} ${safe(() => workerCount(k), 0)}/${bl(k)}`]);
-            h += `<div class="row"><span class="grow"><span class="t1">${esc(s.name)}</span><br><span class="t2">${esc((TRAITS[s.trait] || {}).n || '')} · best at ${esc(best)} · HP ${Math.round(s.hp)} · morale ${Math.round(s.morale)}</span></span>
-              <select data-s="${s.id}">${opts.map(([k, n]) => `<option value="${k}" ${s.job === k ? 'selected' : ''} ${k !== s.job && BUILDINGS[k] && safe(() => workerCount(k), 0) >= bl(k) ? 'disabled' : ''}>${esc(n)}</option>`).join('')}</select></div>`;
+            h += `<div class="row" data-row="s:${s.id}" data-lr="1"><span class="grow"><span class="t1">${esc(s.name)}</span><br><span class="t2">${esc((TRAITS[s.trait] || {}).n || '')} · best at ${esc(best)} · HP ${Math.round(s.hp)} · morale ${Math.round(s.morale)}</span></span>
+              <select data-s="${s.id}" aria-label="Job for ${esc(s.name)}">${opts.map(([k, n]) => `<option value="${k}" ${s.job === k ? 'selected' : ''} ${k !== s.job && BUILDINGS[k] && safe(() => workerCount(k), 0) >= bl(k) ? 'disabled' : ''}>${esc(n)}</option>`).join('')}</select></div>`;
           }
           return h;
         }
         if (tab === 'build') {
-          let h = '<p class="muted" style="font-size:13px">Walk to a glowing marker in the yard and hold E to build there.</p>';
+          let h = `<p class="hintline">Walk to a glowing marker in the yard and hold ${INPUT.touch ? 'USE' : 'E'} to build there.</p>`;
           for (const k in BUILDINGS) {
             const B = BUILDINGS[k]; if (B.hidden && !(k === 'radio' && G.flags.q_radio)) continue;
             const lv = bl(k), c = safe(() => buildCost(k), null), ck = safe(() => canBuild(k), { ok: false, why: '' });
-            h += `<div class="row"><span class="grow"><span class="t1">${esc(lv ? bName(k) : B.n)}</span> <span class="mono muted" style="font-size:11px">${lv}/${B.max}</span><br><span class="t2">${esc(B.desc)}</span>${c ? `<br><span class="cost">${costHtml(c)}</span>` : ''}</span><span class="mono" style="font-size:11px;color:${ck.ok ? 'var(--good)' : 'var(--dim)'}">${c ? esc(ck.ok ? 'Ready to build' : ck.why) : 'Done'}</span></div>`;
+            h += `<div class="row" data-row="b:${k}"><span class="grow"><span class="t1">${esc(lv ? bName(k) : B.n)}</span> <span class="lv">${lv}/${B.max}</span><br><span class="t2">${esc(B.desc)}</span>${c ? `<br><span class="cost">${costHtml(c)}</span>` : ''}</span><span class="why ${ck.ok ? 'ok' : ''}">${c ? esc(ck.ok ? 'Ready to build' : ck.why) : 'Done'}</span></div>`;
           }
           return h;
         }
@@ -1016,10 +1266,15 @@ const UI = (() => {
         const cs = safe(() => canSleep(), { ok: true }), p = G.p;
         const food = sortIds(Object.keys(Object.assign({}, G.store, G.pack)).filter(k => ITEMS[k] && (ITEMS[k].eat || ITEMS[k].use) && count(k) > 0));
         let h = `<div class="kv" style="margin-bottom:10px"><span>HP <b>${Math.round(p.hp)}/${p.maxHp}</b></span><span>STA <b>${Math.round(p.sta)}</b></span>${safe(() => isUnlocked('needs'), false) ? `<span>FOOD <b>${Math.round(p.hunger)}</b></span><span>WATER <b>${Math.round(p.thirst)}</b></span>` : ''}<span>BUNKS <b>${bl('bed')}</b></span></div>`;
-        h += `<div class="row"><span class="grow"><span class="t1">Sleep until morning</span><br><span class="t2">${cs.ok ? `About ${sleepHours()} hours. Heals and restores stamina${bl('bed') ? '' : '. Bunks help'}.` : esc(cs.why)}</span></span><button class="btn pri" data-a="sleep" ${cs.ok ? '' : 'disabled'}>Sleep</button></div>`;
-        h += '<h3>Eat and drink</h3>' + (food.length ? `<div class="mini">${food.map(k => `<button data-a="eat:${k}"><span>${esc(ITEMS[k].n)} <span class="muted" style="font-size:12px">${esc(itemDesc(k).split(' · ').slice(0, 2).join(' · '))}</span></span><span class="q">×${count(k)}</span></button>`).join('')}</div>` : '<p class="empty">Nothing to eat. Search the city.</p>');
+        h += `<div class="row" data-row="sleep"><span class="grow"><span class="t1">Sleep until morning</span><br><span class="t2">${cs.ok ? `About ${sleepHours()} hours. Heals and restores stamina${bl('bed') ? '' : '. Bunks help'}.` : esc(cs.why)}</span></span><button class="btn pri" data-a="sleep" ${cs.ok ? '' : 'disabled'}>Sleep</button></div>`;
+        h += '<h3>Eat and drink</h3>' + (food.length ? `<div class="mini">${food.map(k => `<button data-a="eat:${k}" data-row="eat:${k}"><span>${esc(ITEMS[k].n)} <span class="fx">${esc(itemDesc(k).split(' · ').slice(0, 2).join(' · '))}</span></span><span class="q">×${count(k)}</span></button>`).join('')}</div>` : emptyState('food', 'Nothing to eat.', 'Search the city for food and water.'));
         return h;
       },
+      keys: tab => tab === 'store' ? kh(['↑↓', 'select'], ['←→', 'pack / storage'], ['E', 'move one'], ['Esc', 'close'])
+        : tab === 'people' ? kh(['↑↓', 'select'], ['←→', 'change job'], ['⇧←→', 'tabs'], ['Esc', 'close'])
+        : tab === 'craft' ? kh(['←→', 'tabs'], ['↑↓', 'select'], ['E', 'craft'], ['Esc', 'close'])
+        : tab === 'build' ? kh(['←→', 'tabs'], ['↑↓', 'select'], ['Esc', 'close'])
+        : kh(['←→', 'tabs'], ['↑↓', 'select'], ['E', 'sleep / eat'], ['Esc', 'close']),
       act: (a, arg) => {
         if (a === 'sleep') {
           const cs = canSleep(); if (!cs.ok) { toast(cs.why, 'warn'); return; }
@@ -1051,6 +1306,7 @@ const UI = (() => {
     return {
       title: 'Ardent Vale', sub: () => `Explored ${Math.round(safe(() => G._fog.reduce((a, b) => a + b, 0), 0) / (W * H) * 100)}%`,
       body: () => `<canvas id="mapc"></canvas><div class="legend"><span><i style="background:#ebe1ce"></i>You</span><span><i style="background:#e8742c;border-radius:50%"></i>Objective</span><span><i style="border:2px solid #ebe1ce"></i>Bunker</span><span><i style="background:#e05a46"></i>Tollmen</span></div>`,
+      keys: () => kh(['M', 'close'], ['Esc', 'close']),
       after: () => drawFullMap(el('mapc')),
     };
   }
@@ -1061,14 +1317,16 @@ const UI = (() => {
       title: 'Paused', sub: () => G ? `Day ${G.day} · ${G.p.name}` : '', narrow: true,
       body: () => {
         if (help) return helpCard();
-        return `<div class="menu"><button class="btn pri" data-a="close">Resume</button><button class="btn" data-a="save">Save game</button><button class="btn" data-a="help">Controls</button>
-          <button class="btn" data-a="sound">Sound: ${SFX.on ? 'On' : 'Off'}</button><button class="btn ghost" data-a="quit">Quit to title</button></div>`;
+        return `<div class="menu"><button class="btn pri" data-a="close" data-row="resume">Resume</button><button class="btn" data-a="save" data-row="save">Save game</button><button class="btn" data-a="help" data-row="help">Controls</button>
+          <button class="btn" data-a="sound" data-row="sound">Sound: ${SFX.on ? 'On' : 'Off'}</button><button class="btn ghost" data-a="quit" data-row="quit">Quit to title</button></div>`;
       },
       foot: () => help ? `<button class="btn" data-a="back">Back</button>` : '',
+      keys: () => help ? kh(['Esc', 'back']) : kh(['↑↓', 'select'], ['E', 'choose'], ['Esc', 'resume']),
+      back: () => { if (!help) return false; help = false; S.nav['menu:'] = { id: 'help', col: '', idx: 2 }; return true; },
       act: a => {
         if (a === 'save') { const ok = safe(() => saveGame(true), false); toast(ok ? 'Game saved.' : 'Could not save in this browser.', ok ? 'good' : 'warn'); }
-        if (a === 'help') help = true;
-        if (a === 'back') help = false;
+        if (a === 'help') { help = true; S.nav['menu:'] = { id: 'help', col: '', idx: 2 }; }
+        if (a === 'back') { help = false; S.nav['menu:'] = { id: 'help', col: '', idx: 2 }; }
         if (a === 'sound') { SFX.toggle(); SFX.unlock(); SFX.play('ui'); }
         if (a === 'quit') { closePanel(true); if (typeof Game !== 'undefined' && Game.quit) Game.quit(); }
       },
@@ -1076,10 +1334,11 @@ const UI = (() => {
   }
   function helpCard() {
     const rows = INPUT.touch
-      ? [['Move', 'Drag left side'], ['Sprint', 'Push the stick far'], ['Attack', 'ATTACK (hold)'], ['Dodge roll', 'DODGE'], ['Search / use', 'USE (hold)'], ['Sneak', 'CROUCH'], ['Zoom', 'Pinch'], ['Map', 'Tap the minimap'], ['Swap weapon', 'Tap weapon']]
-      : [['Move', 'WASD / arrows'], ['Sprint', 'Shift'], ['Crouch', 'C'], ['Dodge roll', 'Space'], ['Attack', 'Click / J'], ['Aim', 'Mouse'], ['Search / use', 'Hold E'], ['Swap weapon', 'Q'], ['Pack', 'I'], ['Character', 'B'], ['Journal', 'Tab'], ['Map', 'M'], ['Zoom', 'Wheel'], ['Menu', 'Esc']];
+      ? [['Move', 'Drag left side'], ['Sprint', 'Push the stick far'], ['Attack', 'ATTACK (hold)'], ['Next target', 'TARGET'], ['Throw a bottle', 'THROW'], ['Dodge roll', 'DODGE'], ['Search / use', 'USE (hold)'], ['Sneak', 'CROUCH'], ['Zoom', 'Pinch'], ['Map', 'Tap the minimap'], ['Swap weapon', 'Tap weapon']]
+      : [['Move', 'WASD / arrows'], ['Sprint', 'Shift'], ['Crouch', 'C'], ['Dodge roll', 'Space'], ['Attack', 'J / click'], ['Next target', 'F'], ['Clear target', 'Shift+F'], ['Throw a bottle', 'G'], ['Aim (optional)', 'Mouse'], ['Search / use', 'Hold E'], ['Swap weapon', 'Q'], ['Pack', 'I'], ['Character', 'B'], ['Journal', 'Tab'], ['Map', 'M'], ['Zoom', 'Wheel'], ['Menu', 'Esc']];
     return `<div class="help">${rows.map(r => `<div><span>${r[0]}</span><span>${r[1]}</span></div>`).join('')}</div>
-      <p class="muted" style="font-size:13px;margin-top:12px">Crouch to stay unseen. Sprinting and gunfire draw the dead. Bring loot home to build. Be in the bunker on horde nights.</p>`;
+      ${INPUT.touch ? '' : `<p class="hintline" style="margin-top:12px">The whole game plays on the keyboard. Without the mouse, attacks lock on to the nearest enemy and F picks the next one; move the mouse to aim more precisely. In menus: arrows select, E or Enter acts, X drops, Esc closes.</p>`}
+      <p class="hintline">Crouch to stay unseen. Sprinting and gunfire draw the dead. Bring loot home to build. Be in the bunker on horde nights.</p>`;
   }
 
   /* ---------- Tollmen gate (the Warden) ---------- */
@@ -1126,19 +1385,21 @@ const UI = (() => {
       body: () => {
         const my = val(mine, sellPrice), th = val(theirs, buyPrice), av = avail();
         const mx = Math.max(my, th, 1), short = my < th;
-        const tok = (o, side, f) => Object.keys(o).filter(k => o[k] > 0).map(k => `<button class="tok" data-a="back:${side}:${k}">${esc(ITEMS[k].n)}${o[k] > 1 ? ' ×' + o[k] : ''}<b>${f(k) * o[k]}</b></button>`).join('') || '<span class="muted" style="font-size:12.5px">Tap items below to offer them.</span>';
+        const tok = (o, side, f) => Object.keys(o).filter(k => o[k] > 0).map(k => `<button class="tok" data-a="back:${side}:${k}" data-row="o${side}:${k}" data-col="o${side}" data-grp="offer">${esc(ITEMS[k].n)}${o[k] > 1 ? ' ×' + o[k] : ''}<b>${f(k) * o[k]}</b></button>`).join('') || `<span class="hintline">${INPUT.touch ? 'Tap' : 'Pick'} items below to ${side === 'm' ? 'offer them' : 'ask for them'}.</span>`;
         let h = `<div class="offer"><div><h4><span>You give</span><span>${my}</span></h4><div class="side">${tok(mine, 'm', sellPrice)}</div></div><div><h4><span>You get</span><span>${th}</span></h4><div class="side">${tok(theirs, 't', buyPrice)}</div></div>
           <div class="bal"><span>${my}</span><div class="tr ${short ? 'short' : ''}"><div class="y" style="width:${my / mx * 100}%"></div><div class="th" style="left:calc(${th / mx * 100}% - 1px)"></div></div><span>${th}</span></div></div>`;
         const yours = sortIds(Object.keys(av).filter(k => av[k] > 0 && sellable(k)));
         const goods = sortIds(Object.keys(st).filter(k => ITEMS[k] && st[k] - (theirs[k] || 0) > 0));
-        h += `<div class="bt"><div><h4><span>Yours</span><span>value</span></h4><div class="mini">${yours.map(k => `<button data-a="give:${k}"><span>${esc(ITEMS[k].n)} <span class="muted">×${av[k]}</span></span><span class="pr">${sellPrice(k)}</span></button>`).join('') || '<p class="empty">Nothing to trade.</p>'}</div></div>
-          <div><h4><span>Theirs</span><span>price</span></h4><div class="mini">${goods.map(k => `<button data-a="take:${k}"><span>${esc(ITEMS[k].n)} <span class="muted">×${st[k] - (theirs[k] || 0)}</span></span><span class="pr">${buyPrice(k)}</span></button>`).join('') || '<p class="empty">Sold out.</p>'}</div></div></div>`;
+        h += `<div class="bt"><div><h4><span>Yours</span><span>value</span></h4><div class="mini">${yours.map(k => `<button data-a="give:${k}" data-row="y:${k}" data-col="y" data-grp="list"><span>${esc(ITEMS[k].n)} <span class="muted">×${av[k]}</span></span><span class="pr">${sellPrice(k)}</span></button>`).join('') || '<p class="empty">Nothing to trade.</p>'}</div></div>
+          <div><h4><span>Theirs</span><span>price</span></h4><div class="mini">${goods.map(k => `<button data-a="take:${k}" data-row="t:${k}" data-col="t" data-grp="list"><span>${esc(ITEMS[k].n)} <span class="muted">×${st[k] - (theirs[k] || 0)}</span></span><span class="pr">${buyPrice(k)}</span></button>`).join('') || '<p class="empty">Sold out.</p>'}</div></div></div>`;
         return h;
       },
       foot: () => {
         const my = val(mine, sellPrice), th = val(theirs, buyPrice), ok = th > 0 && my >= th;
-        return `<span class="muted mono" style="font-size:11px;margin-right:auto;align-self:center">${th > 0 && my > th ? `Overpaying by ${my - th}` : th > my ? `Short by ${th - my}` : ''}</span><button class="btn ghost" data-a="close">Leave</button><button class="btn pri" data-a="deal" ${ok ? '' : 'disabled'}>Trade</button>`;
+        return `<span class="bst ${th > my ? 'short' : ''}">${th > 0 && my > th ? `Overpaying by ${my - th}` : th > my ? `Short by ${th - my}` : ''}</span><button class="btn ghost" data-a="close">Leave</button><button class="btn pri" data-a="deal" ${ok ? '' : 'disabled'}>Trade<span class="kc k-hide">T</span></button>`;
       },
+      keys: () => kh(['↑↓', 'select'], ['←→', 'yours / theirs'], ['E', 'offer / return'], ['T', 'trade'], ['Esc', 'leave']),
+      key: e => { if (e.code !== 'KeyT') return false; e.preventDefault(); const b = D.pnl.querySelector('[data-a=deal]'); if (b && !b.disabled) b.click(); else SFX.play('bad'); return true; },
       act: (a, arg) => {
         if (a === 'give') { const av = avail(); if (av[arg] > 0) { mine[arg] = (mine[arg] || 0) + 1; SFX.play('ui'); } }
         if (a === 'take') { if (st[arg] - (theirs[arg] || 0) > 0) { theirs[arg] = (theirs[arg] || 0) + 1; SFX.play('ui'); } }
@@ -1239,7 +1500,9 @@ const UI = (() => {
     if (step === 'new') return newGameStep();
     const cont = safe(() => hasSave(), false);
     D.title.innerHTML = `${embers()}<div class="logo">Dead<span>Embers</span></div><div class="tag">Ardent Vale · fourteen months after the Grey Fever</div>
-      <div class="acts">${cont ? '<button class="btn pri" data-t="cont">Continue</button>' : ''}<button class="btn ${cont ? '' : 'pri'}" data-t="new">New game</button></div><div class="ver">BUILD 3D</div>`;
+      <div class="acts">${cont ? '<button class="btn pri" data-t="cont" data-nav>Continue</button>' : ''}<button class="btn ${cont ? '' : 'pri'}" data-t="new" data-nav>New game</button></div>
+      <div class="kh tkh"><b>↑↓</b> choose<i>·</i><b>Enter</b> select</div><div class="ver">BUILD 3D</div>`;
+    S.tfocus = D.title.querySelector('[data-nav]'); titleRing();
     D.title.querySelectorAll('[data-t]').forEach(b => b.onclick = () => {
       SFX.unlock(); SFX.play('ui');
       if (b.dataset.t === 'new') return newGameStep();
@@ -1252,13 +1515,24 @@ const UI = (() => {
     let sel = bgs.includes('scavenger') ? 'scavenger' : bgs[0];
     const bonus = b => Object.keys(b.bonus || {}).map(k => `${k.toUpperCase()} +${b.bonus[k]}`).join('  ');
     D.title.innerHTML = `${embers()}<div class="newg"><h2>Who were you?</h2>
-      <label>Name<input id="ng-name" maxlength="18" value="Survivor" autocomplete="off" spellcheck="false"></label>
-      <div class="bgs">${bgs.map(k => `<button class="bgc ${k === sel ? 'on' : ''}" data-bg="${k}"><b>${esc(BACKGROUNDS[k].n)}</b><span>${esc(firstSentence(BACKGROUNDS[k].desc, 70))}</span><em>${esc(bonus(BACKGROUNDS[k]))}</em></button>`).join('')}</div>
-      <div class="go"><button class="btn ghost" data-t="back">Back</button><button class="btn pri" data-t="start">Start</button></div></div>`;
-    D.title.querySelectorAll('.bgc').forEach(b => b.onclick = () => { sel = b.dataset.bg; SFX.play('ui'); D.title.querySelectorAll('.bgc').forEach(x => x.classList.toggle('on', x === b)); });
+      <label>Name<input id="ng-name" maxlength="18" value="Survivor" autocomplete="off" spellcheck="false" data-nav></label>
+      <div class="bgs">${bgs.map(k => `<button class="bgc ${k === sel ? 'on' : ''}" data-bg="${k}" data-nav aria-pressed="${k === sel}"><b>${esc(BACKGROUNDS[k].n)}</b><span>${esc(firstSentence(BACKGROUNDS[k].desc, 70))}</span><em>${esc(bonus(BACKGROUNDS[k]))}</em></button>`).join('')}</div>
+      <div class="go"><button class="btn ghost" data-t="back" data-nav>Back</button><button class="btn pri" data-t="start" data-nav>Start</button></div>
+      <div class="kh tkh"><b>←↑↓→</b> background<i>·</i><b>type</b> to rename<i>·</i><b>Enter</b> start<i>·</i><b>Esc</b> back</div></div>`;
+    const pickBg = b => { sel = b.dataset.bg; D.title.querySelectorAll('.bgc').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', x === b); }); };
+    D.title.querySelectorAll('.bgc').forEach(b => b.onclick = () => { pickBg(b); SFX.play('ui'); S.tfocus = b; titleRing(); });
     D.title.querySelector('[data-t=back]').onclick = () => { SFX.play('ui'); title(); };
     D.title.querySelector('[data-t=start]').onclick = () => startNew(sel);
     S.titleStart = () => startNew(sel);
+    S.pickBg = pickBg;
+    S.tfocus = D.title.querySelector('.bgc.on'); titleRing();
+  }
+  /* title keyboard focus: S.tfocus is the [data-nav] element with the ring (the name field takes real focus so typing works) */
+  function titleRing() {
+    D.title.querySelectorAll('.kf').forEach(x => x.classList.remove('kf'));
+    const f = S.tfocus; if (!f || !f.isConnected) return;
+    if (f.tagName === 'INPUT') { if (document.activeElement !== f) { f.focus(); try { f.select(); } catch (e) { } } }
+    else { if (document.activeElement && document.activeElement.tagName === 'INPUT') document.activeElement.blur(); f.classList.add('kf'); scrollNear(f); }
   }
   function startNew(bg) {
     const inp = el('ng-name'), name = (inp && inp.value.trim()) || 'Survivor';
@@ -1269,11 +1543,36 @@ const UI = (() => {
     if (typeof Game !== 'undefined' && Game.newGame) Game.newGame(name.slice(0, 18), bg);
   }
   function titleKey(e) {
-    if (e.code === 'Enter') {
+    const c = e.code, inp = el('ng-name'), inField = document.activeElement === inp && !!inp;
+    const items = [...D.title.querySelectorAll('[data-nav]')];
+    if (!items.includes(S.tfocus)) S.tfocus = inField ? inp : (D.title.querySelector('.bgc.on') || items[0]);
+    if (c === 'Enter' || c === 'NumpadEnter') {
+      e.preventDefault(); if (e.repeat) return;
+      const f = S.tfocus;
+      if (inp && (!f || f === inp || f.classList.contains('bgc'))) { S.titleStart && S.titleStart(); return; }
+      if (f) f.click();
+      return;
+    }
+    if (c === 'Escape') { if (inp) title(); return; }
+    const dir = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[c];
+    if (dir) {
+      if (inField && dir[0]) return; // left/right move the caret in the name
       e.preventDefault();
-      if (el('ng-name')) { S.titleStart && S.titleStart(); return; }
-      const b = D.title.querySelector('.btn.pri'); b && b.click();
-    } else if (e.code === 'Escape' && el('ng-name')) title();
+      let n = S.tfocus ? spatial(items, S.tfocus, dir[0], dir[1]) : items[0];
+      if (!n && !inp && dir[1]) n = items[(items.indexOf(S.tfocus) + dir[1] + items.length) % items.length]; // title: wrap
+      if (!n) return;
+      S.tfocus = n; if (n.classList.contains('bgc') && S.pickBg) S.pickBg(n);
+      SFX.play('ui'); titleRing(); return;
+    }
+    // typing anywhere on the new-game screen edits the name
+    if (inp && !inField && e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { inp.focus(); try { inp.select(); } catch (er) { } S.tfocus = inp; titleRing(); }
+  }
+  function endKey(e) {
+    const bs = [...D.end.querySelectorAll('[data-e]')], c = e.code; if (!bs.length) return;
+    if (/^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown|KeyA|KeyD)$/.test(c)) {
+      e.preventDefault(); S.esel = (S.esel + 1) % bs.length; bs.forEach((b, i) => b.classList.toggle('kf', i === S.esel)); SFX.play('ui'); return;
+    }
+    if ((c === 'Enter' || c === 'NumpadEnter' || c === 'KeyE') && !e.repeat) { e.preventDefault(); if (now() - (S.endT || 0) > 0.8) (bs[S.esel] || bs[bs.length - 1]).click(); }
   }
 
   const U = {
@@ -1291,7 +1590,8 @@ const UI = (() => {
       const i = owned.indexOf(G.p.weapon); G.p.weapon = owned[(i + 1) % owned.length];
       SFX.play('swing'); D.wpn.classList.remove('swap'); void D.wpn.offsetWidth; D.wpn.classList.add('swap');
     },
-    spendPoint, craft,
+    spendPoint, craft, lockOn, enemyHit,
+    get reducedMotion() { return reducedMotion(); },
     get state() { return S; },
   };
   return U;
