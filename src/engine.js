@@ -331,6 +331,7 @@ function tickHour(opts) {
   recalc();
   checkUnlocks();
   if (G.hour === 20) storyCheck();
+  if (G.hour === 22 && G.atShelter && G.day > 1 && !G.hordeNight && chance(0.35)) { const ev = pickEncounter('shelter'); if (ev) Hooks.queue({ type: 'enc', enc: ev }); }
   if (G.hour === 21 && G.hordeNight && !G.hordeResult && !opts.sleep) { if (G.atShelter && Hooks.hordeStart) Hooks.hordeStart(hordeStrength()); }
   if (G.hour === 6) dailyTick();
 }
@@ -343,7 +344,7 @@ function hintOnce(key, text) { if (!G || G.hints[key]) return false; G.hints[key
 function checkUnlocks() {
   const p = G.p;
   if (p.hunger < 62 || p.thirst < 58) { if (unlock('needs')) hintOnce('needs', 'Hunger and thirst are dropping. Eat and drink from your pack (I).'); }
-  if ((G.stats.searches >= 2 && G.atShelter) || G.day >= 2) { if (unlock('build')) hintOnce('build', 'Walk to a marker in the yard and hold E to build.'); }
+  if ((G.stats.searches >= 1 && G.atShelter) || G.day >= 2) { if (unlock('build')) hintOnce('build', 'Walk to a marker in the yard and hold E to build.'); }
   if (bl('bench') || G.day >= 3) unlock('craft');
   if (G.flags.q_radio) unlock('radio');
   if (G.journal.length > 1) unlock('journal');
@@ -713,6 +714,9 @@ function objectiveInfo() {
     return { text: `Find the ${itemName(need[0])}.`, target: tgt };
   }
   if (G.hour >= 19 || G.hour < 6) return { text: 'Night. Sleep in the bunker.', target: home };
+  const pois = Object.keys(WORLD.pois).map(k => Object.assign({ key: k }, WORLD.pois[k])).filter(q => G.locs[q.key] && !G.locs[q.key].visited && LOCS[q.type] && q.type !== 'shelter' && !q.outdoor);
+  pois.sort((a, b) => ((a.x - me.x) ** 2 + (a.y - me.y) ** 2) - ((b.x - me.x) ** 2 + (b.y - me.y) ** 2));
+  if (pois[0]) return { text: `Scavenge ${pois[0].label || LOCS[pois[0].type].n}.`, target: P_(pois[0]) };
   return { text: 'Scavenge, build, find people.', target: null };
 }
 function objective() { return objectiveInfo().text; }
