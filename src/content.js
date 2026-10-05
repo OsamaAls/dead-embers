@@ -1,8 +1,14 @@
-/* Dead Embers - narrative content */
+/* Dead Embers - narrative content
+   story scenes: `beats` are what the player sees (1-4 short lines, endings up to 5); `paras` is the long journal version.
+   Shelter events follow the encounter schema in API.md: physical things are `play`, real decisions are `choices`. */
 (function () {
   var story = {
     intro: {
       title: "The Bunker",
+      beats: [
+        { who: "", line: "Fourteen months since the Grey Fever. You wake alone in a metro bunker under a dead city." },
+        { who: "", line: "Your throat is dry and your stomach is a fist. Find water. Try FreshMart." }
+      ],
       paras: [
         "You wake on a steel cot in a metro maintenance bunker, with a taste like old pennies in your mouth. The ceiling has cracked since you last looked. Dust sifts down in the light of one dying lamp.",
         "It has been fourteen months since the Grey Fever reached Ardent Vale. You remember the sirens, then the silence, then the first time you saw a neighbor walk the wrong way down the street. Nobody has come down these stairs in a long time.",
@@ -12,6 +18,11 @@
     },
     first_night: {
       title: "First Night",
+      beats: [
+        { who: "", line: "Something drags across the concrete above you. Then the old radio by the door hisses awake." },
+        { who: "A woman's voice", line: "...north of the mountains. Haven is... repeat, Haven is..." },
+        { who: "", line: "Static. You say the word once, quietly. Haven." }
+      ],
       paras: [
         "The dark down here is total once the lamp is off. Above you something drags across the concrete, stops, and drags again. You hold your breath until your ears ring.",
         "Around midnight a sound comes from the shelf by the door, a hiss like a kettle. The old radio is awake, or something inside it is.",
@@ -21,6 +32,11 @@
     },
     radio_found: {
       title: "The Dead Radio",
+      beats: [
+        { who: "", line: "You open the old radio. Burnt coil, no antenna, a power cell swollen like a dead toad." },
+        { who: "", line: "Coil: Tower Blocks or Volt & Co. Antenna: KVAL Radio Tower. Cell: Precinct 9 or Volt & Co." },
+        { who: "", line: "Bring all three home and build the radio." }
+      ],
       paras: [
         "You pull the radio into the lamplight and unscrew the back. The casing is military surplus, heavy and well built. Inside, three things are wrong with it.",
         "The tuning coil is burnt through. The antenna lead ends in a stub of wire. The power cell has swollen like a dead toad.",
@@ -29,15 +45,25 @@
     },
     radio_fixed: {
       title: "A Voice Answers",
+      beats: [
+        { who: "", line: "The speaker crackles. You say your name, {name}, and ask if anyone is there." },
+        { who: "Mara Voss", line: "This is Haven. Mara Voss, radio operator. I hear you. Stay on the line." },
+        { who: "Mara Voss", line: "Show me a community. Five of you, and walls worth the name. Then I send you the road." }
+      ],
       paras: [
         "You solder the last joint, seat the cell and turn the dial with a hand that will not stay still. The speaker crackles. You say your name into the microphone, {name}, and ask if anyone is there.",
         "A pause long enough to hurt. Then a woman, dry and tired and real. 'This is Haven. Mara Voss, radio operator. I hear you. Stay on the line.'",
-        "Haven exists. It sits beyond the northern mountains, behind walls and a working generator. Mara says she will send coordinates, but only to a group that can prove it is organized: five survivors and defenses worth the name.",
+        "Haven exists. It sits beyond the northern mountains, behind walls and a working generator. Mara says she will send coordinates, but only to a group that can prove it is organized: five people and defenses worth the name.",
         "'We have been burned by people who walk in alone and desperate,' she says. 'Show me you are a community and I will show you the road.'"
       ]
     },
     tollmen_demand: {
       title: "The Tollmen Call",
+      beats: [
+        { who: "", line: "A man in a stitched leather coat waits at your gate. Four armed men wait behind him." },
+        { who: "Tollman", line: "The Warden runs the east side. Every shelter that breathes in his territory pays a toll." },
+        { who: "Tollman", line: "Your name is already in his book. He likes to be paid on time." }
+      ],
       paras: [
         "A man in a stitched leather coat stands at your gate with his hands open. Four others wait behind him with their hands very much not open. He calls himself a messenger and says it politely.",
         "The Warden runs the east side of the city. Before the Fever he was a prison guard, and he still believes in rules, schedules and a ledger. Every shelter that breathes inside his territory owes a toll.",
@@ -46,15 +72,26 @@
     },
     haven_coords: {
       title: "The Road North",
+      beats: [
+        { who: "Mara Voss", line: "Here are the coordinates. Write them down. Now the bad news." },
+        { who: "Mara Voss", line: "A horde is moving south. Tens of thousands. It reaches you in about twelve days." },
+        { who: "Mara Voss", line: "There is a bus at the depot. It needs engine parts and 6 fuel." },
+        { who: "Mara Voss", line: "The route through the pass is on a map at Checkpoint Echo. Get it. Then drive." }
+      ],
       paras: [
-        "Mara Voss reads the coordinates twice, slowly, and you write them on the wall in grease pencil. Then her voice changes. 'There is something you need to know. A horde is moving south, tens of thousands, a river of them. Our scouts say it will pass through Ardent Vale in about ten days.'",
+        "Mara Voss reads the coordinates twice, slowly, and you write them on the wall in grease pencil. Then her voice changes. 'There is something you need to know. A horde is moving south, tens of thousands, a river of them. Our scouts say it will pass through Ardent Vale in about twelve days.'",
         "You ask if it can be turned. She does not answer right away. 'No. You can hide from it, hold against it, or be somewhere else.'",
-        "There is an old school bus at the Bus Depot, she says, one of the few vehicles left whole. It needs engine parts and fuel. She also sends a haven_map, marked with the safe route through the pass.",
-        "Ten days. You write that on the wall too, under the coordinates."
+        "There is an old school bus at the Bus Depot, she says, one of the few vehicles left whole. It needs engine parts and fuel. The safe route through the pass is marked on an army map at Checkpoint Echo.",
+        "Twelve days. You write that on the wall too, under the coordinates."
       ]
     },
     horde_warning: {
       title: "The Horizon Moves",
+      beats: [
+        { who: "", line: "The lookout comes down the ladder without a word and points north." },
+        { who: "", line: "The skyline is moving. A brown haze of the dead, so many the distance itself crawls." },
+        { who: "", line: "You count the days again. Fewer than you thought." }
+      ],
       paras: [
         "The lookout comes down the ladder without speaking and just points. You climb up and look north. The skyline is the wrong color, a brown haze that shifts as you watch.",
         "It is not smoke or dust or weather. It is the dead, so many that the distance itself seems to crawl.",
@@ -63,6 +100,11 @@
     },
     bus_ready: {
       title: "The Bus Runs",
+      beats: [
+        { who: "", line: "The engine catches on the fourth try. Someone laughs, and then everyone is laughing." },
+        { who: "", line: "Forty seats, a full tank, and the road north is open. For now." },
+        { who: "", line: "The bus is ready. The choice that comes with it is the hard part." }
+      ],
       paras: [
         "The engine catches on the fourth try and shakes the whole depot. Someone laughs, a short cracked sound, and then everyone is laughing. It is the first engine you have heard in more than a year.",
         "You fill the tank and check the tires. There are forty seats and a roof rack, and the road north is open, for now.",
@@ -71,6 +113,11 @@
     },
     final_choice: {
       title: "The Night Before",
+      beats: [
+        { who: "", line: "Nobody sleeps. The horde hums through the floor like a train that never arrives." },
+        { who: "", line: "Drive for Haven. Hold the bunker. Or ask the Warden, a man you hate, to stand with you." },
+        { who: "", line: "Your people look at you, {name}. Whatever you say now, they will do." }
+      ],
       paras: [
         "Nobody sleeps. You can feel the horde through the floor, a low shiver in the concrete like a train that never arrives. The lamp swings a little on its cord.",
         "You can load the bus and drive for Haven before dawn, leaving the city and everything you built in it. You can stay behind your walls and fight with everything you have. Or you can walk across the dead ground to the Warden, a man you hate, and ask him to stand beside you.",
@@ -79,6 +126,13 @@
     },
     end_haven: {
       title: "Haven",
+      beats: [
+        { who: "", line: "The bus crests the pass at dusk. Below is a valley with lights in it. Real lights, in rows." },
+        { who: "Mara Voss", line: "Welcome to Haven. Step down slowly. I need to count you." },
+        { who: "", line: "Not everyone made it. She does not make you say their names. You say them anyway." },
+        { who: "", line: "Haven has queues and quarrels. But here the children sleep without anyone on watch." },
+        { who: "", line: "You made it, {name}. The weight does not leave you, but it begins to shift." }
+      ],
       paras: [
         "The convoy climbs through the pass at dusk with the horde a smear of brown in the mirrors behind it. The bus coughs, holds, and crests the ridge. Below you is a valley with lights in it, real lights, in rows.",
         "Mara Voss meets you at the gate in a patched coat, smaller than her voice. She counts heads as you step down. Not everyone you started with is on the bus, and she does not make you say their names, though you say them anyway.",
@@ -88,6 +142,12 @@
     },
     end_stand: {
       title: "Dawn on the Wall",
+      beats: [
+        { who: "", line: "The horde breaks on your walls all night. Someone keeps handing you water without being asked." },
+        { who: "", line: "At first light the dead flow past you, south, toward something else." },
+        { who: "", line: "Your people sit along the wall, grey-faced and alive." },
+        { who: "", line: "You did not run, {name}. You built something that lasts." }
+      ],
       paras: [
         "The horde breaks against the walls all night. You hold the line with spears, bolts, and the last of the shells, and every hour someone hands you water without being asked.",
         "At first light the sound thins. The dead keep moving, but they are moving past you now, drawn on toward whatever lies south. The street outside is a field of ruin and the walls are still standing.",
@@ -97,6 +157,11 @@
     },
     end_stand_fail: {
       title: "The Walls Break",
+      beats: [
+        { who: "", line: "The north gate groans, then splits. The dead pour through, shoulder to shoulder." },
+        { who: "", line: "You fight from the stairwell, then the bunker door, then the dark. They do not tire." },
+        { who: "", line: "Someone you know calls your name, {name}. Then the lamp goes out." }
+      ],
       paras: [
         "It starts with a groan from the north gate, then a split of timber, then the sound you have been dreading for fourteen months. The dead pour through the gap shoulder to shoulder.",
         "You fight from the stairwell, then the bunker door, then the dark between. There are too many, and they do not tire.",
@@ -105,6 +170,12 @@
     },
     end_alliance: {
       title: "The Ledger and the Wall",
+      beats: [
+        { who: "The Warden", line: "One night. Then we renegotiate." },
+        { who: "", line: "Tollmen and your people hold the east bridge together. Dawn finds both sides standing." },
+        { who: "", line: "Now there is a council, a ledger, and a city to hold." },
+        { who: "", line: "It is not the world you wanted, {name}. But it is a world, and part of it is yours." }
+      ],
       paras: [
         "The Warden listens to your proposal without blinking, then opens his ledger and strikes a line through a column of debts. 'One night,' he says. 'Then we renegotiate.'",
         "His Tollmen and your people hold the east bridge together. When the horde breaks, you fight shoulder to shoulder with men who robbed you last month. Dawn finds both groups standing, bloody and exhausted and still wary.",
@@ -114,6 +185,11 @@
     },
     end_alliance_fail: {
       title: "A Matter of Accounts",
+      beats: [
+        { who: "", line: "The Warden opens the gate himself, smiling. The Tollmen close in without a word." },
+        { who: "The Warden", line: "You are a good manager. I will keep your things in order." },
+        { who: "", line: "An alliance with him was only ever a loan. He called it in early, {name}." }
+      ],
       paras: [
         "The Warden lets you in through the gate himself and smiles like a man who has had the same thought all week. The Tollmen close in without a word. Your people are behind you, and so are the dead, and he has chosen which of you to deal with first.",
         "'You are a good manager,' he says, almost kindly. 'I will keep your things in order.'",
@@ -122,6 +198,10 @@
     },
     death: {
       title: "The Embers Go Out",
+      beats: [
+        { who: "", line: "The street is cold under your cheek. Somewhere a radio hisses. No one answers it." },
+        { who: "", line: "Fourteen months, {name}. The dead did not need a fifteenth." }
+      ],
       paras: [
         "The world narrows to the sound of your own breathing and then not even that. The street is cold under your cheek.",
         "Somewhere a radio hisses. No one answers it.",
@@ -130,6 +210,10 @@
     },
     abandoned: {
       title: "Empty Rooms",
+      beats: [
+        { who: "", line: "The cots are made and the cups are washed. There is no one left to use them." },
+        { who: "", line: "You lasted longer than most. With no one to share it, that did not matter." }
+      ],
       paras: [
         "The bunker is quiet. The cots are made and the cups are washed, and there is no one left to use any of them.",
         "You lasted longer than most. In the end that did not matter, because there was no one to share it with."
@@ -137,6 +221,7 @@
     }
   };
 
+  /* Lore notes: optional reading, they go to the journal. */
   var lore = [
     { title: "Diary of a Nurse, Day 3", text: "They told us it was a flu. By noon the ward was full and by evening half of them had stopped answering. The ones who got up again did not look at us the way sick people do. I am writing this in the supply closet with the door held shut." },
     { title: "CDC Memo 114-A", text: "The Grey Fever is spread by contact with infected fluids, including bites and scratches. Incubation ranges from several hours to two days. Once core temperature drops below thirty degrees, cognitive function is not recoverable. Containment protocols have failed in all major districts." },
@@ -158,19 +243,20 @@
     { title: "Scientist's Last Voicemail", text: "Transcript. 'If this reaches anyone, the horde is not random. They follow noise and warmth and they follow each other. Something is pulling them south. I do not know what it is, and I think I do not want to.'" }
   ];
 
+  /* Radio: one broadcast per morning once the radio is built. 1-2 short lines each. */
   var radio = [
-    "...this is Haven. If you can hear this, follow the railway north to the pass. We have room. Repeat, we have room...",
-    "Static, then a long tone, then nothing. Then, very faint, someone counting backwards from ten and stopping at three.",
-    "Any station, any station. This is a family of four at the water tower. We have a child with a fever. We are not infected. Please, anyone.",
-    "East side crossing is closed until further notice. Pay at the barrier. This is the Warden's office.",
+    "...this is Haven. Follow the railway north to the pass. We have room. Repeat, we have room...",
+    "Static, then a long tone. Someone counts down from ten and stops at three.",
+    "Any station. Family of four at the water tower. Our child has a fever. We are not infected. Please.",
+    "East crossing closed until further notice. Pay at the barrier. This is the Warden's office.",
     "Haven calling Ardent Vale. We can hear you. We cannot reach you. Keep trying.",
-    "Crackle. A man's voice, tired. 'Saw a column of them cross the ring road at dusk. Forty, fifty. Heading south. Don't go out tonight.'",
-    "This is a recorded message. Do not approach the hospital. Do not approach the hospital. Do not...",
-    "Tollmen on the north side are reminded that the tax increases at the new moon. Anyone found holding back will be visited.",
-    "Mara Voss, Haven. Anyone in the valley with a working radio, we have a doctor and room for a dozen more. We will leave a light on.",
-    "Something big on the highway at mile fourteen. Not a walker. Too slow, too loud. Stay clear.",
-    "The horizon is moving, you hear me? The whole north horizon. Get out of the city while you still can.",
-    "Hiss, a click, then a child's voice, whispered. 'Is anyone else there? Mommy says I should not talk to the radio. But I think someone is there.'"
+    "A tired man: 'Fifty of them crossed the ring road at dusk, heading south. Don't go out tonight.'",
+    "Recorded message. Do not approach the hospital. Do not approach the hospital. Do not...",
+    "Tollmen are reminded: the tax goes up at the new moon. Anyone holding back will be visited.",
+    "Mara Voss, Haven. We have a doctor and room for a dozen more. We will leave a light on.",
+    "Something big on the highway at mile fourteen. Too slow, too loud. Not a walker. Stay clear.",
+    "The whole north horizon is moving. You hear me? Get out of the city while you still can.",
+    "A child, whispering: 'Mommy says don't talk to the radio. But I think someone is there.'"
   ];
 
   var names = {
@@ -264,6 +350,7 @@
 
   function sName(s) { return s && s.name ? s.name : 'someone'; }
 
+  /* Shelter events (where: ['shelter']). Physical ones are played; the rest are short decisions. */
   var shelterEvents = [
     {
       id: 'sh_scratching',
@@ -272,40 +359,16 @@
       weight: 14,
       minDay: 2,
       night: true,
-      text: function () {
-        return "Sometime after midnight the scratching starts at the barricade. Dry nails drag down plywood, slow and patient, and then a second set joins in. Dust trickles from the ceiling with every shove.";
-      },
-      choices: [
-        {
-          label: 'Reinforce the barricade (2 wood)',
-          req: function () { return has('wood', 2); },
-          reqText: 'Needs 2 wood',
-          success: function () {
-            take('wood', 2);
-            xp(8);
-            return "You wedge fresh planks across the weak spots and hammer them down between shoves. The scratching goes on for an hour, then fades. The barricade holds.";
-          }
-        },
-        {
-          label: 'Go out and deal with them',
-          success: function () {
-            addNoise(1);
-            return fight(['walker', 'walker']) || "You open the door a hand's width and step out. Two of them turn their heads together.";
-          }
-        },
-        {
-          label: 'Stay quiet and wait it out',
-          check: { attr: 'end', diff: 5 },
-          success: function () {
-            return "You sit in the dark with your knees pulled up and your teeth clenched. By dawn the scratching has stopped and the barricade is still there.";
-          },
-          fail: function () {
-            var b = damageBuilding();
-            addMorale(-5);
-            return b ? "A plank splits near dawn. The " + b + " takes the damage before they wander off. Nobody sleeps well after that." : "They claw at the wall until the sky grays, and nobody sleeps well after that.";
-          }
+      text: "Dry nails drag down the barricade after midnight. Then a second set joins in.",
+      play: {
+        type: 'horde', foes: ['walker', 'walker'],
+        onWin: function () { xp(8); return "The scratching stops. For good."; },
+        onLose: function () {
+          var b = damageBuilding();
+          addMorale(-5);
+          return b ? "They claw until dawn. The " + b + " takes the damage." : "They claw at the wall until dawn. Nobody sleeps.";
         }
-      ]
+      }
     },
     {
       id: 'sh_turning',
@@ -319,17 +382,17 @@
       text: function () {
         var s = randomSurvivor();
         G.flags._turning = s;
-        return sName(s) + " has not been eating, has not been talking and has been keeping one sleeve pulled down. In the small hours you find a rag soaked through on the floor, and a pair of dark, glassy eyes watching you from the corner. They have been bitten, and they hid it.";
+        return sName(s) + " has been hiding a bite under one sleeve. Now glassy eyes watch you from the corner.";
       },
       choices: [
         {
           label: 'Put them down',
           success: function () {
             var s = G.flags._turning;
-            if (!s) return "The cot is empty. You stand there for a long time with nothing to do.";
+            if (!s) return "The cot is empty. You stand there a long time.";
             killSurvivor(s, 'turned');
             addMorale(-12);
-            return "You do it quickly, and quietly, with your own hand. Nobody speaks at breakfast. Everyone saw the rag.";
+            return "You do it quickly, with your own hand. Nobody speaks at breakfast.";
           }
         },
         {
@@ -339,14 +402,14 @@
             var s = G.flags._turning;
             xp(15);
             addMorale(-3);
-            return "You bolt the signal room door from the outside and brace it with a pipe. " + sName(s) + " sits against the wall with the fever shaking through them, but the infection does not take. By morning the shivering has eased and the swelling has stopped.";
+            return sName(s) + " shakes all night behind the braced door. By morning the fever has eased.";
           },
           fail: function () {
             var s = G.flags._turning;
             if (s) killSurvivor(s, 'turned');
             hurt(10, 'bite');
             addMorale(-12);
-            return "You do not brace the door properly. Around four the fever takes " + sName(s) + " and the door cracks open. You get a bite on the forearm before you put them down.";
+            return "The door was not braced. The fever takes " + sName(s) + ", and you take a bite before it ends.";
           }
         },
         {
@@ -354,11 +417,10 @@
           req: function () { return has('antibiotics'); },
           reqText: 'Needs antibiotics',
           success: function () {
-            var s = G.flags._turning;
             take('antibiotics', 1);
             addMorale(5);
             xp(20);
-            return "You hold the pills out and say nothing. " + sName(s) + " takes them with shaking hands. It is not a cure, but by morning the fever has broken and the wound has stopped spreading.";
+            return "Not a cure. But by morning the fever breaks and the wound stops spreading.";
           }
         }
       ]
@@ -370,22 +432,20 @@
       weight: 10,
       minDay: 3,
       night: false,
+      who: 'Stranger',
       cond: function () { return G.survivors.length < 8; },
-      text: function () {
-        return "A lone figure waits at the gate with both hands raised, and a pack that looks too big for them. They say they have been walking for two days and have heard there is a place down here that is not on fire.";
-      },
+      text: "A lone figure at the gate, hands raised. \"Two days walking. They said there is a place here not on fire.\"",
       choices: [
         {
           label: 'Talk them into joining',
           check: { attr: 'cha', diff: 5 },
           success: function () {
             var s = recruit();
-            if (!s) return "You offer a place but the shelter has no room to give them. They nod and move on down the street.";
             xp(10);
-            return sName(s) + " steps through the gate and lets out a breath that sounds like a year of holding it in. 'Thank you,' they say. 'Whatever you need.'";
+            return sName(s) + " steps through the gate and lets out a long breath. \"Whatever you need.\"";
           },
           fail: function () {
-            return "You say all the right things in all the wrong tone. They look past you at the dark of the bunker and shake their head. They walk away down the street.";
+            return "Right words, wrong tone. They shake their head and walk on.";
           }
         },
         {
@@ -393,15 +453,14 @@
           success: function () {
             var r = give('canned', 1);
             var s = recruit();
-            if (!s) return "They show a clean knife and a calm face, but there is nowhere to put another person. They leave you a can of food " + r + " for the trouble.";
-            return "They empty the pack on the floor. Dried fruit, a coil of rope, a first aid pouch, and a scarred but steady set of hands. You nod and let " + sName(s) + " in. " + r + ".";
+            return "Rope, a first aid pouch, steady hands. You let " + sName(s) + " in. " + r + ".";
           }
         },
         {
           label: 'Send them away',
           success: function () {
             addMorale(-2);
-            return "You tell them there is no room. They do not argue. You watch them walk until the street swallows them, and then wonder why you are still watching.";
+            return "They do not argue. You watch until the street swallows them.";
           }
         }
       ]
@@ -413,39 +472,16 @@
       weight: 8,
       minDay: 3,
       night: true,
-      text: function () {
-        return "You wake to smoke curling under the storage room door. A lamp has tipped, or a wire has sparked, and a crate of rags is burning. The flames are climbing toward the shelves.";
-      },
-      choices: [
-        {
-          label: 'Smother it with a blanket',
-          check: { attr: 'end', diff: 5 },
-          success: function () {
-            xp(8);
-            return "You beat the fire with a wet blanket until your lungs burn. It dies hissing, and the shelves are scorched but whole.";
-          },
-          fail: function () {
-            hurt(6, 'fire');
-            take('wood', 2);
-            take('cloth', 2);
-            return "The blanket catches. You get the fire out in the end, but it costs you skin and takes some wood and cloth with it.";
-          }
-        },
-        {
-          label: 'Drag the supplies out first',
-          check: { attr: 'agi', diff: 5 },
-          success: function () {
-            xp(8);
-            return "You haul crate after crate into the corridor, keeping low. The fire eats the rag box and nothing else.";
-          },
-          fail: function () {
-            take('canned', 1);
-            take('wood', 2);
-            addMorale(-3);
-            return "A shelf collapses as you reach for it. You get most of the stock out, but not all of it.";
-          }
+      text: "Smoke under the storage door. A crate of rags is burning and the shelves are coming down.",
+      play: {
+        type: 'dodge', waves: 3, dmg: [4, 8],
+        onWin: function () { xp(8); return "The fire dies hissing. Scorched shelves, nothing lost."; },
+        onLose: function () {
+          take('wood', 2);
+          take('cloth', 2);
+          return "You beat it out at last, but it took wood and cloth with it.";
         }
-      ]
+      }
     },
     {
       id: 'sh_theft',
@@ -457,7 +493,7 @@
       text: function () {
         var s = randomSurvivor();
         G.flags._thief = s;
-        return "A few cans and a pack of cigarettes are missing from the shelf. Nobody saw anything and nobody is looking at you. " + sName(s) + " is chewing very slowly.";
+        return "Cans and cigarettes are missing. Nobody saw a thing. " + sName(s) + " is chewing very slowly.";
       },
       choices: [
         {
@@ -466,11 +502,11 @@
           success: function () {
             var r = give('canned', 1);
             xp(8);
-            return sName(G.flags._thief) + " breaks quickly, red-faced and sorry. They put the stolen food back. " + r + ". The shelter relaxes a little.";
+            return sName(G.flags._thief) + " breaks, red-faced, and puts the food back. " + r + ".";
           },
           fail: function () {
             addMorale(-5);
-            return sName(G.flags._thief) + " denies everything, loudly. By the end you are shouting too. The food stays gone and so does the good mood.";
+            return sName(G.flags._thief) + " denies everything, loudly. Soon you are shouting too.";
           }
         },
         {
@@ -478,7 +514,7 @@
           success: function () {
             take('canned', 1);
             addMorale(-2);
-            return "You say nothing and shrug it off. A few cans are not worth a war. But you notice the others noticing.";
+            return "A few cans are not worth a war. But the others notice.";
           }
         },
         {
@@ -486,7 +522,7 @@
           success: function () {
             var r = give('cigs', 2);
             addMorale(-6);
-            return "You find the cigarettes in " + sName(G.flags._thief) + "'s boot. They are recovered, " + r + ", but the trust you spent doing it will not come back soon.";
+            return "The cigarettes are in " + sName(G.flags._thief) + "'s boot. " + r + ". The trust you spent will not come back soon.";
           }
         }
       ]
@@ -498,9 +534,7 @@
       weight: 8,
       minDay: 4,
       cond: function () { return G.survivors.length > 0; },
-      text: function () {
-        return "Three people wake with chills and flushed faces. It is not the Grey Fever. It is a rough stomach bug, probably from the water. In a place this small it will go through everyone by tomorrow.";
-      },
+      text: "Three people wake with chills. Not the Grey Fever, just bad water. It will go through everyone.",
       choices: [
         {
           label: 'Use a medkit',
@@ -510,7 +544,7 @@
             take('medkit', 1);
             addMorale(4);
             xp(10);
-            return "You work down the line with fluids, tablets and clean cloths. By night everyone is sleeping through it and nobody gets worse.";
+            return "Fluids, tablets, clean cloths. By night everyone is sleeping it off.";
           }
         },
         {
@@ -519,12 +553,12 @@
           success: function () {
             take('water', 1);
             addMorale(-1);
-            return "You ration clean water and keep the sick away from the food. It is miserable, but it is over in two days.";
+            return "You ration clean water and keep the sick from the food. Two bad days, then it passes.";
           },
           fail: function () {
             setStatus('sick', 12);
             addMorale(-6);
-            return "You do what you can but it is not enough. It spreads, and you catch it too. The place smells like sweat and bleach for days.";
+            return "It spreads anyway, and you catch it too.";
           }
         },
         {
@@ -532,7 +566,7 @@
           success: function () {
             tire(10);
             addMorale(-3);
-            return "You move the sick into the back room and take turns bringing them water. The rest of you stay clear. It is lonely, but nobody else gets it.";
+            return "The sick go to the back room. It is lonely, but nobody else catches it.";
           }
         }
       ]
@@ -544,31 +578,16 @@
       weight: 9,
       minDay: 3,
       night: false,
-      text: function () {
-        return "A wheeled cart rattles up the street, hauled by two tired men with rifles slung across their backs. They hold up a handwritten sign that reads TRADE, NO TROUBLE. A donkey brays behind them like a bad omen.";
-      },
-      choices: [
-        {
-          label: 'Trade with them',
-          success: function () {
-            openTrader();
-            return "You open the gate a crack and talk across a table of old tins and tools. Prices are rude, as usual.";
-          }
+      who: 'Trader',
+      text: "A cart rattles up, hauled by two tired men with rifles. Their sign says TRADE, NO TROUBLE.",
+      play: {
+        type: 'barter',
+        onWin: function () {
+          addMorale(2);
+          return "They share news as they pack: a bridge down to the east, kids holding the old mall.";
         },
-        {
-          label: 'Just ask for news',
-          success: function () {
-            addMorale(2);
-            return "They tell you what they know: a bridge down to the east, a fort of kids in the old mall, something large crossing at night. You give them water for the information.";
-          }
-        },
-        {
-          label: 'Send them on',
-          success: function () {
-            return "You tell them you cannot take the risk. They shrug, tip their hats and trundle on.";
-          }
-        }
-      ]
+        onLose: function () { return ''; }
+      }
     },
     {
       id: 'sh_tribute',
@@ -577,9 +596,8 @@
       weight: 10,
       minDay: 6,
       night: false,
-      text: function () {
-        return "Two Tollmen stand at the gate in leather coats stamped with the Warden's brand. One reads from a ledger. 'Monthly toll is due. Five cigarettes or three cans. The Warden does not like to ask twice.'";
-      },
+      who: 'Tollman',
+      text: "\"Monthly toll is due. Five cigarettes or three cans. The Warden does not like to ask twice.\"",
       choices: [
         {
           label: 'Pay five cigarettes',
@@ -587,7 +605,7 @@
           reqText: 'Needs 5 cigarettes',
           success: function () {
             take('cigs', 5);
-            return "You count them out into a gloved hand. The Tollman ticks your name off, tips two fingers to his brow and leaves.";
+            return "He ticks your name off, touches two fingers to his brow and leaves.";
           }
         },
         {
@@ -597,14 +615,17 @@
           success: function () {
             take('canned', 3);
             addMorale(-2);
-            return "You hand over the food and watch it disappear into a sack. 'Pleasure,' he says. It is not.";
+            return "\"Pleasure,\" he says. It is not.";
           }
         },
         {
-          label: 'Refuse and fight',
+          label: 'Refuse to pay',
           success: function () {
             addNoise(2);
-            return fight(['tollman', 'tollman']) || "You slam the gate and reach for your weapon. They do not look surprised at all.";
+            fight(['tollman', 'tollman'], {
+              onWin: function () { return "The collectors will not be back. The Warden will hear of this."; }
+            });
+            return "You shut the gate in his face. They do not look surprised.";
           }
         }
       ]
@@ -616,16 +637,14 @@
       weight: 12,
       night: true,
       cond: function () { return G.survivors.length >= 2; },
-      text: function () {
-        return "The generator is quiet tonight and the dead are far off. Someone starts telling a story about a job they hated, and someone else tops it. By the third story people are laughing, real laughter, the kind you had forgotten the sound of.";
-      },
+      text: "The dead are far off tonight. Someone tells a story, someone tops it, and people laugh for real.",
       choices: [
         {
           label: 'Share a story of your own',
           success: function () {
             addMorale(8);
             xp(5);
-            return "You tell them about the worst boss you ever had. It lands. For an hour nobody is thinking about anything but the story.";
+            return "Your worst boss ever. It lands. For an hour nobody thinks about the dead.";
           }
         },
         {
@@ -633,7 +652,7 @@
           success: function () {
             addMorale(5);
             rest(10);
-            return "You lean back against the wall and listen. The sound of other people talking is better than any radio.";
+            return "Other people talking. It beats any radio.";
           }
         }
       ]
@@ -645,9 +664,7 @@
       weight: 6,
       minDay: 2,
       once: true,
-      text: function () {
-        return "A thin brown dog sits outside the gate, ribs showing, tail tapping once against the pavement. It does not bark. It only looks at the door and then at you.";
-      },
+      text: "A thin brown dog sits outside the gate, ribs showing. It does not bark. It just looks at you.",
       choices: [
         {
           label: 'Feed it through the gap',
@@ -656,7 +673,7 @@
           success: function () {
             take('canned', 1);
             addMorale(6);
-            return "The dog wolfs the food down and then, very carefully, licks your knuckles. It does not leave. Neither do you. By evening it is asleep against the door.";
+            return "It wolfs the food and licks your knuckles. By evening it is asleep against the door.";
           }
         },
         {
@@ -664,17 +681,18 @@
           success: function () {
             if (chance(0.25)) {
               addNoise(1);
-              return fight(['zdog']) || "As it crosses the threshold its eyes go flat and it snarls. It was sick all along.";
+              fight(['zdog']);
+              return "At the threshold its eyes go flat. It was sick all along.";
             }
             addMorale(7);
-            return "It trots in, sniffs every corner and falls asleep at your feet. The whole shelter softens a little.";
+            return "It sniffs every corner and falls asleep at your feet. The whole shelter softens.";
           }
         },
         {
           label: 'Shut the gate',
           success: function () {
             addMorale(-3);
-            return "You close the gate. The dog whines once, then the street goes quiet. You tell yourself it was the safe thing to do.";
+            return "It whines once. Then the street goes quiet.";
           }
         }
       ]
@@ -689,32 +707,32 @@
       text: function () {
         var s = randomSurvivor();
         G.flags._bday = s;
-        return sName(s) + " lets slip, quietly, that it is their birthday. They say it like an apology. Nobody has marked a birthday in fourteen months.";
+        return sName(s) + " admits it is their birthday, like an apology. Nobody has had one in fourteen months.";
       },
       choices: [
         {
-          label: 'Cook a proper meal (1 meal or canned)',
+          label: 'Cook a proper meal (meal or can)',
           req: function () { return has('meal') || has('canned'); },
           reqText: 'Needs a meal or canned food',
           success: function () {
             if (!take('meal', 1)) take('canned', 1);
             addMorale(10);
             xp(8);
-            return "You set a plate in front of " + sName(G.flags._bday) + " with a candle stub stuck in it. Everyone sings badly. They cry, then laugh, then ask for seconds.";
+            return "A candle stub in a plate of food. Everyone sings badly. " + sName(G.flags._bday) + " cries, then asks for seconds.";
           }
         },
         {
           label: 'Give a small gift',
           success: function () {
             addMorale(4);
-            return "You find a tin of mints in the cupboard and press it into their hand. They clutch it like treasure. 'Thanks,' they say, and mean it.";
+            return "A tin of mints from the cupboard. They hold it like treasure.";
           }
         },
         {
           label: 'Do not make a fuss',
           success: function () {
             addMorale(-2);
-            return "You nod and let it pass. It is the sensible thing. The look on their face tells you what it cost.";
+            return "The sensible thing. The look on their face tells you what it cost.";
           }
         }
       ]
@@ -725,42 +743,16 @@
       where: ['shelter'],
       weight: 9,
       minDay: 3,
-      text: function () {
-        return "A pipe in the ceiling has split, spraying brown water across the floor. The cots are soaked and the electrics are crackling. If it goes on, the floor will flood by noon.";
-      },
-      choices: [
-        {
-          label: 'Patch it with scrap',
-          req: function () { return has('scrap'); },
-          reqText: 'Needs scrap metal',
-          success: function () {
-            take('scrap', 1);
-            xp(8);
-            return "You clamp a flat of scrap around the split and tighten it with a wrench. The spray slows to a drip, then stops.";
-          }
-        },
-        {
-          label: 'Fix it properly',
-          check: { attr: 'int', diff: 5 },
-          success: function () {
-            xp(12);
-            return "You trace the line back to a valve and shut it off, then rig a bypass with what is on the shelf. The leak is gone and the water runs clean again.";
-          },
-          fail: function () {
-            take('water', 1);
-            addMorale(-3);
-            return "You shut off the wrong valve and the pipe bursts worse. By the time it is sorted a good deal of clean water has run to waste.";
-          }
-        },
-        {
-          label: 'Mop up and move on',
-          success: function () {
-            addMorale(-3);
-            tire(5);
-            return "You mop until your arms ache, but the pipe keeps dripping into a bucket. It is a problem for later.";
-          }
+      text: "A pipe bursts, spraying brown water over the cots. Reach the valve before the floor floods.",
+      play: {
+        type: 'race', time: 25,
+        onWin: function () { xp(10); return "You wrench the valve shut. The spray dies to a drip."; },
+        onLose: function () {
+          take('water', 1);
+          addMorale(-3);
+          return "Too slow. Clean water runs to waste across the floor.";
         }
-      ]
+      }
     },
     {
       id: 'sh_screamer',
@@ -769,42 +761,16 @@
       weight: 8,
       minDay: 4,
       night: true,
-      text: function () {
-        return "A thin wail rises from the street outside, unlike anything a walker makes. It rises, breaks, and rises again. Out in the dark you can hear shapes beginning to move toward the sound.";
-      },
-      choices: [
-        {
-          label: 'Stay silent and hold the door',
-          check: { attr: 'agi', diff: 5 },
-          success: function () {
-            xp(8);
-            return "You kill the lamp and hold your breath. The screaming wanders along the wall and moves off to the east, taking the crowd with it.";
-          },
-          fail: function () {
-            addNoise(2);
-            var b = damageBuilding();
-            return b ? "The screamer finds the gate. It shrieks until the whole block is at your wall, and the " + b + " takes the damage before dawn." : "The screamer finds the gate and shrieks until the whole block is at your wall. They claw at it all night.";
-          }
-        },
-        {
-          label: 'Go out and silence it',
-          success: function () {
-            addNoise(1);
-            return fight(['screamer']) || "You slip through the gate with a weapon in hand and move toward the sound.";
-          }
-        },
-        {
-          label: 'Shoot it from the roof',
-          req: function () { return has('crossbow') || has('pistol'); },
-          reqText: 'Needs a crossbow or pistol',
-          success: function () {
-            if (has('crossbow') && has('bolts')) take('bolts', 1);
-            else if (has('pistol') && has('ammo')) { take('ammo', 1); addNoise(2); }
-            xp(15);
-            return "You lie on the roof and wait for the shape to cross a patch of moonlight. One shot. The wail cuts off mid-breath.";
-          }
+      text: "A thin wail rises outside the gate, and shapes start moving toward it. Silence it fast.",
+      play: {
+        type: 'screamer', time: 6, extra: ['walker', 'walker', 'walker'],
+        onWin: function () { xp(15); return "The wail cuts off mid-breath. The street settles."; },
+        onLose: function () {
+          addNoise(2);
+          var b = damageBuilding();
+          return b ? "The whole block comes to your wall. The " + b + " takes the damage." : "The whole block comes to your wall and claws at it all night.";
         }
-      ]
+      }
     },
     {
       id: 'sh_rats',
@@ -812,32 +778,30 @@
       where: ['shelter'],
       weight: 9,
       minDay: 3,
-      text: function () {
-        return "You find bite marks along a sack of food and droppings across the shelf. Something is in the stores. In the gloom you see a gray shape slip between the crates, and then another.";
-      },
+      text: "Bite marks on the food sacks. Grey shapes slip between the crates.",
       choices: [
         {
-          label: 'Smoke them out with chemicals',
+          label: 'Smoke them out (chemicals)',
           req: function () { return has('chem'); },
           reqText: 'Needs chemicals',
           success: function () {
             take('chem', 1);
             xp(8);
-            return "You mix a stinking cloud in a bucket and leave it in the stores with the door shut. By evening the rats are gone and so is the smell, mostly.";
+            return "A stinking bucket, the door shut. By evening the rats are gone, and most of the smell.";
           }
         },
         {
-          label: 'Hunt them down',
+          label: 'Wait for them in the dark',
           check: { attr: 'agi', diff: 5 },
           success: function () {
             var r = give('rawmeat', 1);
             xp(8);
-            return "You wait with a pipe in the dark and take them one by one. They are small and scrawny, but it is meat. " + r + ".";
+            return "One by one, with a pipe. Scrawny, but it is meat. " + r + ".";
           },
           fail: function () {
             take('canned', 1);
             addMorale(-2);
-            return "They are faster than you and know the room better. By morning they have chewed through a can seal and made off with the rest.";
+            return "They know the room better. By morning a can is chewed open.";
           }
         },
         {
@@ -846,7 +810,7 @@
             take('veg', 1);
             take('canned', 1);
             addMorale(-3);
-            return "You throw out what they touched and tighten the lids on the rest. It is a waste, and everyone knows it.";
+            return "You throw out what they touched. A waste, and everyone knows it.";
           }
         }
       ]
