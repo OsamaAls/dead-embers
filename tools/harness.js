@@ -23,4 +23,20 @@ window.searchNearest = () => { const c = nearestCont(); const adj = [[0, 1], [1,
 window.holdE = (sec, until) => { kd('KeyE'); const t = sim(sec, () => until && until() ? 'stop' : 0); ku('KeyE'); return t; };
 window.dlgButtons = () => [...document.querySelectorAll('#dlg button:not([disabled])')];
 window.state = () => ({ day: G.day, time: G.hour + ':' + String(G.minute).padStart(2, '0'), p: [+G.p.x.toFixed(1), +G.p.y.toFixed(1)], hp: Math.round(G.p.hp), obj: objectiveInfo().text, unlocks: Object.keys(G.unlocks).join(','), blocking: UI.blocking(), mom: Moments.active, q: Game.Q.map(q => q.type).join(',') });
+/* defendBot(maxS): play a horde wave like a player would. Hold the ring just inside the barricade nearest the closest attacker,
+   kill anything that got inside first, shoot when there is ammo (else melee), mash out of grabs. Returns when the wave ends. */
+window.defendBot = (maxS) => { const t0 = __T; let minHp = G.p.hp;
+  const t = sim(maxS || 300, i => { skipDlg(); if (!Combat.wave) return 'stop'; minHp = Math.min(minHp, G.p.hp); if (G.p.hp <= 0) return 'stop';
+    const w = Combat.wave, r = w.rect, p = G.p, ins = (x, y) => x > r.x0 && x < r.x1 && y > r.y0 && y < r.y1;
+    let b = null, bd = 1e9; for (const e of Combat.enemies) { if (e.dead) continue; const d = Math.hypot(e.x - p.x, e.y - p.y) + (ins(e.x, e.y) ? 0 : 6); if (d < bd) { bd = d; b = e; } }
+    if (!b) { INPUT.mx = INPUT.my = 0; return; }
+    const gun = weaponProfile().ranged, d = Math.hypot(b.x - p.x, b.y - p.y);
+    let tx = b.x, ty = b.y; if (!ins(b.x, b.y)) { tx = Math.min(r.x1 - 0.7, Math.max(r.x0 + 0.7, b.x)); ty = Math.min(r.y1 - 0.7, Math.max(r.y0 + 0.7, b.y)); }
+    const want = gun ? 0.4 : 0.3, dm = Math.hypot(tx - p.x, ty - p.y);
+    if (dm > want && !(gun && d < 5 && ins(p.x, p.y))) { INPUT.mx = (tx - p.x) / dm; INPUT.my = (ty - p.y) / dm; } else INPUT.mx = INPUT.my = 0;
+    const s = R.tileToScreen(b.x, b.y, 1); if (s.on) { INPUT.aimX = s.x; INPUT.aimY = s.y; } else { INPUT.aimX = INPUT.aimY = null; G.p.face = Math.atan2(b.x - p.x, b.y - p.y); }
+    if (i % 3 === 0 && d < (gun ? 8 : 1.8)) INPUT.attackPressed = true;
+    if (Combat.grabbed && i % 2) INPUT.attackPressed = true;
+    if (gun && !(G.pack.ammo || G.pack.shells) && G.pack.machete) G.p.weapon = 'machete'; });
+  INPUT.mx = INPUT.my = 0; return { secs: t, minHp: Math.round(minHp), hp: Math.round(G.p.hp) }; };
 1;

@@ -179,6 +179,7 @@ function newGame(name, bgId, attrs) {
   WORLD = genWorld(seed);
   G.p.x = WORLD.hatch.x + 0.5; G.p.y = WORLD.hatch.y + 1.5;
   for (const k in bg.items) G.pack[k] = (G.pack[k] || 0) + bg.items[k];
+  G.pack.bottle = (G.pack.bottle || 0) + 2;
   const w = Object.keys(G.pack).find(k => ITEMS[k].c === 'weapon'); G.p.weapon = w || null;
   for (const k in WORLD.pois) G.locs[k] = { visited: false };
   initFog();
@@ -748,27 +749,60 @@ function repairBus() {
 /* ---------- Endings ---------- */
 function allyDiff() { const f = G.flags; return Math.max(3, 7 - (f.warden_secret ? 2 : 0) - (f.warden_trust ? 2 : 0) - (f.tollmen_secret ? 1 : 0) - Math.min(3, f.tribute || 0) - (G.survivors.length >= 6 ? 1 : 0)); }
 function standNeed() { return 60 + G.day * 2.5; }
-/* Options for the last night: [{id,label,ok,note}] */
+/* The real-time last stand: defense shrinks the horde and thickens the barricade, so the menu number means something. */
+function finalWavePlan() {
+  const D = defense() + G.survivors.length * 4, need = standNeed();
+  const k = clamp(need / Math.max(1, D), 0.75, 1.6);
+  return { count: clamp(Math.round(hordeWaveSize() * 1.5 * k), 12, 40), bonus: Math.round(D), surges: 3, D: Math.round(D), need: Math.round(need) };
+}
+/* Okafor's formula: from her drug cage (ines_formula) or from working beside her at the bunker (ines_joined); needs the radio */
+const canCure = () => !!(G.flags.radio_built && (G.flags.ines_formula || G.flags.ines_joined) && count('antibiotics') >= 3);
+const vanceAlive = () => !!(G.flags.vance_ally && G.survivors.some(s => s.name === 'Ada Vance'));
+const canStorm = () => !!(G.flags.warden_secret || G.flags.tollmen_secret);
+/* Options for the last night: [{id,label,ok,note}]. Story endings only appear once you've earned them. */
 function finalOptions() {
-  const f = G.flags, D = defense() + G.survivors.length * 4;
+  const f = G.flags, plan = finalWavePlan(), busOk = !!(f.bus_ready && has('haven_map'));
   const out = [
-    { id: 'bus', label: 'Load everyone on the bus. Drive north to Haven.', ok: !!(f.bus_ready && has('haven_map')), note: f.bus_ready && has('haven_map') ? 'Bus ready' : 'Needs the repaired bus and the route map' },
-    { id: 'stand', label: 'Stay. Hold the bunker against the great horde.', ok: true, note: `Defense ${D} vs ~${Math.round(standNeed())}` },
+    { id: 'bus', label: vanceAlive() ? "Roll north with Vance's escort. Haven." : 'Load everyone on the bus. Drive north to Haven.', ok: busOk, note: busOk ? (vanceAlive() ? 'Bus ready · military escort' : 'Bus ready') : 'Needs the repaired bus and the route map' },
+    { id: 'stand', label: 'Stay. Hold the bunker against the great horde.', ok: true, note: `Defense ${plan.D} vs ~${plan.need} · about ${plan.count} of them` },
     { id: 'ally', label: 'Go to the Warden. Propose an alliance.', ok: !!f.warden_met, note: f.warden_met ? `CHA · ${Math.round(checkChance({ attr: 'cha', diff: allyDiff() }) * 100)}%` : 'You never met the Warden' },
   ];
+  if (canCure()) out.push({ id: 'cure', label: "Broadcast Okafor's formula from KVAL.", ok: true, note: 'Reach the tower and hold it' });
+  if (canStorm()) out.push({ id: 'storm', label: "Storm the Tollmen camp. Take the Warden's chair.", ok: true, note: 'You know his bluff' });
+  if (f.choir_joined) out.push({ id: 'choir', label: "Ring the Choir's bells.", ok: true, note: 'The dead stay calm. Someone pays.' });
+  out.push({ id: 'alone', label: 'Walk north alone. Leave them all.', ok: true, note: '' });
   if (G.day < G.hordeDay) out.push({ id: 'wait', label: 'Not yet. There is still time.', ok: true, note: '' });
   return out;
+}
+/* Epilogue lines for an ending, picked from what you did (content.js EPILOGUES: {cond, line, endings, pri}). */
+function endingEpilogue(id) {
+  const list = (CONTENT_().epilogues || window.EPILOGUES || []);
+  const out = [];
+  for (const e of list) {
+    try {
+      if (id === 'death' || id === 'abandoned') { if (!e.endings || !e.endings.includes(id)) continue; }
+      else if (e.endings && !e.endings.includes(id)) continue;
+      if (e.cond && !e.cond()) continue;
+      const line = typeof e.line === 'function' ? e.line(id) : e.line; if (line) out.push({ line: fmtName(line), pri: e.pri || 0 });
+    } catch (err) { }
+  }
+  return out.sort((a, b) => b.pri - a.pri).slice(0, 5).map(o => o.line);
 }
 /* Resolve a final choice. Returns an ending id ('end_haven', ...), 'wait', or 'wave' (UI should run the final wave
    via Hooks.finalWave and then call finishStand(held)). */
 function chooseFinal(id) {
   if (id === 'wait') { G.flags.final = false; return 'wait'; }
-  if (id === 'bus') return endGame('end_haven');
+  if (id === 'bus') return endGame(vanceAlive() && CONTENT_().story.end_convoy ? 'end_convoy' : 'end_haven');
+  if (id === 'alone') return endGame('end_alone');
+  if (id === 'choir') return endGame('end_choir');
+  if (id === 'cure' || id === 'storm') return Hooks.finalWave ? id : endGame(id === 'cure' ? 'end_cure' : 'end_usurp');
   if (id === 'ally') return endGame(chance(checkChance({ attr: 'cha', diff: allyDiff() })) ? 'end_alliance' : 'end_alliance_fail');
   if (id === 'stand') { if (Hooks.finalWave) return 'wave'; return finishStand(defense() + G.survivors.length * 4 + rnd(-10, 15) >= standNeed()); }
   return null;
 }
 function finishStand(held) { return endGame(held ? 'end_stand' : 'end_stand_fail'); }
+function finishCure(ok) { if (ok) take('antibiotics', 3); return endGame(ok ? 'end_cure' : 'end_cure_fail'); }
+function finishStorm(ok) { return ok ? endGame('end_usurp') : null; }
 function endGame(id) { G.endScene = id; G.flags.ended = id; saveGame(true); return id; }
 
 /* ---------- Save / load ---------- */

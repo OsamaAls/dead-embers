@@ -10,7 +10,7 @@
 const Combat = (function () {
   const C = {
     player: null, enemies: [], drops: [], groups: [], survivors: [], aware: [], wave: null,
-    grabbed: false, grabNeed: 0, grabMash: 0, dodging: false, barricadeHp: 0, barricadeMax: 0, threat: 0, uid: 1,
+    grabbed: false, grabNeed: 0, grabMash: 0, dodging: false, barricadeHp: 0, barricadeMax: 0, threat: 0, uid: 1, target: null, lockManual: false,
   };
   const AUTO_CATS = { food: 1, water: 1, ammo: 1, mat: 1, med: 1, misc: 1 };
   const TELE = { walker: 0.45, runner: 0.3, bloater: 0.55, screamer: 0.4, brute: 0.62, zdog: 0.28 };
@@ -135,26 +135,51 @@ const Combat = (function () {
 
   /* ---------- player ---------- */
   const PS = { swing: null, cd: 0, dodge: null, kx: 0, ky: 0, staDelay: 0, winded: false, noiseT: 0, noAmmoTold: false, grabBy: null, grabTick: 0, grabT: 0, hitStop: 0, buf: 0, lastProf: undefined, tiredT: 0 };
+  /* ---------- lock-on (keyboard and touch): sticky soft target, F cycles, Shift+F clears ---------- */
+  const usingMouse = () => !INPUT.touch && (INPUT.mouseAim !== undefined ? !!INPUT.mouseAim : INPUT.aimX != null);
+  function lockScore(e, prof) {
+    const p = G.p, d = dist(p.x, p.y, e.x, e.y), rng = (prof.ranged ? (prof.rng || 8) : (prof.reach || 1) + 3) + 3;
+    if (e.dead || e.gone || d > rng || !los(p.x, p.y, e.x, e.y)) return null;
+    const dir = Math.hypot(INPUT.mx || 0, INPUT.my || 0) > 0.1 ? Math.atan2(INPUT.mx, INPUT.my) : (p.face || 0);
+    let sc = d + Math.abs(angDiff(dir, Math.atan2(e.x - p.x, e.y - p.y))) * 1.6;
+    if (C.wave && e.inside) sc -= 3; if (e.state === 'chase' || e.atk) sc -= 1.2;
+    return sc;
+  }
+  function updateLock(prof, dt) {
+    const p = G.p;
+    if (INPUT.clearLock) { INPUT.clearLock = false; C.target = null; C.lockManual = false; }
+    let t = C.target;
+    if (t && (t.dead || t.gone || dist(p.x, p.y, t.x, t.y) > (prof.ranged ? (prof.rng || 8) : 4) + 5)) t = null;
+    if (t) { t.lockLost = los(p.x, p.y, t.x, t.y) ? 0 : (t.lockLost || 0) + dt; if (t.lockLost > 1.5) t = null; }
+    const cands = [];
+    for (const e of C.enemies) { const sc = lockScore(e, prof); if (sc != null) cands.push([sc, e]); }
+    cands.sort((a, b) => a[0] - b[0]);
+    if (INPUT.cyclePressed) {
+      INPUT.cyclePressed = false;
+      if (cands.length) { const i = cands.findIndex(c => c[1] === t); t = cands[(i + 1) % cands.length][1]; C.lockManual = true; sfx('ui'); }
+    }
+    if (!t) { C.lockManual = false; t = cands.length ? cands[0][1] : null; }
+    else if (!C.lockManual && cands.length && cands[0][1] !== t && cands[0][0] < (lockScore(t, prof) || 99) - 2.5) t = cands[0][1]; /* switch only to a clearly better target */
+    C.target = t;
+  }
+  /* players point at bodies, not at the ground under them: the enemy whose chest is within ~48px of the cursor */
+  function mouseTarget(prof) {
+    if (INPUT.aimX == null || typeof R === 'undefined' || !has(R, 'tileToScreen')) return null;
+    const p = G.p, rng = prof.ranged ? (prof.rng || 8) + 2 : (prof.reach || 1) + 3;
+    let best = null, bd = 48 * 48;
+    for (const e of C.enemies) {
+      if (e.dead || dist(p.x, p.y, e.x, e.y) > rng) continue;
+      const s = R.tileToScreen(e.x, e.y, 1); if (!s.on) continue;
+      const d2 = (s.x - INPUT.aimX) ** 2 + (s.y - INPUT.aimY) ** 2; if (d2 < bd) { bd = d2; best = e; }
+    }
+    return best;
+  }
   function aimAngle(prof) {
     const p = G.p;
-    if (INPUT.touch) {
-      const rng = prof.ranged ? (prof.rng || 8) : (prof.reach || 1) + 3;
-      let best = null, bd = rng;
-      for (const e of C.enemies) { if (e.dead) continue; const d = dist(p.x, p.y, e.x, e.y); if (d < bd && los(p.x, p.y, e.x, e.y)) { bd = d; best = e; } }
-      return best ? Math.atan2(best.x - p.x, best.y - p.y) : null;
-    }
+    if (!usingMouse()) { const t = C.target; return t ? Math.atan2(t.x - p.x, t.y - p.y) : null; }
     if (INPUT.aimX != null && typeof R !== 'undefined' && has(R, 'screenToTile')) {
-      /* players point at bodies, not at the ground under them: snap to an enemy whose chest is near the cursor */
-      if (has(R, 'tileToScreen')) {
-        const rng = prof.ranged ? (prof.rng || 8) + 2 : (prof.reach || 1) + 3;
-        let best = null, bd = 48 * 48;
-        for (const e of C.enemies) {
-          if (e.dead || dist(p.x, p.y, e.x, e.y) > rng) continue;
-          const s = R.tileToScreen(e.x, e.y, 1); if (!s.on) continue;
-          const d2 = (s.x - INPUT.aimX) ** 2 + (s.y - INPUT.aimY) ** 2; if (d2 < bd) { bd = d2; best = e; }
-        }
-        if (best) return Math.atan2(best.x - p.x, best.y - p.y);
-      }
+      const best = mouseTarget(prof);
+      if (best) return Math.atan2(best.x - p.x, best.y - p.y);
       const t = R.screenToTile(INPUT.aimX, INPUT.aimY);
       if (t && dist(t.x, t.y, p.x, p.y) > 0.15) return Math.atan2(t.x - p.x, t.y - p.y);
     }
@@ -219,12 +244,15 @@ const Combat = (function () {
     /* stamina regen */
     if (PS.staDelay <= 0 && mode !== 'sprint' && !PS.swing) rest((speed > 0.2 ? 7 : 12) * dt);
     /* facing */
+    if (!usingMouse()) updateLock(prof, dt); else { INPUT.cyclePressed = false; C.target = mouseTarget(prof); }
+    if (INPUT.throwPressed) { INPUT.throwPressed = false; if (!PS.dodge && !C.grabbed) throwBottle(prof); }
+    if (typeof UI !== 'undefined' && UI.lockOn) UI.lockOn(C.target && !C.target.dead ? C.target : null);
     const aim = (prof.ranged || PS.buf > 0 || INPUT.attack || PS.swing) ? aimAngle(prof) : null;
     let want = p.face || 0;
     if (PS.dodge) want = p.face;
     else if (C.grabbed && PS.grabBy) want = Math.atan2(PS.grabBy.x - p.x, PS.grabBy.y - p.y);
     else if (PS.swing && PS.swing.face != null) want = PS.swing.face;
-    else if (prof.ranged && aim != null) want = aim;
+    else if (aim != null && (prof.ranged || !usingMouse() || PS.buf > 0 || INPUT.attack)) want = aim;
     else if (len > 0.1) want = Math.atan2(mx, my);
     p.face = turn(p.face || 0, want, dt * 16);
     /* attacks */
@@ -262,10 +290,48 @@ const Combat = (function () {
     const max = arc >= 1.6 ? 3 : 2;
     hits.slice(0, max).forEach(([d, e], i) => {
       let n = playerHitDamage(prof); if (i > 0) n = Math.max(1, Math.round(n * 0.7));
+      /* sneak attack: an unaware zombie takes triple damage (rewards crouching and the awareness meters) */
+      if (e.E.z && e.aware < 0.3 && e.state !== 'chase' && e.state !== 'siege' && !e.wave) {
+        n *= 3; num(e.x, e.y, 'Silent', 'crit'); xp(2); hintOnce('sneak', 'Hit them before they notice: triple damage.');
+      }
       const dx = (e.x - p.x) / Math.max(d, 0.01), dy = (e.y - p.y) / Math.max(d, 0.01), kb = (prof.id === 'axe' || prof.id === 'bat' || prof.id === 'pipe') ? 4.5 : 3;
       hurtEnemy(e, n, { kx: dx * kb, ky: dy * kb });
     });
     if (hits.length) { PS.hitStop = 0.05; shake(0.14 + (prof.dmg ? prof.dmg[1] : 4) * 0.01); sfx('hit'); }
+  }
+  /* ---------- thrown bottles: a lure. Lands up to 8 tiles away (stops at walls), shatters, pulls the dead toward the noise ---------- */
+  const thrown = [];
+  let bottleGeo = null, bottleMat = null;
+  function throwBottle(prof) {
+    const p = G.p; if (!(G.pack.bottle > 0)) { toast('No bottles to throw.', 'dim'); return; }
+    let tx, ty;
+    const t = C.target && !C.target.dead ? C.target : null;
+    if (usingMouse() && INPUT.aimX != null && has(R, 'screenToTile')) { const g = R.screenToTile(INPUT.aimX, INPUT.aimY); if (g) { tx = g.x; ty = g.y; } }
+    if (tx == null && t) { tx = t.x; ty = t.y; }
+    if (tx == null) { tx = p.x + Math.sin(p.face || 0) * 6; ty = p.y + Math.cos(p.face || 0) * 6; }
+    let d = dist(p.x, p.y, tx, ty); if (d > 8) { tx = p.x + (tx - p.x) / d * 8; ty = p.y + (ty - p.y) / d * 8; d = 8; }
+    /* stop short of the first wall along the way */
+    const steps = Math.ceil(d / 0.25); let lx = p.x, ly = p.y;
+    for (let i = 1; i <= steps; i++) { const x = p.x + (tx - p.x) * i / steps, y = p.y + (ty - p.y) * i / steps; if (solidAt(x, y)) break; lx = x; ly = y; }
+    take('bottle', 1);
+    if (!bottleGeo) { bottleGeo = new THREE.CylinderGeometry(0.06, 0.09, 0.32, 6); bottleMat = new THREE.MeshLambertMaterial({ color: 0x3f6a4a, emissive: 0x0a1a10 }); }
+    const m = new THREE.Mesh(bottleGeo, bottleMat); R.scene.add(m);
+    thrown.push({ m, x0: p.x, y0: p.y, x1: lx, y1: ly, t: 0, dur: 0.25 + d * 0.05 });
+    C.player.anim && C.player.anim('attack', { wind: 0.12 }); sfx('swing');
+    hintOnce('bottle', 'Bottles draw the dead to where they break. Sneak past.');
+  }
+  function updateThrown(dt) {
+    for (let i = thrown.length - 1; i >= 0; i--) {
+      const b = thrown[i]; b.t += dt; const k = Math.min(1, b.t / b.dur);
+      const x = b.x0 + (b.x1 - b.x0) * k, y = b.y0 + (b.y1 - b.y0) * k, h = 1.3 + Math.sin(k * Math.PI) * 1.6 - k * 1.2;
+      b.m.position.set(x * TILE, Math.max(0.1, h), y * TILE); b.m.rotation.x += dt * 14;
+      if (k >= 1) {
+        R.scene.remove(b.m); thrown.splice(i, 1);
+        sfx('hit'); num(b.x1, b.y1, 'crash', 'dim');
+        C.noise(b.x1, b.y1, 7);
+        for (const e of C.enemies) if (!e.dead && !e.wave && e.state !== 'chase' && dist(e.x, e.y, b.x1, b.y1) < 7) { e.ix = b.x1; e.iy = b.y1; e.state = 'sus'; e.susT = 0; e.aware = Math.max(e.aware, 0.5); }
+      }
+    }
   }
   function fireGun(prof, face) {
     const p = G.p;
@@ -376,6 +442,11 @@ const Combat = (function () {
   }
   /* walk toward (tx,ty); returns the speed actually moved (tiles/s). Slides along walls; detours when stuck. */
   function walkTo(e, tx, ty, spd, dt, block) {
+    /* recentre: a tile centre always has clearance to its neighbours, so a body clipped on a corner steps back to it first */
+    if (e.centerT > 0) {
+      e.centerT -= dt; const cx = Math.floor(e.x) + 0.5, cy = Math.floor(e.y) + 0.5;
+      if (dist(e.x, e.y, cx, cy) > 0.06) { tx = cx; ty = cy; } else e.centerT = 0;
+    }
     let dx = tx - e.x, dy = ty - e.y; const L = Math.hypot(dx, dy);
     if (L < 0.05 || spd <= 0) return 0;
     dx /= L; dy /= L;
@@ -392,7 +463,10 @@ const Combat = (function () {
       [nx, ny] = move(e.x, e.y, px * step, py * step, e.r, block);
       moved = dist(nx, ny, e.x, e.y);
       e.stuckT += dt;
-      if (e.stuckT > 0.7) { e.stuckT = 0; e.side = -e.side; e.detour = 0.8; }
+      if (e.stuckT > 0.5) {
+        e.stuckT = 0; e.stuckN = (e.stuckN || 0) + 1;
+        if (e.stuckN % 3 && !e.centerT) e.centerT = 0.8; else { e.side = -e.side; e.detour = 0.8; }
+      }
     } else e.stuckT = Math.max(0, e.stuckT - dt);
     e.x = nx; e.y = ny;
     e.faceT = Math.atan2(dx, dy);
@@ -767,28 +841,43 @@ const Combat = (function () {
     const w = C.wave; if (!w) return;
     w.t += dt; w.batchT -= dt; w.sfxT -= dt;
     const alive = w.list.filter(e => !e.dead && !e.gone);
-    if (w.spawned < w.total && w.batchT <= 0 && alive.length < 18) {
+    /* surges (final stand): stop at each third, let the yard clear, breathe, then the next surge */
+    if (w.pauseT > 0) { w.pauseT -= dt; if (w.pauseT <= 0) { toast('Here they come again.', 'bad'); sfx('scream'); } }
+    else if (w.surges.length && w.spawned >= w.surges[0] && alive.length <= 1) { w.surges.shift(); w.pauseT = 8; toast("They're regrouping. Patch up.", 'warn'); }
+    const surgeCap = w.surges.length ? w.surges[0] : w.total;
+    if (w.pauseT <= 0 && w.spawned < surgeCap && w.batchT <= 0 && alive.length < 18) {
       w.batchT = rand(4, 6);
-      const n = Math.min(w.total - w.spawned, 3 + ((Math.random() * 3) | 0));
+      const n = Math.min(surgeCap - w.spawned, 3 + ((Math.random() * 3) | 0));
       const sp = waveSpawnPoint(w.rect);
       for (let i = 0; i < n; i++) {
         let x = sp.x + rand(-1.5, 1.5), y = sp.y + rand(-1.5, 1.5); if (hitR(x, y, 0.35)) { x = sp.x; y = sp.y; }
-        const id = Math.random() < 0.7 ? 'walker' : pickType(['zdog']);
+        const id = w.final ? (Math.random() < 0.5 ? 'walker' : pick(zombieTypes().filter(t => t !== 'screamer' && t !== 'bloater')) || 'walker') : (Math.random() < 0.7 ? 'walker' : pickType(['zdog']));
         const e = spawnAt(id, x, y); if (!e) continue;
         e.wave = w; e.aware = 1; e.state = 'siege'; e.screamed = true; e.off = rand(-1, 1); e.alertT = 0;
         w.list.push(e); w.spawned++;
       }
     }
+    let insideNow = 0, stuck = 0;
     for (const e of alive) {
       const inside = inRect(w.rect, e.x, e.y, 0.2);
       if (inside && !e.inside) { e.inside = true; if (w.breached) w.breaches++; }
+      if (inside) insideNow++;
+      /* safety net: a wave zombie that makes no headway for 10 s (and isn't fighting) comes back in from a fresh edge */
+      if (e.wpT == null || dist(e.x, e.y, e.wpX, e.wpY) > 1) { e.wpX = e.x; e.wpY = e.y; e.wpT = 0; }
+      else if (!e.atk && dist(e.x, e.y, G.p.x, G.p.y) > 2 && !(e.state === 'siege' && C.barricadeHp > 0 && distToRect(w.rect, e.x, e.y) < 1.2)) {
+        e.wpT += dt;
+        if (e.wpT > 25) stuck++;
+        else if (e.wpT > 10 && !e.respawned) { const sp = waveSpawnPoint(w.rect); e.x = sp.x; e.y = sp.y; e.respawned = true; e.wpT = 0; e.wpX = e.x; e.wpY = e.y; e.centerT = 0; e.detour = 0; }
+      }
     }
     if (C.barricadeHp <= 0 && !w.breached) { w.breached = true; toast('The barricade is down!', 'bad'); shake(0.5); sfx('scream'); }
     updateGuards(dt, w);
     if (G.p.hp <= 0) endWave(false);
     else if (w.spawned >= w.total && !alive.length) endWave(true);
-    else if (w.breached && w.breaches >= Math.max(3, Math.ceil(w.total * 0.5))) endWave(false);
+    else if (w.spawned >= w.total && alive.length <= 2 && stuck === alive.length) { for (const e of alive) despawn(e); endWave(true); }
+    else if (insideNow >= (w.final ? 7 : 6)) { toast('They are everywhere. The yard is lost.', 'bad'); endWave(false); }
   }
+  const distToRect = (r, x, y) => Math.hypot(Math.max(r.x0 - x, 0, x - r.x1), Math.max(r.y0 - y, 0, y - r.y1));
   function endWave(held) {
     const w = C.wave; if (!w || w.ended) return;
     w.ended = true; C.wave = null;
@@ -799,20 +888,21 @@ const Combat = (function () {
   }
   const guardT = {};
   function updateGuards(dt, w) {
-    const guards = C.survivors.filter(s => s.job === 'guard' || s.job === 'tower');
+    /* guards always shoot; on the last night everyone who lives here fights (non-guards at ~60% of the rate) */
+    const guards = C.survivors.filter(s => s.job === 'guard' || s.job === 'tower' || w.final);
     for (const s of guards) {
       guardT[s.id] = (guardT[s.id] || rand(0.3, 1.2)) - dt;
       if (guardT[s.id] > 0) continue;
-      const sk = (s.ref.skills && s.ref.skills.combat) || 1;
-      guardT[s.id] = Math.max(0.8, 2.0 - sk * 0.2) * rand(0.9, 1.2);
-      const range = s.job === 'tower' ? 11 : 9;
+      const sk = (s.ref.skills && s.ref.skills.combat) || 1, isGuard = s.job === 'guard' || s.job === 'tower';
+      guardT[s.id] = Math.max(0.8, 2.0 - sk * 0.2) * rand(0.9, 1.2) / (isGuard ? 1 : 0.35);
+      const range = s.job === 'tower' ? 11 : isGuard ? 9 : 7;
       let best = null, bd = range;
       for (const e of C.enemies) { if (e.dead || (!e.wave && e.state !== 'chase')) continue; const d = dist(s.x, s.y, e.x, e.y); if (d < bd && los(s.x, s.y, e.x, e.y)) { bd = d; best = e; } }
       if (!best) continue;
       s.face = Math.atan2(best.x - s.x, best.y - s.y); s.a.anim('shoot');
       const h = s.job === 'tower' ? 3.2 : 1.35;
       muzzle(s.x + Math.sin(s.face) * 0.4, s.y + Math.cos(s.face) * 0.4, h, false); sfx('shoot');
-      if (Math.random() < 0.5 + sk * 0.08 + (s.job === 'tower' ? 0.1 : 0)) { hurtEnemy(best, rnd(5, 10) + sk * 2, { guard: true, kx: Math.sin(s.face), ky: Math.cos(s.face) }); tracer(s.x, s.y, h, best.x, best.y, 1.1, false); }
+      if (Math.random() < (isGuard ? 0.5 : 0.35) + sk * 0.07 + (s.job === 'tower' ? 0.1 : 0)) { hurtEnemy(best, rnd(4, 8) + sk * 2, { guard: true, kx: Math.sin(s.face), ky: Math.cos(s.face) }); tracer(s.x, s.y, h, best.x, best.y, 1.1, false); }
       else tracer(s.x, s.y, h, best.x + rand(-1, 1), best.y + rand(-1, 1), 0.3, false);
     }
   }
@@ -926,7 +1016,7 @@ const Combat = (function () {
       for (const f of fx) f.obj.parent && f.obj.parent.remove(f.obj); fx.length = 0;
       for (const g of gas) { g.m.parent && g.m.parent.remove(g.m); g.mat.dispose(); } gas.length = 0;
       this.enemies = []; this.drops = []; this.groups = []; this.survivors = []; this.aware = []; this.wave = null; survKey = '';
-      this.grabbed = false; this.dodging = false; this.barricadeHp = 0; this.barricadeMax = 0; this.threat = 0; PS.grabBy = null; PS.dodge = null; PS.swing = null;
+      this.grabbed = false; this.dodging = false; this.barricadeHp = 0; this.barricadeMax = 0; this.threat = 0; this.target = null; this.lockManual = false; PS.grabBy = null; PS.dodge = null; PS.swing = null;
       if (light) light.intensity = 0;
       if (this.player) {
         const pl = this.player; this.player = null;
@@ -945,6 +1035,7 @@ const Combat = (function () {
       Actors.night = !!G.isNight;
       flowT -= dt; if (flowT <= 0) { flowT = 0.25; flowUpdate(false); }
       if (G.p.hp > 0) updatePlayer(dt); else { this.player.update(dt, 0); checkDeath(); }
+      updateThrown(dt);
       for (let i = 0; i < this.enemies.length; i++) updateEnemy(this.enemies[i], dt);
       /* separation (living enemies) */
       const L = this.enemies, p = G.p;
@@ -998,12 +1089,17 @@ const Combat = (function () {
       this.groups.push(gr);
       hintOnce('combat', 'Click or J to attack. Space to dodge.');
     },
-    startWave(count, onEnd) {
+    /* opts: {bonus: extra barricade HP, final: last-night rules (everyone fights, 7 inside to overrun), surges: n (pauses between them)} */
+    startWave(count, onEnd, opts) {
+      opts = opts || {};
       if (this.wave) endWave(true);
       const lv = bl('walls');
-      const max = lv ? 60 + 80 * lv : 45;
+      const max = (lv ? 60 + 80 * lv : 45) + Math.max(0, opts.bonus | 0);
       this.barricadeMax = max; this.barricadeHp = max;
-      this.wave = { rect: rectOf(), total: Math.max(1, count | 0), spawned: 0, list: [], kills: 0, breaches: 0, breached: false, onEnd, batchT: 1.2, sfxT: 0, t: 0, max, ended: false };
+      const total = Math.max(1, count | 0), surges = [];
+      for (let i = 1; i < (opts.surges || 1); i++) surges.push(Math.round(total * i / opts.surges));
+      this.wave = { rect: rectOf(), total, spawned: 0, list: [], kills: 0, breaches: 0, breached: false, onEnd, batchT: 1.2, sfxT: 0, t: 0, max, ended: false,
+        final: !!opts.final, surges, pauseT: 0 };
       flowUpdate(true);
     },
     noise(x, y, radius, soft) {

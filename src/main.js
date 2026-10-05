@@ -26,7 +26,7 @@ function startWorld() {
   World3D.build(); World3D.refreshShelter();
   Combat.reset();
   R.follow(G.p.x, G.p.y, G.p.face || 0, true);
-  Game.running = true; Game.dead = false; Game.Q = []; Game.showing = false; Game.wave = false; Game.timeAcc = 0;
+  Game.running = true; Game.dead = false; Game.Q = []; Game.showing = false; Game.wave = false; Game.timeAcc = 0; Game.final = null;
   G.atShelter = inShelter(G.p.x, G.p.y); G.isNight = isNight();
   for (const id in G.cont) World3D.setContainerOpened(id, containerState({ id }) === 'empty');
 }
@@ -148,12 +148,63 @@ function startHorde() {
     World3D.refreshShelter(); saveGame(true);
   });
 }
+/* an open outdoor tile centre near (x,y), at least minD tiles away (for placing the player in final sequences) */
+function openSpot(x, y, minD, maxD) {
+  let best = null, bd = 1e9;
+  for (let ty = 1; ty < H - 1; ty++) for (let tx = 1; tx < W - 1; tx++) {
+    const d = Math.hypot(tx + 0.5 - x, ty + 0.5 - y); if (d < minD || d > maxD) continue;
+    if (solidAt(tx + 0.5, ty + 0.5) || indoors(tx + 0.5, ty + 0.5) || inShelter(tx + 0.5, ty + 0.5)) continue;
+    const t = tileAt(tx, ty), sc = Math.abs(d - (minD + maxD) / 2) + (t === T_ROAD ? 0 : 1.5);
+    if (sc < bd) { bd = sc; best = { x: tx + 0.5, y: ty + 0.5 }; }
+  }
+  return best || { x, y: y + minD };
+}
+function placePlayer(pt) { G.p.x = pt.x; G.p.y = pt.y; G.p.hp = G.p.maxHp; G.p.sta = G.p.maxSta; G.atShelter = inShelter(pt.x, pt.y); R.follow(G.p.x, G.p.y, G.p.face || 0, true); }
+
+/* The last night, played: 'wave' (hold the bunker), 'cure' (reach KVAL and broadcast), 'storm' (take the Tollmen camp).
+   Called by UI.final when chooseFinal returns one of these. Returns true if it started something. */
+Game.finalRun = function (kind) {
+  if (kind === 'wave') { Game.finalWave(); return true; }
+  if (kind === 'cure') {
+    const t = nearestPoi('radiotower', G.p.x, G.p.y); if (!t) { UI.end(finishCure(true)); return true; }
+    const tower = { x: t.x + 0.5, y: t.y + 1.5 };
+    placePlayer(openSpot(tower.x, tower.y, 14, 20));
+    Game.final = { kind: 'cure', tower, t: 75, hold: 0, spawnT: 2, need: 6 };
+    UI.banner("Okafor's formula", 'Reach KVAL. Hold the transmitter until it is sent.');
+    World3D.marker && World3D.marker('final', tower, 0x7fd0ff);
+    return true;
+  }
+  if (kind === 'storm') {
+    const g = WORLD.gate; placePlayer(openSpot(g.x + 0.5, g.y + 0.5, 6, 9));
+    Game.final = { kind: 'storm' };
+    UI.banner("The Warden's chair", 'No more tolls. End it tonight.');
+    fight(['warden', 'tollman', 'tollman', 'raider'], { noFlee: true, at: { x: g.x + 0.5, y: g.y + 0.5 },
+      onWin: () => { Game.final = null; setTimeout(() => UI.end(finishStorm(true)), 1200); return 'The Warden is down. The camp goes quiet.'; } });
+    return true;
+  }
+  return false;
+};
 Game.finalWave = function () {
   Game.wave = true;
-  UI.banner('The great horde', 'Everything the city has left is coming.');
-  G.p.x = WORLD.hatch.x + 0.5; G.p.y = WORLD.hatch.y + 1.5;
-  Combat.startWave(Math.round(hordeWaveSize() * 2.2), res => { Game.wave = false; UI.end(finishStand(res.held)); });
+  const plan = finalWavePlan();
+  UI.banner('The great horde', `Everything the city has left is coming. About ${plan.count} of them.`);
+  placePlayer({ x: WORLD.hatch.x + 0.5, y: WORLD.hatch.y + 1.5 });
+  Combat.startWave(plan.count, res => { Game.wave = false; UI.end(finishStand(res.held)); }, { bonus: plan.bonus, final: true, surges: plan.surges });
 };
+/* per frame while a 'cure' run is on: timer, pressure, hold E at the transmitter */
+function updateFinalRun(dt) {
+  const F = Game.final; if (!F || F.kind !== 'cure') return;
+  F.t -= dt; UI.timer('Broadcast', Math.max(0, F.t));
+  F.spawnT -= dt;
+  if (F.spawnT <= 0) { F.spawnT = 7; Combat.spawnFight(pick([['walker', 'walker'], ['runner', 'walker'], ['walker', 'walker', 'walker'], ['brute']]), { at: F.tower }); }
+  const d = Math.hypot(G.p.x - F.tower.x, G.p.y - F.tower.y);
+  if (d < 1.8) {
+    if (INPUT.interact) F.hold += dt; else F.hold = Math.max(0, F.hold - dt);
+    UI.momentPrompt && UI.momentPrompt(F.hold > 0 ? 'Broadcasting…' : 'Hold E  Send the formula', F.hold / F.need);
+    if (F.hold >= F.need) { Game.final = null; UI.timer(null); UI.momentPrompt && UI.momentPrompt(null); World3D.marker && World3D.marker('final', null); UI.toast('The formula goes out on every frequency.', 'good'); setTimeout(() => UI.end(finishCure(true)), 1200); }
+  } else if (UI.momentPrompt) UI.momentPrompt(null);
+  if (F.t <= 0 && Game.final) { Game.final = null; UI.timer(null); UI.momentPrompt && UI.momentPrompt(null); World3D.marker && World3D.marker('final', null); UI.end(finishCure(false)); }
+}
 
 /* ---------- loop ---------- */
 let lastT = 0;
@@ -165,6 +216,7 @@ function frame(t) {
     if (!blocked && !Game.dead) {
       Combat.update(dt);
       Moments.update(dt);
+      updateFinalRun(dt);
       const wasHome = G.atShelter; G.atShelter = inShelter(G.p.x, G.p.y);
       Game.unlockT = (Game.unlockT || 0) + dt; if (wasHome !== G.atShelter || Game.unlockT > 2) { Game.unlockT = 0; checkUnlocks(); }
       Game.timeAcc += dt * TIME_SCALE;
@@ -176,7 +228,7 @@ function frame(t) {
       Game.saveTimer += dt; if (Game.saveTimer > 60 && !Combat.inFight()) { Game.saveTimer = 0; saveGame(true); }
     } else UI.prompt(null);
     pump();
-    if (Game.dead && !Game.deathShown) { Game.deathShown = true; Combat.clear(); try { localStorage.removeItem(SAVE_KEY); } catch (e) { } setTimeout(() => UI.end('death'), 900); }
+    if (Game.dead && !Game.deathShown) { Game.deathShown = true; Combat.clear(); try { localStorage.removeItem(SAVE_KEY); } catch (e) { } const endId = Game.final && Game.final.kind === 'cure' ? finishCure(false) : 'death'; Game.final = null; setTimeout(() => UI.end(endId), 900); }
     World3D.update(dt, G.p.x, G.p.y);
     R.setTime(G.hour, G.minute + Game.timeAcc);
     R.setFlashlight(G.isNight || indoors(G.p.x, G.p.y), G.p.x, G.p.y, G.p.face || 0);
