@@ -7,6 +7,7 @@
   const myWeapon = () => ['knife', 'pipe', 'bat', 'machete', 'axe', 'crossbow', 'pistol', 'shotgun'].find(w => has(w));
   const sore = (n, cause) => hurt(Math.max(0, Math.min(n, G.p.hp - 10)), cause);
   const list = (...xs) => xs.filter(Boolean).join(', ');
+  const owns = (id) => (G.pack[id] || 0) + (G.store[id] || 0) > 0;
 
   window.ARC_ENCOUNTERS = [
     // ---------- 1. ELI ----------
@@ -115,7 +116,7 @@
       who: 'Dr. Okafor',
       text: '"The basement drug cage. Open it and I can make antibiotics. I\'ve no hands for crowbars."',
       play: { type: 'lock', mode: 'pry', diff: 5,
-        onWin: () => { mark('ines_4'); xp(12); return '"Thank you for believing me." ' + list(give('antibiotics', 2), give('bandage', 2), give('painkillers', 1)) + '.'; },
+        onWin: () => { mark('ines_4'); setFlag('ines_formula', true); journal('The Okafor Broadcast', 'Dr. Okafor says her formula is wasted in one lab. Read out from the KVAL tower, with our radio working, it could reach every survivor with a stove and a pot.'); xp(12); return '"Thank you for believing me." ' + list(give('antibiotics', 2), give('bandage', 2), give('painkillers', 1)) + '.'; },
         onLose: () => { mark('ines_4'); addNoise(2); return '"Never mind. Take these and go." ' + give('antibiotics', 1) + '.'; } },
     },
 
@@ -214,7 +215,7 @@
         { label: 'Talk the guards down', check: { attr: 'cha', diff: 6 },
           success: () => { mark('choir_3'); setFlag('choir_freed', true); recruit({ name: 'Nadia', trait: 'grateful', skills: { scav: 2, farm: 1 } }); xp(22); return 'Mercy, faith, a bargain. The old woman at the door says "go." Nadia follows you out.'; },
           fail: () => { mark('choir_3'); addNoise(2); sore(5, 'a Choir beating'); return 'They laugh and ring the bell. You run, bruised, their faces in your head.'; } },
-        { label: 'Join the ceremony', success: () => { mark('choir_3'); addMorale(-12); return 'You hum with them. They give you ' + list(give('canned', 3), give('cigs', 3), give('medkit', 1)) + '. You don\'t look at the cellar door.'; } },
+        { label: 'Join the ceremony', success: () => { mark('choir_3'); setFlag('choir_joined', true); addMorale(-12); return 'You hum with them. They give you ' + list(give('canned', 3), give('cigs', 3), give('medkit', 1)) + '. You don\'t look at the cellar door.'; } },
       ],
     },
 
@@ -305,6 +306,96 @@
         { label: 'Share food with Biscuit', req: () => has('canned') || has('snack'), reqText: 'Needs food',
           success: () => { if (!take('snack', 1)) take('canned', 1); mark('teodor_4'); xp(15); addMorale(5); return 'He eats like he hasn\'t in days, licks your hand once, and goes back to the grave. ' + give('veg', 3) + '.'; } },
         { label: 'Say a word and go', success: () => { mark('teodor_4'); addMorale(2); return 'Hat in hand, a minute. Then ' + give('veg', 2) + ', because he\'d hate it to rot.'; } },
+      ],
+    },
+
+    // ---------- 7. THE LAMPLIGHTER: ROSA QUILL ----------
+    {
+      id: 'rosa_1', title: 'The Lamplighter', where: ['street', 'travel'], weight: 26, minDay: 3, night: true, once: true,
+      cond: () => !flag('rosa_1'),
+      who: 'Rosa Quill',
+      text: '"Next lamp\'s two streets down. Walk me there?" A woman with a ladder and a lit taper. The dead have seen the light.',
+      play: { type: 'race', time: 40, foes: ['walker', 'walker', 'runner'],
+        onWin: () => { mark('rosa_1'); xp(14); return 'The lamp catches. "Rosa Quill. People find each other by these. That\'s the idea."'; },
+        onLose: () => { mark('rosa_1'); setFlag('rosa_hurt', true); addMorale(-3); return 'Too slow. She lights it anyway, one sleeve torn, and doesn\'t thank you.'; } },
+    },
+    {
+      id: 'rosa_2', title: 'Fuel for the Lamps', where: ['street', 'travel'], weight: 28, night: false, once: true,
+      cond: () => flag('rosa_1') && !flag('rosa_2') && later('rosa_1_day', 1),
+      who: 'Rosa Quill',
+      text: '"The lamps drink fuel and I\'m down to fumes." She tips an empty can. "Two would keep them lit a week."',
+      choices: [
+        { label: 'Give her 2 fuel', req: () => has('fuel', 2), reqText: 'Needs 2 fuel',
+          success: () => { take('fuel', 2); mark('rosa_2'); setFlag('rosa_trust', true); xp(15); addMorale(4); return '"A week of light." She chalks your name on the can. "Patron of the arts."'; } },
+        { label: 'Keep your fuel', success: () => { mark('rosa_2'); setFlag('rosa_kept', true); return '"Fair. Fuel\'s life." She shakes the empty can anyway, just to hear it.'; } },
+        { label: 'Tell her it\'s pointless', success: () => { mark('rosa_2'); setFlag('rosa_doubt', true); addMorale(-2); return '"Pointless," she repeats. "Like a light in a window." She goes back up her ladder.'; } },
+      ],
+    },
+    {
+      id: 'rosa_3', title: 'The Bridge Lamp', where: ['river', 'street', 'travel'], weight: 30, night: true, once: true,
+      cond: () => flag('rosa_2') && !flag('rosa_3') && later('rosa_2_day', 1),
+      who: 'Rosa Quill',
+      text: () => flag('rosa_trust')
+        ? '"Last lamp. The bridge. Then anyone in the Vale can follow the line home." The dead are already coming.'
+        : '"Last one. The bridge." She doesn\'t ask for help. The dead are coming anyway.',
+      play: { type: 'horde', foes: ['walker', 'walker', 'walker', 'runner'],
+        onWin: () => {
+          mark('rosa_3'); xp(20);
+          if (flag('rosa_trust')) {
+            setFlag('lamps_lit', true); recruit({ name: 'Rosa Quill', trait: 'cheerful', skills: { scav: 3, build: 2 } }); setFlag('rosa_joined', true); addMorale(6);
+            return 'The bridge lamp catches. A dotted line of light runs across the Vale. "Right. Where do you live?"';
+          }
+          setFlag('rosa_north', true);
+          return 'She lights the bridge lamp, shoulders her ladder and heads north. "Keep them burning, if you can."';
+        },
+        onLose: () => { mark('rosa_3'); setFlag('rosa_north', true); addMorale(-4); return 'The dead reach the ladder. Rosa gets away north without it. The bridge stays dark.'; } },
+    },
+
+    // ---------- 8. CHECKPOINT ECHO: SGT. ADA VANCE ----------
+    {
+      id: 'vance_1', title: 'The Last Soldier', where: ['military'], weight: 30, minDay: 3, once: true,
+      cond: () => !flag('vance_1'),
+      who: 'Sgt. Ada Vance',
+      text: '"Civilian. Hands where I can see them. Now help me with this door." The armoury is jammed. She\'s alone.',
+      play: { type: 'lock', mode: 'pry', diff: 6,
+        onWin: () => { mark('vance_1'); setFlag('vance_met', true); xp(15); return '"Not bad." She tosses you ' + give('ammo', 4) + '. "Sgt. Ada Vance. Come back tomorrow."'; },
+        onLose: () => { mark('vance_1'); setFlag('vance_met', true); addNoise(2); return '"Move." She shoulders it open herself. "Civilians." She doesn\'t share.'; } },
+    },
+    {
+      id: 'vance_2', title: 'Night at Echo', where: ['military'], weight: 30, once: true,
+      cond: () => flag('vance_1') && !flag('vance_2') && later('vance_1_day', 1),
+      who: 'Sgt. Ada Vance',
+      text: '"Eleven of us held Echo. Now it\'s one." She hasn\'t slept in two days. "Take second watch?"',
+      choices: [
+        { label: 'Take the second watch', success: () => { mark('vance_2'); setFlag('vance_trust', true); tire(10); xp(15); journal('Sgt. Ada Vance', 'Vance talked through the watch. Her last orders were to escort convoys north through the pass. A convoy north needs soldiers, she said, and she is the only one left.'); return 'She sleeps four hours straight. At dawn: "Convoys north need soldiers. Remember that."'; } },
+        { label: 'Rob her while she sleeps', success: () => { mark('vance_2'); setFlag('vance_robbed', true); addMorale(-6); return 'You wait for her to snore. ' + list(!owns('haven_map') && give('haven_map', 1), give('ammo', 6)) + '. Her rifle stays. You\'re not that brave.'; } },
+        { label: 'Leave her to her post', success: () => { mark('vance_2'); setFlag('vance_left', true); return 'You wish her luck. "Luck\'s for civilians." She doesn\'t look up.'; } },
+      ],
+    },
+    {
+      id: 'vance_3', title: 'Pinned at the Fence', where: ['military'], weight: 32, once: true,
+      cond: () => flag('vance_trust') && !flag('vance_3') && later('vance_2_day', 1),
+      who: 'Sgt. Ada Vance',
+      text: '"Okoro\'s alive! Radio says he\'s pinned at the outer fence." Vance is already running. "With me!"',
+      play: { type: 'rescue', who: 'Pvt. Okoro', foes: ['walker', 'walker', 'runner', 'runner'],
+        onWin: () => { mark('vance_3'); setFlag('okoro_saved', true); xp(20); addMorale(5); return '"Sarge. Knew you\'d come." Pvt. Okoro, nineteen, grinning through a split lip.'; },
+        onLose: () => { mark('vance_3'); setFlag('okoro_dead', true); addMorale(-6); return 'They reach him first. Vance stands at the fence a long time. "He was nineteen."'; } },
+    },
+    {
+      id: 'vance_4', title: 'Orders', where: ['military'], weight: 32, once: true,
+      cond: () => flag('vance_3') && !flag('vance_4') && later('vance_3_day', 1),
+      who: 'Sgt. Ada Vance',
+      text: '"Orders say hold Echo. Orders came from a dead man." She looks north at the pass. "Your call."',
+      choices: [
+        { label: 'Bring her north', success: () => {
+            mark('vance_4'); setFlag('vance_ally', true);
+            recruit({ name: 'Ada Vance', trait: 'steady', skills: { combat: 5, build: 2 } });
+            const ok = flag('okoro_saved'); if (ok) recruit({ name: 'Pvt. Okoro', trait: 'brave', skills: { combat: 3, scav: 2 } });
+            journal('A Military Escort', 'Ada Vance will ride escort if the bus ever runs. A soldier on the roof and flares in the rack: nobody gets left at the roadside.');
+            xp(30); addMorale(6);
+            return '"Then I\'m your escort." She folds the Echo flag into her pack.' + (ok ? ' Okoro follows, grinning.' : '');
+          } },
+        { label: 'Let her hold Echo', success: () => { mark('vance_4'); setFlag('vance_stays', true); xp(20); return '"Someone should keep the lights on." Parting gifts: ' + list(!owns('haven_map') && give('haven_map', 1), give('ammo', 6), give('medkit', 1)) + '.'; } },
       ],
     },
   ];

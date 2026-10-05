@@ -188,6 +188,88 @@
         "You understand too late that an alliance with a man like him was only ever a loan. He called it in early, {name}."
       ]
     },
+    end_cure: {
+      title: "The Okafor Broadcast",
+      beats: [
+        { who: '', line: "Signal Hill, the night the horde comes. The KVAL light burns red for the first time in a year." },
+        { who: '', line: "You read Dr. Okafor's formula into the microphone. Slowly. Twice. Then again for anyone late." },
+        { who: 'Radio', line: "\"...Haven here. Copying. Who is this?\" Then a second voice. Then a fourth." },
+        { who: '', line: "It cost you the bunker and most of a night, {name}. Somewhere out there, a fever breaks." }
+      ],
+      paras: [
+        "You climb Signal Hill with the horde already filling the valley behind you. The generator coughs, catches, and the red light on the KVAL mast burns for the first time in more than a year. Every dead thing for miles can see it. You start reading anyway.",
+        "Dr. Okafor's formula is four pages of cramped handwriting: a protein from the ones who never fell ill, a way to grow it in a kitchen, a dose. You read it slowly, twice, then a third time for anyone who tuned in late. Your voice goes before the batteries do.",
+        "Toward dawn the radio answers. Haven first, then a farm in the east, then a woman on a fishing boat, then voices you will never put faces to, all copying, all asking you to repeat page three. It is not a cure for the turned. It is a start, and starts are the only kind of thing left.",
+        "You lost the bunker that night, {name}, and more than that. Somewhere beyond the mountains, a fever breaks, and somebody writes the formula on a wall so it cannot be lost again."
+      ]
+    },
+    end_cure_fail: {
+      title: "Dead Air",
+      beats: [
+        { who: '', line: "The dead reach Signal Hill before the last page. The generator chokes. The red light dies." },
+        { who: '', line: "You keep reading into a dead microphone, {name}, because stopping feels worse." },
+        { who: 'Radio', line: "Weeks later, on your frequency, a girl's voice: \"Page two. Does anyone have page two?\"" }
+      ],
+      paras: [
+        "You get as far as the second page. Then the fence at the foot of Signal Hill goes down, the dead come up the slope like a tide, and the generator chokes on the last of the fuel. The red light on the mast flickers and dies.",
+        "You keep reading into the dead microphone in the dark, {name}, because stopping would feel worse. The door holds for a while. Then it does not.",
+        "Weeks later, on the same frequency, a girl's voice comes through the static, careful and stubborn. She has page one written down. She asks, every night at the same hour, whether anyone has page two."
+      ]
+    },
+    end_usurp: {
+      title: "The New Warden",
+      beats: [
+        { who: '', line: "You come through the camp's north wall at dawn, when the guard is thinnest. The black flag comes down." },
+        { who: 'The Warden', line: "\"Rule four,\" he says, on his knees by his ledger. \"Don't make me repeat myself.\" You don't." },
+        { who: '', line: "That night the horde breaks on Tollmen walls, behind Tollmen guns. Yours now." },
+        { who: '', line: "The toll booths stay open, {name}. The ledger just has a new name at the top." }
+      ],
+      paras: [
+        "You hit the Tollmen camp at dawn, through the gap in the north wall, while the guard is half asleep and the Warden is still at his desk. It is quick and loud and ugly. When it is over the black flag is in the mud and the Warden is dead beside his ledger, still reciting the rules.",
+        "The Tollmen who are left look at you and wait. They are not loyal to a man. They are loyal to whoever holds the book. That night the great horde breaks against their walls, and they fight it behind their guns for you.",
+        "In the morning the booths on the bridges open on time. People pay. Someone has to keep order, you tell yourself, and someone has to keep the walls fed. The ledger has a new name at the top, {name}, and the handwriting is yours."
+      ]
+    },
+    end_alone: {
+      title: "The Northern Pass",
+      beats: [
+        { who: '', line: "You leave before dawn with one pack and no goodbyes. The bunker door clicks shut behind you." },
+        { who: '', line: "Snow in the pass. The horde is a hum far below you, and then not even that." },
+        { who: '', line: "Nobody slows you down, {name}. Nobody is there to notice when you stop." }
+      ],
+      paras: [
+        "You pack light: water, a knife, the route map folded inside your shirt. You do not wake anyone. You tell yourself it is kinder that way. The bunker door clicks shut behind you and nobody calls your name.",
+        "The pass is snow and wind and narrow ledges. Far below, the horde fills the Vale like brown water filling a bowl, and you hear it as a hum, and then you climb high enough that you hear nothing at all.",
+        "Travelling alone is fast. Nobody slows you down, nobody needs feeding, nobody asks you what happens next. And nobody is there, {name}, to notice when you stop."
+      ]
+    },
+    end_choir: {
+      title: "The Last Hymn",
+      beats: [
+        { who: '', line: "The bells ring all night. The great horde stands in the square, swaying, and does not bite." },
+        { who: 'Choir elder', line: "\"You see? They only want to be sung to.\" Under the church, the captives sing on." },
+        { who: '', line: "Dawn comes. You are alive, {name}, and fed. You do not go near the cellar door." }
+      ],
+      paras: [
+        "You take your place in the robes. When the great horde comes down the high street the Choir rings every bell it owns, and the dead slow, and stop, and stand in the square in their thousands, swaying like wheat. Not one of them bites.",
+        "'You see?' the elder says, warm as a grandmother. 'They only want to be sung to.' Under the church, in the cellar, the chained captives sing, because when they stop the dead remember they are hungry.",
+        "Dawn comes grey and quiet. You are alive, {name}, and fed, and safe as anyone in the Vale. You learn the hymns. You do not go near the cellar door, and after a while you stop hearing the voices underneath the bells."
+      ]
+    },
+    end_convoy: {
+      title: "The Convoy",
+      beats: [
+        { who: 'Sgt. Ada Vance', line: "\"Convoy, move out.\" Her rifle on the roof rack. Your people behind the glass. All of them." },
+        { who: '', line: "The horde hits the pass road an hour behind you. Ada's flares send it the wrong way." },
+        { who: 'Mara Voss', line: "\"Welcome to Haven.\" She counts heads twice. \"Everyone?\" Everyone." },
+        { who: '', line: "Nobody left behind, {name}. Tonight you sleep. So does Ada, for once." }
+      ],
+      paras: [
+        "Ada Vance rides the roof rack with her rifle and a satchel of army flares, and she runs the bus like a convoy because that is what it is. Everyone has a seat, a job and a buddy. Nobody is left at the roadside.",
+        "The horde reaches the pass road an hour behind you. Ada fires flares into the gullies to the east, red and hissing, and the river of the dead turns toward the light and pours away down the wrong valley.",
+        "At the gate Mara Voss counts heads as you step down, then counts again because she does not believe it. 'Everyone?' she asks. Everyone. Tonight you sleep without keeping watch, {name}, and so, for once, does Ada."
+      ]
+    },
     death: {
       title: "The Embers Go Out",
       beats: [
@@ -465,5 +547,157 @@
     }
   ];
 
-  window.CONTENT = { story: story, lore: lore, radio: radio, names: names, barks: barks, shelterEvents: shelterEvents };
+  /* Epilogues: short lines shown under the ending text (the engine shows up to 5, highest pri first).
+     cond() uses flag()/G only; line is a string or (endingId) => string; endings: ids it may follow, or null = any ending but death/abandoned. */
+  var alive = function (n) { return G.survivors.some(function (s) { return s.name === n; }); };
+  var NORTH = ['end_haven', 'end_convoy'];
+  var STAY = ['end_stand', 'end_alliance', 'end_usurp', 'end_cure', 'end_choir'];
+  var WON = NORTH.concat(STAY);
+  var GONE = WON.concat(['end_alone']);
+  var north = function (e) { return NORTH.indexOf(e) >= 0; };
+  var owned = function (id) { return (G.pack[id] || 0) + (G.store[id] || 0) > 0; };
+  var epilogues = [
+    // ---- Eli ----
+    { id: 'eli_north', pri: 8, endings: NORTH, cond: function () { return flag('eli_joined') && alive('Eli'); },
+      line: "Eli learned every vent in Haven within a week. Nobody's pantry was safe, and nobody minded." },
+    { id: 'eli_stay', pri: 8, endings: ['end_stand', 'end_cure'], cond: function () { return flag('eli_joined') && alive('Eli'); },
+      line: "Eli chalked the bunker on every wall: the walls, the lamp, a stick figure in a hat." },
+    { id: 'eli_tolls', pri: 8, endings: ['end_alliance', 'end_usurp'], cond: function () { return flag('eli_joined') && alive('Eli'); },
+      line: function (e) { return e === 'end_usurp'
+        ? "Eli runs messages for the new Warden. He never once writes your name in the ledger."
+        : "Eli runs messages across the toll bridge. The Tollmen tip him in cigarettes; he trades them for paper."; } },
+    { id: 'eli_choir', pri: 8, endings: ['end_choir'], cond: function () { return flag('eli_joined') && alive('Eli'); },
+      line: "Eli stopped talking again. He hums now, the same four notes, all day long." },
+    { id: 'eli_dead', pri: 7, endings: WON, cond: function () { return flag('eli_joined') && !alive('Eli'); },
+      line: function (e) { return north(e)
+        ? "You carried Eli's stub of chalk all the way to Haven. You haven't drawn anything with it yet."
+        : "Eli's chalk figure is still on the bunker wall. Nobody has washed it off. Nobody will."; } },
+    { id: 'eli_lost', pri: 5, endings: GONE, cond: function () { return (flag('eli_lost') || flag('eli_scared')) && !flag('eli_joined'); },
+      line: "Before you left the Vale you put one last can on a stairwell step. It was gone by morning." },
+    // ---- Dr. Okafor ----
+    { id: 'ines_cure', pri: 9, endings: ['end_cure'], cond: function () { return !!flag('ines_stays'); },
+      line: "Dr. Okafor heard every word from her lab. Afterwards she radioed to correct your pronunciation." },
+    { id: 'ines_joined', pri: 8, endings: WON, cond: function () { return flag('ines_joined') && alive('Dr. Ines Okafor'); },
+      line: function (e) { return north(e)
+        ? "Dr. Okafor runs Haven's clinic now. Bitten or not, she checks everyone twice."
+        : "Dr. Okafor turned the signal room into a clinic. The coughing at night stopped."; } },
+    { id: 'ines_behind', pri: 6, endings: GONE.filter(function (e) { return e !== 'end_cure'; }), cond: function () { return !!flag('ines_stays'); },
+      line: "You never learned if Dr. Okafor's lab survived the horde. Some nights the static sounds like her." },
+    { id: 'serum_kept', pri: 4, endings: GONE, cond: function () { return owned('serum'); },
+      line: "The vial of serum is still in your pocket. You never found the right person to spend it on." },
+    // ---- Marcus Hale / the Warden ----
+    { id: 'marcus_with', pri: 7, endings: WON, cond: function () { return flag('marcus_helped') && alive('Marcus Hale'); },
+      line: function (e) { return e === 'end_usurp'
+        ? "Marcus Hale stood behind your chair at the Warden's table. He took no title, only the night watch."
+        : north(e) ? "Marcus rode by the bus door the whole way north, pistol on his knee, watching the road."
+        : "Marcus Hale walks your walls every night. He says it's the first job he's ever been proud of."; } },
+    { id: 'marcus_gone', pri: 6, endings: WON, cond: function () { return flag('marcus_helped') && !alive('Marcus Hale'); },
+      line: function (e) { return north(e)
+        ? "Marcus Hale was waiting at Haven's gate with two cups of something hot. \"Took you long enough.\""
+        : "A trader swore he saw Marcus Hale in the mountains, walking north, lighter than before."; } },
+    { id: 'marcus_betrayed', pri: 6, endings: GONE, cond: function () { return !!flag('marcus_betrayed'); },
+      line: function (e) { return e === 'end_usurp'
+        ? "In the Warden's cellar you found Marcus Hale's coat, folded neatly. Nothing else of him."
+        : "Some nights you still see Marcus Hale's face, the way it looked when he wouldn't look at you."; } },
+    { id: 'warden_bluff', pri: 5, endings: ['end_alliance'], cond: function () { return !!flag('warden_secret'); },
+      line: "You never told the Warden you knew his army was forty people. That silence kept the peace." },
+    { id: 'tribute_paid', pri: 4, endings: WON, cond: function () { return (flag('tribute') || 0) >= 2; },
+      line: function (e) { return e === 'end_usurp'
+        ? "You found your own name in the ledger: paid in full. You left it there."
+        : e === 'end_alliance' ? "The Warden kept your toll receipts. \"Paid in full,\" he said. It counted for something."
+        : "Somewhere in a Tollmen ledger your name still reads: paid in full. Small comfort."; } },
+    { id: 'tribute_never', pri: 4, endings: ['end_alliance', 'end_usurp'], cond: function () { return !!flag('tollmen') && !flag('tribute'); },
+      line: "You never paid the Warden a single toll. People in the Vale noticed. They still talk about it." },
+    // ---- The Choir ----
+    { id: 'choir_freed', pri: 7, endings: WON, cond: function () { return !!flag('choir_freed'); },
+      line: "The people you cut from the Choir's chains are free. Some of them still flinch at bells." },
+    { id: 'choir_hum', pri: 6, endings: GONE.filter(function (e) { return e !== 'end_choir'; }), cond: function () { return !!flag('choir_joined'); },
+      line: "You still hum the Choir's hymn without meaning to. You stop when anyone hears." },
+    { id: 'choir_left', pri: 5, endings: GONE, cond: function () { return flag('choir_spy') && !flag('choir_freed') && !flag('choir_joined'); },
+      line: "You never went back for the people under the church. You think of them whenever a bell rings." },
+    // ---- The Relay ----
+    { id: 'haven_gate', pri: 7, endings: NORTH, cond: function () { return !!flag('haven_truth'); },
+      line: "At Haven's gate they checked every arm for bites. You'd warned your people. You held your breath anyway." },
+    { id: 'haven_stay', pri: 5, endings: STAY, cond: function () { return !!flag('haven_truth'); },
+      line: "You knew what Haven's gate does to the bitten. Staying felt less like cowardice after that." },
+    // ---- Teodor and Biscuit ----
+    { id: 'teodor_joined', pri: 7, endings: WON, cond: function () { return flag('teodor_joined') && alive('Teodor'); },
+      line: function (e) { return north(e)
+        ? "Teodor planted his seed jar in Haven's first spring and complained about the soil all year."
+        : "Teodor's beans came up behind the barricade. He called them \"adequate\" and almost smiled."; } },
+    { id: 'teodor_grave', pri: 6, endings: GONE, cond: function () { return flag('teodor_dead') && !flag('teodor_abandoned'); },
+      line: "There's a grave under an apple tree outside the Vale, and an old dog who won't leave it." },
+    { id: 'teodor_shots', pri: 6, endings: GONE, cond: function () { return !!flag('teodor_abandoned'); },
+      line: "Some nights you hear shotgun blasts in your sleep. Two, then nothing. Teodor's farm." },
+    // ---- Rosa Quill ----
+    { id: 'rosa_lamps', pri: 6, endings: WON, cond: function () { return !!flag('lamps_lit'); },
+      line: function (e) { return north(e)
+        ? "Rosa's lamps still burn behind you in the Vale, a dotted line home for anyone who needs one."
+        : "Rosa's lamps still burn along the river road. Strangers follow them right to your door."; } },
+    { id: 'rosa_joined', pri: 7, endings: WON, cond: function () { return flag('rosa_joined') && alive('Rosa Quill'); },
+      line: function (e) { return north(e)
+        ? "Rosa Quill lit the first gas lamp on Haven's main street. People cheered like it was a parade."
+        : "Rosa lights the yard lamp every dusk. On horde nights she lights two, out of spite."; } },
+    { id: 'rosa_north', pri: 5, endings: GONE, cond: function () { return !!flag('rosa_north'); },
+      line: function (e) { return e === 'end_alone'
+        ? "High in the pass you found one of Rosa's lamps, still lit. It didn't make you feel less alone."
+        : "Rosa Quill went north alone with her ladder. Travellers say the pass road has lamps now."; } },
+    // ---- Sgt. Ada Vance ----
+    { id: 'vance_ally', pri: 7, endings: WON, cond: function () { return flag('vance_ally') && alive('Ada Vance'); },
+      line: function (e) { return e === 'end_convoy'
+        ? "Ada Vance took Haven's night watch the first week. She says she'll stop soon. She won't."
+        : "Ada Vance drilled your people every morning. Nobody liked it. Nobody died of it, either."; } },
+    { id: 'vance_stays', pri: 6, endings: WON, cond: function () { return !!flag('vance_stays'); },
+      line: function (e) { return north(e)
+        ? "Passing Checkpoint Echo, you saw a lone figure on the wall. She saluted the bus."
+        : "Checkpoint Echo's flag still flies. Ada Vance has never sent a report. Nobody has asked for one."; } },
+    { id: 'vance_robbed', pri: 6, endings: GONE, cond: function () { return !!flag('vance_robbed'); },
+      line: "Ada Vance woke to an empty locker. She never filed a report. She remembers your face." },
+    { id: 'okoro', pri: 5, endings: WON, cond: function () { return !!flag('okoro_saved'); },
+      line: "Pvt. Okoro writes his mother a letter every week. There's no post. He writes anyway." },
+    // ---- standalone encounters ----
+    { id: 'wedding', pri: 4, endings: WON, cond: function () { return !!flag('wedding_witness'); },
+      line: function () { return flag('wedding_gift')
+        ? "The couple you saw married in the ruins kept your can of peaches on a shelf. Unopened. For luck."
+        : "The couple you saw married in the ruins had a daughter in spring. Your name is on her cereal box."; } },
+    { id: 'dj', pri: 4, endings: WON, cond: function () { return !!flag('dj_saved'); },
+      line: function (e) { return e === 'end_cure'
+        ? "Static Sam replays your broadcast every night between soul records. He calls it a hit."
+        : "Static Sam still broadcasts from a car park. Every night's first song goes to \"my bodyguard\"."; } },
+    { id: 'dj_quiet', pri: 3, endings: WON, cond: function () { return !!flag('dj_silenced'); },
+      line: "Static Sam never came back on the air. The Vale is quieter. Not better. Quieter." },
+    { id: 'mapkid', pri: 3, endings: WON, cond: function () { return !!flag('mapkid_paid'); },
+      line: "The map girl's maps got better. The new ones mark your door with a small crayon star." },
+    { id: 'dog', pri: 4, endings: GONE, cond: function () { return !!flag('dog_adopted'); },
+      line: function (e) { return e === 'end_alone'
+        ? "The shepherd dog followed you up the pass. It was the only goodbye you didn't skip."
+        : "The shepherd dog sleeps across your doorway now. It still guards like it owes someone."; } },
+    { id: 'pharmacy', pri: 3, endings: WON, cond: function () { return flag('pharmacy_paid') || flag('pharmacy_left'); },
+      line: "Someone signing \"R.\" leaves medicine in empty shops across the Vale. You've started doing it too." },
+    { id: 'mother', pri: 4, endings: WON, cond: function () { return flag('mother_helped') || flag('mother_north'); },
+      line: function () { return flag('mother_helped') && alive('Petra')
+        ? "Old Petra outlived two more winters and told everyone you needed a haircut."
+        : "You never learned if the man carrying his mother made the mountains. You hope she saw them."; } },
+    { id: 'brothers', pri: 3, endings: WON, cond: function () { return flag('brothers_north') || flag('brothers_stay') || flag('brothers_robbed'); },
+      line: function () { return flag('brothers_robbed')
+        ? "Two brothers in the Vale tell a story about a thief and a dry tank. You're the villain in it."
+        : flag('brothers_north') ? "The brothers made the pass together. The younger one still writes to his mother's grave."
+        : "The brothers stayed by their mother's grave. They keep a garden there now."; } },
+    { id: 'chimes', pri: 3, endings: GONE, cond: function () { return !!flag('chimes_home'); },
+      line: "You kept three wind chimes from that balcony. Wherever you sleep, they ring you down." },
+    // ---- numbers ----
+    { id: 'survivors_many', pri: 2, endings: WON, cond: function () { return G.survivors.length >= 8; },
+      line: function () { return G.survivors.length + " people sleep under your watch. You know every one of their names."; } },
+    { id: 'survivors_few', pri: 2, endings: WON, cond: function () { return G.survivors.length > 0 && G.survivors.length <= 2; },
+      line: "So few came this far with you. Each one counts double." },
+    { id: 'kills_many', pri: 1, endings: null, cond: function () { return G.stats.kills >= 100; },
+      line: function () { return "You put down " + G.stats.kills + " of the dead. You stopped counting long before that."; } },
+    { id: 'kills_few', pri: 1, endings: null, cond: function () { return G.stats.kills < 15; },
+      line: function () { return "You killed only " + G.stats.kills + " of the dead. Mostly, you were somewhere else."; } },
+    { id: 'days_long', pri: 1, endings: null, cond: function () { return G.day >= 25; },
+      line: function () { return "Day " + G.day + ". Longer than the Fever gave anyone."; } }
+  ];
+  window.EPILOGUES = epilogues;
+
+  window.CONTENT = { story: story, lore: lore, radio: radio, names: names, barks: barks, shelterEvents: shelterEvents, epilogues: epilogues };
 })();

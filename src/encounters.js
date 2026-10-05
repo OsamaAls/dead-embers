@@ -393,5 +393,92 @@ window.ENCOUNTERS = [
       { label: 'Forage for roots', success: () => 'Dirty fingers, small reward. ' + give('veg', 1) + '.' },
     ],
   },
+
+  // ---------- story encounters: people of the Vale ----------
+  {
+    id: 'ruin_wedding', title: 'A Wedding in the Ruins', where: ['street', 'apartments', 'travel'], weight: 7, minDay: 4, night: false, once: true,
+    who: 'Groom in a borrowed suit',
+    text: 'A dozen guests under a bent bus shelter, a bride in curtain lace. "We need a witness. You\'ll do."',
+    choices: [
+      { label: 'Stand as witness', success: () => { setFlag('wedding_witness', true); addMorale(8); xp(10); return 'You sign a cereal box. They kiss. Someone cries. Someone else keeps watching the street.'; } },
+      { label: 'Give them a can as a gift', req: () => has('canned'), reqText: 'Needs canned food',
+        success: () => { take('canned', 1); setFlag('wedding_witness', true); setFlag('wedding_gift', true); addMorale(10); xp(12); return 'A can of peaches with a bootlace bow. The bride holds it up like a trophy.'; } },
+      { label: 'Keep walking', success: () => { addMorale(-2); return 'Behind you, a ragged cheer. You don\'t turn round.'; } },
+    ],
+  },
+  {
+    id: 'pirate_dj', title: 'Static Sam', where: ['street', 'electronics', 'radiotower', 'travel'], weight: 7, minDay: 3, once: true,
+    who: 'Static Sam',
+    text: '"Static Sam, live and undead-free!" A van with a speaker on the roof, blaring soul. The dead are coming to dance.',
+    play: { type: 'horde', foes: ['walker', 'walker', 'runner'],
+      onWin: () => { setFlag('dj_saved', true); xp(15); return '"This one goes out to my bodyguard!" Sam tosses you ' + give('batteries', 3) + ' from the window.'; },
+      onLose: () => { setFlag('dj_silenced', true); addNoise(1); return 'They rock the van till the speaker dies. Sam drives off on the rims, still talking.'; } },
+  },
+  {
+    id: 'map_girl', title: 'The Mapmaker', where: ['street', 'apartments', 'supermarket', 'travel'], weight: 7, minDay: 3, night: false, once: true,
+    who: 'Girl with a satchel',
+    text: '"Maps! Hand-drawn, mostly correct! Three smokes or a can." Crayon roads, with skulls where the dead are.',
+    choices: [
+      { label: 'Buy one for 3 cigarettes', req: () => has('cigs', 3), reqText: 'Needs 3 cigarettes',
+        success: () => { take('cigs', 3); setFlag('mapkid_paid', true); xp(10); return 'Her skulls are accurate. She\'s marked a stash too: ' + list(give('canned', 1), give('bandage', 1)) + '.'; } },
+      { label: 'Buy one for a can', req: () => has('canned'), reqText: 'Needs canned food',
+        success: () => { take('canned', 1); setFlag('mapkid_paid', true); xp(10); return 'A cross marks a dead man\'s locker. She was right: ' + list(give('batteries', 2), give('cigs', 2)) + '.'; } },
+      { label: 'Ask who taught her', check: { attr: 'cha', diff: 4 },
+        success: () => { xp(8); addMorale(-2); return '"My dad. Surveyor. He\'s the skull by the river." She says it like the weather.'; },
+        fail: () => '"Trade secret." She rolls up her maps and is gone.' },
+    ],
+  },
+  {
+    id: 'guard_dog', title: 'The Guard Dog', where: ['street', 'apartments', 'farm', 'travel'], weight: 7, minDay: 4, once: true,
+    text: 'A shepherd dog lies across a body in a doorway. It growls, weak but steady. It hasn\'t eaten in days.',
+    choices: [
+      { label: 'Feed it', req: () => has('rawmeat') || has('canned'), reqText: 'Needs meat or canned food',
+        success: () => { if (!take('rawmeat', 1)) take('canned', 1); setFlag('dog_adopted', true); addMorale(8); xp(10); return 'It eats, noses the body one last time, then falls in at your heel.'; } },
+      { label: 'Ease the pack off the body', check: { attr: 'agi', diff: 5 },
+        success: () => { addMorale(-3); return 'You slide it free while the dog watches. ' + list(give('ammo', 3), give('bandage', 1)) + '. It never stops watching.'; },
+        fail: () => { sore(5, 'a dog bite'); return 'It\'s faster than it looks. You leave with a torn hand and nothing else.'; } },
+      { label: 'Leave it on guard', success: () => { addMorale(1); return 'Some posts are worth keeping. You leave it to its watch.'; } },
+    ],
+  },
+  {
+    id: 'pharmacy_note', title: 'Note on the Counter', where: ['apartments', 'hospital', 'street'], weight: 7, minDay: 3, once: true,
+    text: 'A stripped pharmacy. One box left on the counter, and a note: "For whoever needs it more than me. R."',
+    choices: [
+      { label: 'Take it', success: () => 'You take it. It sits in your pack like a debt. ' + give('antibiotics', 1) + '.' },
+      { label: 'Take it, leave a can', req: () => has('canned'), reqText: 'Needs canned food',
+        success: () => { take('canned', 1); setFlag('pharmacy_paid', true); addMorale(5); return 'You leave the can and a note: "Thanks, R. Passing it on." ' + give('antibiotics', 1) + '.'; } },
+      { label: 'Leave it for someone else', success: () => { setFlag('pharmacy_left', true); addMorale(4); xp(8); return 'You write one line under hers: "Not yet." The box stays where it is.'; } },
+    ],
+  },
+  {
+    id: 'carrying_mother', title: 'The Long Walk', where: ['travel', 'street', 'forest'], weight: 7, minDay: 5, once: true,
+    who: 'Man carrying his mother',
+    text: 'A man with an old woman on his back, slow as a walker. Real walkers close in. "I won\'t put her down!"',
+    play: { type: 'rescue', who: 'Man carrying his mother', foes: ['walker', 'walker', 'runner'],
+      onWin: () => { setFlag('mother_helped', true); recruit({ name: 'Anton', trait: 'hardworker', skills: { build: 3, combat: 2 } }); recruit({ name: 'Petra', trait: 'cheerful', skills: { med: 2, farm: 2 } }); xp(18); return 'Anton and his mother Petra come home with you. She says you need a haircut.'; },
+      onLose: () => { setFlag('mother_north', true); addMorale(-5); return 'He gets clear, still carrying her, and doesn\'t stop. You never learn their names.'; } },
+  },
+  {
+    id: 'brothers_car', title: 'Two Brothers, One Car', where: ['street', 'gas', 'depot', 'travel'], weight: 7, minDay: 4, once: true,
+    text: 'Two brothers shouting over a running hatchback. One wants to go north; one won\'t leave their mother\'s grave.',
+    choices: [
+      { label: 'Side with going north', check: { attr: 'cha', diff: 5 },
+        success: () => { setFlag('brothers_north', true); xp(10); return 'The younger one cries, then gets in. They leave you ' + give('fuel', 1) + ' for your trouble.'; },
+        fail: () => { setFlag('brothers_north', true); return 'They both turn on you, agreeing for once. Then they drive off together, still shouting.'; } },
+      { label: 'Side with staying', success: () => { setFlag('brothers_stay', true); xp(8); return 'The engine dies. Quiet. The older one hands you ' + give('fuel', 2) + '. "Won\'t need it now."'; } },
+      { label: 'Siphon the tank', success: () => { setFlag('brothers_robbed', true); addMorale(-4); return FG(['raider', 'raider'], { onWin: () => 'Two brothers in the dirt. The fuel is yours. It doesn\'t feel like winning.', onFlee: () => 'You run with the fuel. Their shouting follows you for a block.' }) && 'While they argue, you drain it. ' + give('fuel', 3) + '. The engine coughs out. They notice.'; } },
+    ],
+  },
+  {
+    id: 'wind_chimes', title: 'Chimes on the Balcony', where: ['apartments', 'street'], weight: 7, minDay: 3, once: true,
+    text: 'Dozens of wind chimes on a third-floor balcony, ringing in the breeze. The dead below stand still, listening.',
+    choices: [
+      { label: 'Climb up and look', check: { attr: 'agi', diff: 5 },
+        success: () => { journal('The Chime House', 'An old man hung chimes on his balcony and died in his chair beneath them. The dead stand below and do not move. Sound can hold them, for a while. The Choir knows it too.'); xp(12); return 'An old man in a chair, long gone, a chime in his lap. ' + list(give('canned', 2), give('cloth', 2)) + '.'; },
+        fail: () => { sore(5, 'a fall'); addNoise(2); return 'A railing gives. You land hard. The dead don\'t even look round.'; } },
+      { label: 'Take some chimes home', success: () => { setFlag('chimes_home', true); addMorale(6); return 'You unhook three. At the bunker they ring all night. Everyone sleeps better.'; } },
+      { label: 'Stand and listen', success: () => { addMorale(3); rest(10); return 'You stand among the dead and listen. Nobody bites anyone. For a minute.'; } },
+    ],
+  },
 ];
 })();
