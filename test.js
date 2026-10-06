@@ -120,7 +120,8 @@ for (let seed = 1; seed <= 25; seed++) {
 try {
   fresh(); const f = T.G.flags;
   if (T.G.flags.open_forest || T.G.flags.open_docks || T.G.flags.open_pass) fail('gates', 'open at start');
-  f.radio_built = true; T.gateCheck(); if (!f.open_forest) fail('gates', 'forest did not open after the radio');
+  f.radio_built = true; T.gateCheck(); if (f.open_forest) fail('gates', 'forest opened before the radio_fixed scene');
+  T.G.seenScenes.radio_fixed = true; T.gateCheck(); if (!f.open_forest) fail('gates', 'forest did not open after the radio');
   f.marcus_3 = true; T.gateCheck(); if (!f.open_docks) fail('gates', 'docks did not open after marcus_3');
   f.q_bus = true; T.G.hordeDay = T.G.day + 12; T.gateCheck(); if (!f.open_pass) fail('gates', 'pass did not open with the bus quest');
   if (T.SOLID.has(T.WORLD.tiles[T.WORLD.gates.pass.y0 * T.W + T.WORLD.gates.pass.x0])) fail('gates', 'pass gate tiles still solid');

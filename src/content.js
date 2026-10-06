@@ -49,13 +49,15 @@
       beats: [
         { who: '', line: "You seat the cell, turn the dial and say your name into the static." },
         { who: 'Mara Voss', line: "\"This is Haven. Mara Voss, radio operator. I hear you. Stay on the line.\"" },
-        { who: 'Mara Voss', line: "\"Show me a community: four people with you, and walls worth the name. Then I send the road.\"" }
+        { who: 'Mara Voss', line: "\"Show me a community: four people with you, and walls worth the name. Then I send the road.\"" },
+        { who: 'Mara Voss', line: "\"One more thing. The ranger station in Kessler Woods kept stores. Coats. Get there before the frost.\"" }
       ],
       paras: [
         "You solder the last joint, seat the cell and turn the dial with a hand that will not stay still. The speaker crackles. You say your name into the microphone, {name}, and ask if anyone is there.",
         "A pause long enough to hurt. Then a woman, dry and tired and real. 'This is Haven. Mara Voss, radio operator. I hear you. Stay on the line.'",
         "Haven exists. It sits beyond the northern mountains, behind walls and a working generator. Mara will send coordinates, but only to a group that can prove it is organised: four survivors besides you, and barricades worth the name.",
-        "'We have been burned by people who walk in alone and desperate,' she says. 'Show me you are a community and I will show you the road.'"
+        "'We have been burned by people who walk in alone and desperate,' she says. 'Show me you are a community and I will show you the road.'",
+        "Before she signs off she gives you one thing for free. The rangers kept a station in Kessler Woods, north of the old wall, with stores laid in for winter. 'Coats, bolts, tins. Get there before the frost does.'"
       ]
     },
     tollmen_demand: {
@@ -95,6 +97,28 @@
         "The lookout comes down the ladder without speaking and just points. You climb up and look north. The skyline is the wrong colour, a brown haze that shifts as you watch.",
         "It is not smoke or dust or weather. It is the dead, so many that the distance itself seems to crawl.",
         "You count the days on your fingers and then count again. There is less time than you thought."
+      ]
+    },
+    first_frost: {
+      title: "First Frost",
+      beats: [
+        { who: '', line: "White frost on every wreck in the street. Your breath hangs in the air and won't leave." },
+        { who: '', line: "The dead don't feel the cold. You do. The nights will bite from now on." }
+      ],
+      paras: [
+        "Frost this morning, white and furred on every wreck in the street. The puddles have skins of ice, and your breath hangs in front of you as if it has nowhere better to go.",
+        "Late autumn now. The dead do not feel the cold, but you do. Wood for the fire, cloth for the bunks, a coat if you can find one. The nights will bite."
+      ]
+    },
+    first_snow: {
+      title: "First Snow",
+      beats: [
+        { who: '', line: "Snow, soft and grey, settling on the dead city. It muffles everything. Even them." },
+        { who: '', line: "The radio warned you. One heavy fall and the pass closes. Then there is no road north." }
+      ],
+      paras: [
+        "Snow, falling soft and grey over the dead city. It settles on the cars and the roofs and the bodies in the street, and for a while everything is quiet, even the dead.",
+        "The radio has been saying it for days: one heavy fall and the pass closes until spring. Whatever you mean to do, do it before the road north is gone."
       ]
     },
     bus_ready: {
@@ -778,6 +802,12 @@
     { cond: function () { return G.hordeNight; }, line: "\"Horde moving on the ring road. Anyone with walls: tonight.\"" },
     { cond: function () { return !bl('walls'); }, line: "\"Barricades, people. Wood and scrap. Build them before you need them.\"" },
     { cond: function () { return G.flags.q_bus && !G.flags.bus_ready; }, line: "\"Bus depot still has parts if you're brave. The army road map is at Checkpoint Echo.\"" },
+    /* names the ranger station before the woods open (the gate opens after radio_fixed), until you have been there */
+    { cond: function () { return G.flags.radio_built && !Object.keys(WORLD.pois).some(function (k) { return WORLD.pois[k].type === 'ranger' && G.locs[k] && G.locs[k].visited; }); },
+      line: "\"Rangers kept a station in Kessler Woods. Stores, a stove, coats. Worth the walk before the frost.\"" },
+    /* winter: makes the first snow's warning true */
+    { cond: function () { return G.flags.q_bus && seasonNow() === 'winter'; }, line: "\"Snow on the pass. One heavy fall and it shuts till spring. If you're going north, go soon.\"" },
+    { cond: function () { return G.flags.q_bus && seasonNow() === 'winter'; }, line: "\"Anyone still heading north: the pass won't stay open past the next blizzard.\"" },
     { cond: function () { return G.p.inf > 0; }, line: "\"Grey Fever? Antibiotics slow it. St. Agnes had a whole pharmacy wing.\"" },
     { line: "\"Rain barrels and a hose. That's the whole secret to the dry months.\"" },
     { line: "\"Wrecks still hold fuel. A hose makes it quick. Siphon, don't spark.\"" },

@@ -600,11 +600,11 @@ function openDistrict(id) {
   return true;
 }
 function applyGates() { if (WORLD && WORLD.gates && G) for (const id in WORLD.gates) if (G.flags['open_' + id]) openGateTiles(WORLD, id); }
-/* Story triggers: woods after the radio, docks after Marcus's route (or day 8), the pass with the bus quest. */
+/* Story triggers: woods after the radio (once radio_fixed, where Mara names the ranger station, has played), docks after Marcus's route (or day 8), the pass with the bus quest. */
 function gateCheck() {
   if (!G || !WORLD) return;
   const f = G.flags;
-  if (f.radio_built) openDistrict('forest');
+  if (f.radio_built && G.seenScenes && G.seenScenes.radio_fixed) openDistrict('forest');
   if (f.marcus_3 || G.day >= 8) openDistrict('docks');
   if (f.q_bus) openDistrict('pass');
 }
@@ -634,16 +634,9 @@ function weatherTick() {
     const start = (G.hordeDay || G.day + 12) - 12, prog = clamp((G.day - start + G.hour / 24) / 12, 0, 1), base = 0.12 + 0.68 * prog;
     G.snowCover = G.weather === 'snow' ? Math.min(1, Math.max(G.snowCover, base) + (G.storm ? 0.06 : 0.03)) : Math.max(base, G.snowCover - 0.01);
   } else G.snowCover = Math.max(0, (G.snowCover || 0) - 0.06);
-  if (s === 'late' && !G.flags.seen_frost && G.hour >= 5 && G.hour <= 9) {
-    G.flags.seen_frost = true;
-    journal('First frost', 'White frost on the cars this morning, and your breath hangs in the air. Late autumn now. The nights will bite.');
-    Hooks.toast && Hooks.toast('First frost. The nights are getting colder.', 'story');
-  }
-  if (G.weather === 'snow' && !G.flags.seen_snow) {
-    G.flags.seen_snow = true;
-    journal('First snow', 'Snow, falling soft and grey over the dead city. The radio says the pass will close soon. Whatever you do, do it before the road north is gone.');
-    Hooks.toast && Hooks.toast('The first snow falls.', 'story');
-  }
+  /* first frost / first snow: short story scenes (cutscene + beats; queueScene journals them). Snow counts wherever the player is, so the always-snowy pass does too. */
+  if (s === 'late' && !G.flags.seen_frost && G.hour >= 5 && G.hour <= 9) { G.flags.seen_frost = true; queueScene('first_frost'); }
+  if (weatherAt(G.p.x, G.p.y) === 'snow' && !G.flags.seen_snow) { G.flags.seen_snow = true; queueScene('first_snow'); }
   if (coldK(G.p.x, G.p.y) > 0 && !G.atShelter) { tire(4); hintOnce('cold', 'The cold drains your stamina. Stand by a fire, go indoors, or find a Winter Coat.'); }
 }
 /* Weather where the player (or a noise) is: the pass is always snowing unless it's foggy. */

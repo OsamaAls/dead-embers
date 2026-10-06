@@ -504,5 +504,188 @@ window.ENCOUNTERS = [
       { label: 'Stand and listen', success: () => { addMorale(3); rest(10); return 'You stand among the dead and listen. Nobody bites anyone. For a minute.'; } },
     ],
   },
+
+  // ---------- the districts: each biome has its own trouble ----------
+  /* where = the biome's LOCS type plus its buildings (container searches pass the building type, walking passes the biome type).
+     No minDay or cond: the story gates already keep the docks (day 8 / marcus_3), the woods (the radio) and the pass (the bus quest) shut. */
+
+  // the Docks: stacked containers, cranes, tides
+  {
+    id: 'dock_stacks', title: 'The Leaning Stack', where: ['docks'], weight: 22,
+    text: 'A crane dropped its load on the stacks. Containers lean over the quay, groaning. One starts to slide.',
+    play: { type: 'dodge', waves: 4, dmg: [6, 12],
+      onWin: () => { xp(12); return 'You squeeze out between two boxes. One split open: ' + list(give('canned', 2), give('cloth', 2)) + '.'; },
+      onLose: () => { addNoise(2); return 'A container hits the quay like a bomb. Every dead thing on the docks heard it.'; } },
+  },
+  {
+    id: 'dock_crane', title: 'Man in the Crane', where: ['docks'], weight: 20,
+    who: 'Crane driver',
+    text: 'A man waves from a crane cab forty feet up. The dead crowd the ladder below, clawing at the rungs.',
+    play: { type: 'rescue', foes: ['walker', 'walker', 'bloater'], who: 'Crane driver',
+      onWin: () => { recruit({ name: pick(['Ossie', 'Dev', 'Tamsin', 'Goran']), trait: 'steady', skills: { build: 3, scav: 2 } }); xp(18); return 'He climbs down on rubber legs. "Four days up there. Is that water?" He comes home.'; },
+      onLose: () => { addMorale(-7); return 'One of them makes the ladder. He has nowhere left to go but down.'; } },
+  },
+  {
+    id: 'dock_tide', title: 'The Tide Comes In', where: ['warehouse', 'docks'], weight: 22,
+    text: 'Water slaps in at a warehouse door. The tide is turning and the floor is going under. Get high.',
+    play: { type: 'race', time: 32, foes: ['bloater', 'walker'],
+      onWin: () => { xp(14); return 'You reach the mezzanine, wet to the knee. A dry pallet up here: ' + list(give('water', 2), give('canned', 1)) + '.'; },
+      onLose: () => { setStatus('sick', 3); return 'You wade out chest-deep, swallowing harbour. Something brushed your leg.'; } },
+  },
+  {
+    id: 'dock_angler', title: 'The Angler', where: ['docks'], weight: 18, night: false,
+    who: 'Old angler',
+    text: 'An old man fishes off the pier, a rifle across his knees. "Dead don\'t swim. Sit, if you\'re quiet."',
+    choices: [
+      { label: 'Fish with him', success: () => { passTime(2); rest(10); addMorale(4); return 'Two hours, three mackerel, not one word. ' + give('rawmeat', 2) + '. The best afternoon in months.'; } },
+      { label: 'Ask about the boats', check: { attr: 'cha', diff: 5 },
+        success: () => { xp(12); journal('The Angler', 'An old man fishing off the pier says the last boats left for the coast in spring, and none came back for the rest. He stays because the fish still bite.'); return '"Left in spring. None came back." He nods at a hull with fuel aboard: ' + give('fuel', 2) + '.'; },
+        fail: () => '"Ask the fish." He does not look up again.' },
+      { label: 'Leave him be', success: () => 'You leave him to the gulls and the slow black water.' },
+    ],
+  },
+
+  // the Flooded Quarter: rooftops over water, plank walkways, boats
+  {
+    id: 'flood_roof', title: 'Roof Island', where: ['flooded'], weight: 22,
+    who: 'Woman on the roof',
+    text: 'A woman stands on a sunken roof, swinging an oar at grey hands. "They come up the gutters!"',
+    play: { type: 'rescue', foes: ['walker', 'walker', 'bloater'], who: 'Woman on the roof',
+      onWin: () => { recruit({ name: pick(['Nell', 'Bea', 'Ottilie', 'Hester']), trait: 'brave', skills: { scav: 3, combat: 2 } }); xp(18); return 'She wades down, oar on her shoulder. "Lead on. I\'m done with roofs."'; },
+      onLose: () => { addMorale(-8); return 'The oar snaps. The brown water closes over the slates.'; } },
+  },
+  {
+    id: 'flood_boat', title: 'The Rowing Boat', where: ['flooded'], weight: 20, night: false,
+    text: 'A rowing boat knocks at a bedroom window. Across the flood, a chemist\'s sign clears the water.',
+    play: { type: 'race', time: 40, foes: ['walker', 'bloater'],
+      onWin: () => { xp(14); return 'You row hard and tie up at the sign. Upstairs, dry shelves: ' + list(give('bandage', 2), give('painkillers', 1), chance(0.3) && give('antibiotics', 1)) + '.'; },
+      onLose: () => { setStatus('sick', 2); return 'Hands grab the oars. You go over the side and wade back, retching.'; } },
+  },
+  {
+    id: 'flood_planks', title: 'Plank Walkway', where: ['flooded'], weight: 20,
+    text: 'The plank walkway between the sunken houses sags under you. Nails pop. The water below is moving.',
+    play: { type: 'dodge', waves: 3, dmg: [4, 9],
+      onWin: () => { xp(10); return 'You make the far porch. A drowned man\'s bag hangs on the rail: ' + list(give('cloth', 2), give('canned', 1)) + '.'; },
+      onLose: () => { setStatus('sick', 3); return 'You go in to the waist. It tastes of drains, and worse.'; } },
+  },
+  {
+    id: 'flood_raft', title: 'The Raft', where: ['flooded'], weight: 18,
+    who: 'Man on a raft',
+    text: 'A man poles a raft of doors past, his daughter bailing with a saucepan. "Dry ground? Where?"',
+    choices: [
+      { label: 'Send them to the bunker', success: () => { recruit({ name: pick(['Hal', 'Ivo', 'Cormac']), trait: 'hardworker', skills: { farm: 3, build: 2 } }); recruit({ name: 'Dot', trait: 'cheerful', skills: { scav: 1 } }); addMorale(5); xp(10); return 'By dusk they are at your hatch, soaked. She has kept the saucepan.'; } },
+      { label: 'Point them north', success: () => { xp(5); return '"Haven?" He says it like a prayer and poles away into the mist.'; } },
+      { label: 'Trade for his catch', req: () => has('cigs', 2) || has('snack'), reqText: 'Needs 2 cigarettes or a snack',
+        success: () => { if (!take('cigs', 2)) take('snack', 1); return 'He hands over a string of eels without haggling. ' + give('rawmeat', 2) + '.'; } },
+    ],
+  },
+
+  // Elm Row: family homes, garages, the dogs people left behind
+  {
+    id: 'elm_garage', title: 'The Shut Garage', where: ['garage', 'suburbs'], weight: 24,
+    text: 'A garage at the end of a drive, door rusted shut. Through the gap, a car under a dust sheet.',
+    play: { type: 'lock', mode: 'pry', diff: 4,
+      onWin: () => { xp(10); return 'The door shrieks up. The tank was nearly full: ' + list(give('fuel', 3), chance(0.4) && give('hose', 1)) + '.'; },
+      onLose: () => 'The door jams halfway with a bang that rolls the length of Elm Row.' },
+  },
+  {
+    id: 'elm_kids_room', title: 'Glow Stars', where: ['house', 'suburbs'], weight: 22, once: true,
+    text: 'Glow stars on a child\'s ceiling, a rabbit on the pillow. A note: "Gone to Gran\'s. Love, Mum."',
+    choices: [
+      { label: 'Take the bedside torch', success: () => 'The torch is dead, but the drawer is not empty. ' + give('batteries', 2) + '.' },
+      { label: 'Take the rabbit home', success: () => { setFlag('rabbit_home', true); addMorale(6); return 'A threadbare rabbit for the bunker. Somebody there will need it more than you.'; } },
+      { label: 'Close the door', success: () => { addMorale(2); return 'You pull the door to, gently. Some rooms should stay as they were left.'; } },
+    ],
+  },
+  {
+    id: 'elm_pack', title: 'Family Dogs', where: ['suburbs'], weight: 18, minDay: 2,
+    text: 'Dogs pour over a garden fence, collars on, tags jingling. One still trails its lead. None of them bark.',
+    play: { type: 'horde', foes: ['zdog', 'zdog', 'zdog'],
+      onWin: () => { addMorale(-2); return 'The last tag reads BUSTER. You don\'t read the others. ' + give('rawmeat', 1) + '.'; },
+      onLose: () => { sore(5, 'a dog bite'); return 'You go over a shed roof. One of them gets your ankle first.'; } },
+  },
+  {
+    id: 'elm_boarded', title: 'Number Fourteen', where: ['suburbs', 'house'], weight: 22, minDay: 2, once: true,
+    who: 'Voice behind the boards',
+    text: 'Every window of number 14 is boarded. A crossbow bolt thuds into the gatepost. "Far enough."',
+    choices: [
+      { label: 'Offer a trade', req: () => has('canned') || has('bandage'), reqText: 'Needs food or a bandage',
+        success: () => { if (!take('bandage', 1)) take('canned', 1); xp(8); return 'A bucket comes down on a rope. You fill it. It comes back with ' + list(give('bolts', 4), give('veg', 2)) + '.'; } },
+      { label: 'Ask how many inside', check: { attr: 'cha', diff: 6 },
+        success: () => { setFlag('elm_fourteen', true); xp(12); addMorale(3); return '"Four. Two are kids." A pause. "Bring news of Haven and we\'ll talk."'; },
+        fail: () => 'The next bolt lands closer. You take the hint.' },
+      { label: 'Back away', success: () => 'You raise your hands and back off. The boards watch you all the way down the road.' },
+    ],
+  },
+
+  // Kessler Woods: snares, the packs, the old campsite, the ranger's stores
+  {
+    id: 'woods_snare', title: 'Caught in a Snare', where: ['forest', 'ranger'], weight: 22,
+    who: 'Trapper',
+    text: 'A trapper hangs by one ankle from his own snare. The dead are coming up the bank towards him.',
+    play: { type: 'rescue', foes: ['walker', 'zdog', 'walker'], who: 'Trapper',
+      onWin: () => { recruit({ name: pick(['Aldous', 'Wren', 'Sully']), trait: 'scavenger', skills: { scav: 4, farm: 2 } }); xp(18); return 'You cut him down. "Thirty years setting those. First time I\'ve caught me." He comes home.'; },
+      onLose: () => { addMorale(-7); return 'The line holds. He doesn\'t.'; } },
+  },
+  {
+    id: 'woods_pack', title: 'Grey Shapes', where: ['forest', 'ranger'], weight: 22, night: true,
+    text: 'Low shapes flow between the pines, quick and silent. Not wolves. Dogs, once, hunting as a pack now.',
+    play: { type: 'horde', foes: ['zdog', 'zdog', 'zdog', 'zdog'],
+      onWin: () => { xp(16); return 'Four still shapes on the needles. ' + give('rawmeat', 2) + ', if you are hungry enough.'; },
+      onLose: () => { sore(6, 'a dog bite'); tire(10); return 'You put a stream between you and them. They keep pace along the bank.'; } },
+  },
+  {
+    id: 'woods_campfire', title: 'Still Warm', where: ['forest'], weight: 22,
+    text: 'A campfire in a clearing, still warm. Two tins on a flat stone. Boot prints heading north.',
+    choices: [
+      { label: 'Wait by the fire', success: () => { passTime(1); rest(15); if (chance(0.5)) { recruit({ trait: 'quiet', skills: { scav: 3 } }); return 'A woman comes back for her tins and finds you warming your hands. She stays.'; } return 'An hour of warmth. Nobody comes back. You take the tins: ' + give('canned', 2) + '.'; } },
+      { label: 'Take the tins', success: () => { addMorale(-2); return 'You pocket ' + give('canned', 2) + ' and kick dirt on the fire. Someone goes hungry tonight.'; } },
+      { label: 'Leave a tin of yours', req: () => has('canned'), reqText: 'Needs canned food',
+        success: () => { take('canned', 1); setFlag('camp_gift', true); addMorale(5); xp(8); return 'Three tins on the stone now. You walk on lighter.'; } },
+    ],
+  },
+  {
+    id: 'ranger_cabinet', title: 'The Ranger\'s Cabinet', where: ['ranger', 'forest'], weight: 22, once: true,
+    text: 'A ranger\'s gun cabinet, chained and hidden under the pines. Someone meant to come back for it.',
+    play: { type: 'lock', mode: 'pick', diff: 6,
+      onWin: () => { xp(20); return 'The padlock drops into the needles. Inside: ' + list(give('bolts', 6), chance(0.35) ? give('crossbow', 1) : give('ammo', 4), give('bandage', 1)) + '.'; },
+      onLose: () => 'The pick snaps in the rust. The cabinet keeps whatever the ranger left.' },
+  },
+
+  // the Northern Pass: snow, the cold, the wrecked convoy
+  {
+    id: 'pass_avalanche', title: 'The Slope Lets Go', where: ['pass'], weight: 22,
+    text: 'A crack like a rifle shot up the slope. The snow above the road breaks into slabs and starts to slide.',
+    play: { type: 'dodge', waves: 4, dmg: [6, 12],
+      onWin: () => { xp(14); return 'The roar stops. It has torn open a buried truck cab: ' + list(give('canned', 2), give('fuel', 1)) + '.'; },
+      onLose: () => { tire(15); passTime(1); return 'You dig yourself out with hands you can\'t feel. It takes an hour.'; } },
+  },
+  {
+    id: 'pass_tailgate', title: 'Frozen Tailgate', where: ['pass'], weight: 22,
+    text: 'An army truck in the wrecked convoy, tailgate frozen shut. Crates inside: RATIONS. MEDICAL.',
+    play: { type: 'lock', mode: 'pry', diff: 5,
+      onWin: () => { xp(18); return 'The ice cracks and the tailgate drops. ' + list(give('medkit', 1), give('canned', 2), give('ammo', 4)) + '.'; },
+      onLose: () => 'The bar skids off the ice. The clang rings down the whole valley.' },
+  },
+  {
+    id: 'pass_left_behind', title: 'Left Behind', where: ['pass'], weight: 22, once: true,
+    who: 'Man in the snow',
+    text: 'A man sits against a dead truck, no coat, lips blue. "Convoy left me. Said I\'d slow them down."',
+    choices: [
+      { label: 'Give him your coat', req: () => has('coat'), reqText: 'Needs a Winter Coat',
+        success: () => { take('coat', 1); recruit({ name: 'Piet', trait: 'loyal', skills: { combat: 3, build: 2 } }); addMorale(6); xp(15); return 'He shrugs it on and stands. "I\'ll carry my weight." Your teeth start to chatter.'; } },
+      { label: 'Light him a fire', req: () => has('wood', 2), reqText: 'Needs 2 Wood',
+        success: () => { take('wood', 2); passTime(1); recruit({ name: 'Piet', trait: 'loyal', skills: { combat: 3, build: 2 } }); xp(12); return 'An hour over a spitting fire. He gets up slowly, but he gets up.'; } },
+      { label: 'Take his boots', success: () => { addMorale(-8); return 'He doesn\'t argue. He hasn\'t the strength. ' + give('boots', 1) + '.'; } },
+      { label: 'Walk on', success: () => { addMorale(-3); return 'When you look back, the snow has already started on him.'; } },
+    ],
+  },
+  {
+    id: 'pass_whiteout', title: 'Whiteout', where: ['pass'], weight: 18,
+    text: 'Snow blows sideways and the road is gone. A huge shape walks out of the white, two quick ones behind.',
+    play: { type: 'horde', foes: ['brute', 'runner', 'runner'],
+      onWin: () => { xp(20); return 'They go down in the drifts. The big one wore an army greatcoat: ' + list(give('ammo', 3), chance(0.3) && give('coat', 1)) + '.'; },
+      onLose: () => { tire(15); return 'You lose them in the white. You nearly lose yourself as well.'; } },
+  },
 ];
 })();

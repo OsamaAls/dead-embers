@@ -658,6 +658,24 @@ body.cine #hud,body.cine #touch,body.cine #lvl,body.cine #dmg{visibility:hidden}
       return [{ dur: 10, fx: ['fadeIn', 'fadeOut', 'embers'], fadeIn: 1.2, fadeOut: 1.8, hour: 19.2, sound: 'bells', orbit: orbitAt(c0, { r0: 20, r: 16, h0: 5, h: 12, lookH: 6, sweep: 0.5, prefer: 0.2, skipEnd: 4 }) }];
     },
     gate_forest: gateCut('forest'), gate_docks: gateCut('docks'), gate_pass: gateCut('pass'),
+    /* first frost: a slow, low orbit of the wreck nearest the player at first light (the frost shader peaks around 07:00) */
+    first_frost: () => {
+      const p = gp(); let car = null, bd = 15 * 15;
+      for (let ty = Math.floor(p.y - 15); ty <= p.y + 15; ty++) for (let tx = Math.floor(p.x - 15); tx <= p.x + 15; tx++) {
+        if (tileAt(tx, ty) !== T_CAR) continue;
+        const d = (tx + 0.5 - p.x) ** 2 + (ty + 0.5 - p.y) ** 2; if (d < bd) { bd = d; car = { x: tx + 0.5, y: ty + 0.5 }; }
+      }
+      const c = car || p, pref = Math.atan2(p.x - c.x, p.y - c.y);
+      return [{ dur: 6, fx: ['fadeIn', 'fadeOut'], fadeIn: 0.8, fadeOut: 1, hour: 7, ease: 'inOut',
+        orbit: orbitAt(c, { r0: 5.5, r: 3.8, h0: 2.6, h: 1.7, lookH0: 1.2, lookH: 0.8, sweep: 0.45, prefer: pref, skipEnd: 1.4 }),
+        onUpdate: (cx, k, dt) => { cx.bt = (cx.bt || 0) - dt; if (cx.bt <= 0) { cx.bt = 1.5; puff(p.x, p.y, 1.55, { n: 1, life: 1.3, size: 0.18, color: 0xdfe4e8, rise: 0.25, drift: 0.2, opacity: 0.3 }); } } }];
+    },
+    /* first snow: close under the falling snow looking up past the player, then up and back to see it settle on the street */
+    first_snow: () => {
+      const p = gp();
+      return [{ dur: 7, fx: ['fadeIn', 'fadeOut'], fadeIn: 0.8, fadeOut: 1.1, ease: 'inOut',
+        orbit: orbitAt(p, { r0: 3.6, r: 8, h0: 1.5, h: 7, lookH0: 4.5, lookH: 0.6, sweep: 0.5, prefer: 0, skipEnd: 1.2 }) }];
+    },
     end_stand_fail: pullAway(), end_alliance_fail: pullAway(), end_cure_fail: pullAway(), death: pullAway(), abandoned: pullAway(),
   };
   C.CUTSCENES = CUTSCENES;

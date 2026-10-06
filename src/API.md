@@ -60,7 +60,8 @@ A choice may *lead* to a fight (`fight([...])`), e.g. "Refuse to pay" makes the 
 ### Story scenes (content.js `story`)
 `{ title, beats: [{ who: 'Mara' | '' , line: 'One short line.' }, ...] , paras: [...] }`. Keep 1–4 beats, each under ~110 characters.
 `paras` keeps the long, optional version, which goes to the journal. Scene ids: `intro, first_night, radio_found, radio_fixed, tollmen_demand,
-haven_coords, horde_warning, bus_ready, final_choice, end_haven, end_stand, end_stand_fail, end_alliance, end_alliance_fail, death, abandoned`.
+haven_coords, horde_warning, first_frost, first_snow, bus_ready, final_choice, end_haven, end_stand, end_stand_fail, end_alliance, end_alliance_fail, death, abandoned`.
+weatherTick queues `first_frost` (first late-season morning) and `first_snow` (first snow where the player stands, the pass included); both have short cutscenes.
 
 ---------------------------------------------------------------------------------------------------
 ## 2. Engine (engine.js): pure rules, no THREE, no DOM (it runs headless in `test.js`)
@@ -106,7 +107,7 @@ wrecks `siphonCar(tx,ty)` / `carSiphoned` (`G.siphoned`, once per car; `hose` it
   - Walkable: `T_SHALLOW` (slows ×0.6), `T_BUSH` (a crouching player inside is hidden beyond 2 tiles), `T_PATH`, `T_PLANK`.
   - Solid: `T_GATE`, `T_DECO`, `T_ROCK`, `T_FENCE`.
   - `WORLD.flora`, `decos`, `fires` (engine-placed barrel fires), `gates` and `camp`. New LOCS (each with an `alias` for older encounters): park, docks, warehouse, suburbs, house, garage, ranger, flooded, pass.
-- **Story gates.** The forest opens on `radio_built`, the docks on `marcus_3` or day 8, and the pass on `q_bus`.
+- **Story gates.** The forest opens on `radio_built` once the `radio_fixed` scene has been queued (`G.seenScenes.radio_fixed`: Mara names the ranger station there), the docks on `marcus_3` or day 8, and the pass on `q_bus`.
   - `gateCheck()` runs hourly and from `storyCheck`. `openDistrict(id)` sets `open_<id>` and calls `Hooks.gateOpened(id)` if set.
   - `districtOpen(biome)` tells you whether a biome is reachable. Ambient zombies never spawn in closed districts.
 - **Weather.** `G.weather` is clear, rain, fog or snow, persisting 4–10 h and weighted by season. `G.storm` marks the last-night snowstorm, and `G.snowCover` runs 0..1.
