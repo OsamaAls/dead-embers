@@ -3495,7 +3495,7 @@ function newGame(name, bgId, attrs, worldName) {
     p: { name, bg: bgId, attr: a, hp: 100, maxHp: 100, sta: 0, maxSta: 0, hunger: 80, thirst: 70, morale: 60, inf: 0, xp: 0, level: 1, points: 0, weapon: null, x: 0, y: 0, face: 0, status: {} },
     pack: {}, store: { canned: 2, water: 2, wood: 6, cloth: 3 },
     survivors: [], buildings: {}, flags: {}, seenEnc: {}, seenScenes: {}, journal: [], loreRead: [], log: [],
-    locs: {}, cont: {}, wear: {}, bosses: {}, unlocks: {}, hints: {}, fog: '', noise: 0, encTimer: rnd(70, 110), nextId: 1, hordeDay: 0, hordeNight: false, hordeResult: null,
+    locs: {}, cont: {}, wear: {}, bosses: {}, haul: null, best: {}, unlocks: {}, hints: {}, fog: '', noise: 0, encTimer: rnd(70, 110), nextId: 1, hordeDay: 0, hordeNight: false, hordeResult: null,
     stats: { kills: 0, searches: 0, encounters: 0, recruited: 0 },
     mapV: 2, weather: 'clear', weatherH: rnd(5, 9), season: 'autumn', snowCover: 0, storm: false,
   };
@@ -3745,6 +3745,7 @@ function dailyTick() {
   G.day++;
   const R = []; // summary lines
   const P = (msg, cls) => R.push({ msg, cls: cls || '' });
+  haulReport(P);
   const saveAt = G.atShelter; G.atShelter = true; // production goes to storage
   // passive
   if (bl('rain')) { give('dirtywater', 3 * bl('rain')); P(`Rain collector: +${3 * bl('rain')} Dirty Water`); }
@@ -3861,7 +3862,7 @@ function searchContainer(c) {
   const got = {};
   for (let i = 0; i < rolls; i++) { const e = wpick(table, x => x[1]); got[e[0]] = (got[e[0]] || 0) + rnd(e[2], e[3]); }
   if (L.rare && st === 'full' && chance(0.025 + per * 0.01)) { const r = pick(L.rare); got[r] = (got[r] || 0) + 1; }
-  const loot = []; for (const k in got) loot.push(give(k, got[k]));
+  const loot = []; for (const k in got) loot.push(found(k, got[k]));
   let story = storyItemHere(c.loc);
   if (story) { const tries = G.flags['tries_' + story] = (G.flags['tries_' + story] || 0) + 1; if (tries >= 3 || chance(0.4)) { loot.push(give(story, 1)); setFlag('got_' + story.replace('radio_', '')); log(`Found the ${itemName(story)}!`, 'story'); xp(20); } else story = null; }
   let lore = null; const C = CONTENT_();
@@ -3993,7 +3994,7 @@ function enemyHitsPlayer(enemyId, mult) {
 }
 /* An enemy died. Counts the kill, awards XP, returns drops [{id,qty}] to spawn as pickups. */
 function onKill(enemyId) {
-  const e = ENEMIES[enemyId]; G.stats.kills++; xp(e.xp);
+  const e = ENEMIES[enemyId]; G.stats.kills++; xp(e.xp); haulAdd(0, 0, 1);
   const drops = [];
   if (e.loot && chance(0.8)) { const l = pick(e.loot); drops.push({ id: l[0], qty: rnd(1, l[1]) }); }
   if (e.drop && chance(enemyId === 'warden' ? 1 : 0.5)) { const w = pick(e.drop); drops.push({ id: w, qty: 1 }); if (ITEMS[w].ammo) drops.push({ id: ITEMS[w].ammo, qty: rnd(2, 6) }); }
@@ -4033,7 +4034,23 @@ function bossKilled(id) {
   Hooks.toast && Hooks.toast(`${ENEMIES[id].n} is down.`, 'good');
 }
 /* Pick up a drop. Returns the toast label. */
-function pickup(id, qty) { return give(id, qty); }
+function pickup(id, qty) { return found(id, qty); }
+/* ---------- the night's haul: what you found (containers, bodies, pickups) and killed between dusk and dawn.
+   Dawn reports it when there was a night run, with your best (G.best.haul, by value). ---------- */
+function haulAdd(items, value, kills) {
+  if (!G || !G.isNight) return;
+  const h = G.haul || (G.haul = { items: 0, value: 0, kills: 0 });
+  h.items += items; h.value += value; h.kills += kills;
+}
+/* give() for things found out in the world (counts toward the night's haul) */
+function found(id, qty) { qty = qty == null ? 1 : qty; if (ITEMS[id]) haulAdd(qty, (ITEMS[id].v || 0) * qty, 0); return give(id, qty); }
+function haulReport(P) {
+  const h = G.haul; G.haul = null;
+  if (!h || !(h.items || h.kills)) return;
+  if (!G.best) G.best = {};
+  const best = Math.max(G.best.haul || 0, h.value), rec = h.value > (G.best.haul || 0) && G.best.haul > 0; G.best.haul = best;
+  P(`Last night's haul: ${h.items} found, ${h.kills} dead, worth ${h.value}${rec ? ' (a new best)' : ` (best ${best})`}.`, rec ? 'good' : '');
+}
 
 /* ---------- Trader ---------- */
 function makeTrader() {
@@ -4365,8 +4382,8 @@ function readNote(n) {
 function searchBody(b) {
   G.bodies = G.bodies || {}; const k = b.x + ',' + b.y; if (G.bodies[k]) return [];
   G.bodies[k] = G.day; advance(4); addNoise(0.2);
-  const out = [give(pick(['bandage', 'cigs', 'ammo', 'snack', 'batteries', 'cloth', 'canned', 'painkillers']), 1)];
-  if (chance(0.25)) out.push(give(pick(['knife', 'bottle', 'chem']), 1));
+  const out = [found(pick(['bandage', 'cigs', 'ammo', 'snack', 'batteries', 'cloth', 'canned', 'painkillers']), 1)];
+  if (chance(0.25)) out.push(found(pick(['knife', 'bottle', 'chem']), 1));
   return out.filter(Boolean);
 }
 

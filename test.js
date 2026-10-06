@@ -18,7 +18,7 @@ vm.runInContext(src + `
   serialize, listWorlds, loadWorld, deleteWorld, forkWorld, markEnded, hasSave, lastWorldId, recruit, adoptDog, setCompanion, clearCompanion, companionInfo,
   companionHurt, companionCarry, carryCap, hordeWaveSize, barDoor, unbarDoor, doorBlocked, hitDoorBar, siphonCar, fillBottle, cookAt, cookOption, radioBroadcast,
   maybeRequest, requestOf, deliverRequest, chatSurvivor, giftSurvivor, survivorMood, setJob, jobChoices, T_DOOR, T_CAR,
-  weaponCond, wearWeapon, repairCost, repairWeapon, playerHitDamage, actNow, bossHere, bossMet, BOSS_LAIR, buildingAt, endingEpilogue };`, ctx);
+  weaponCond, wearWeapon, repairCost, repairWeapon, playerHitDamage, actNow, bossHere, bossMet, BOSS_LAIR, buildingAt, endingEpilogue, pickup };`, ctx);
 const T = ctx.__T;
 const queued = [];
 T.Hooks.queue = q => queued.push(q);
@@ -181,6 +181,19 @@ try {
   if (!T.G.journal.some(j => j.title === 'The Sergeant')) fail('boss', 'no journal line');
   const ep = T.endingEpilogue('end_stand'); if (!JSON.stringify(ep).includes('Sergeant')) fail('boss', 'epilogue does not mention it: ' + JSON.stringify(ep));
 } catch (err) { fail('boss', err); }
+
+/* ---- the night's haul: counted only at night, reported at dawn with the best, nothing after a night in bed ---- */
+try {
+  fresh(); queued.length = 0; T.G.hour = 23; T.G.isNight = true;
+  T.searchContainer(T.WORLD.containers[0]); T.pickup('ammo', 2); T.onKill('walker'); T.onKill('walker');
+  const h = T.G.haul; if (!h || h.kills !== 2 || h.items < 3 || h.value < 6) fail('haul', JSON.stringify(h));
+  T.advance(8 * 60); const sum = queued.filter(q => q.type === 'summary').pop(), line = sum && sum.lines.find(l => /haul/.test(l.msg));
+  if (!line || !line.msg.includes('2 dead')) fail('haul', 'no dawn line: ' + JSON.stringify(sum && sum.lines.slice(0, 2)));
+  if (T.G.haul || !(T.G.best.haul > 0)) fail('haul', 'not reset / no best');
+  T.G.hour = 12; T.G.isNight = false; T.pickup('ammo', 2); if (T.G.haul) fail('haul', 'counted by day');
+  queued.length = 0; T.advance(20 * 60); const s2 = queued.filter(q => q.type === 'summary').pop();
+  if (s2 && s2.lines.some(l => /haul/.test(l.msg))) fail('haul', 'reported after a quiet night');
+} catch (err) { fail('haul', err); }
 
 /* ---- 14 days of time: horde nights (unfought), act gates, endings, save/load ---- */
 try {
