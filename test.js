@@ -17,7 +17,8 @@ vm.runInContext(src + `
   BIOMES, GATE_OF, openGateTiles, gateCheck, weatherTick, seasonNow, hearMul, sightMul, zSpeedMul, moveMul, T_SHALLOW,
   serialize, listWorlds, loadWorld, deleteWorld, forkWorld, markEnded, hasSave, lastWorldId, recruit, adoptDog, setCompanion, clearCompanion, companionInfo,
   companionHurt, companionCarry, carryCap, hordeWaveSize, barDoor, unbarDoor, doorBlocked, hitDoorBar, siphonCar, fillBottle, cookAt, cookOption, radioBroadcast,
-  maybeRequest, requestOf, deliverRequest, chatSurvivor, giftSurvivor, survivorMood, setJob, jobChoices, T_DOOR, T_CAR };`, ctx);
+  maybeRequest, requestOf, deliverRequest, chatSurvivor, giftSurvivor, survivorMood, setJob, jobChoices, T_DOOR, T_CAR,
+  weaponCond, wearWeapon, repairCost, repairWeapon, playerHitDamage };`, ctx);
 const T = ctx.__T;
 const queued = [];
 T.Hooks.queue = q => queued.push(q);
@@ -144,6 +145,22 @@ try {
   T.weaponProfile();
   fresh(); const o = T.objectiveInfo(); if (!o.text || !o.target) fail('objective', 'first objective needs text and target');
 } catch (err) { fail('rules', err); }
+
+/* ---- weapon wear: hits soften with wear, never break, scrap repairs at the bench, a new find is fresh ---- */
+try {
+  fresh(); T.G.pack.machete = 1; T.G.p.weapon = 'machete'; T.G.p.sta = 100;
+  const prof = T.weaponProfile(), avg = n => { let s = 0; for (let i = 0; i < 400; i++) s += T.playerHitDamage(prof); return s / 400; };
+  const fresh0 = avg(); for (let i = 0; i < 150; i++) T.wearWeapon('machete', 1);
+  if (T.weaponCond('machete') !== 0) fail('wear', 'machete should be at 0, is ' + T.weaponCond('machete'));
+  const worn = avg(); if (!(worn < fresh0 * 0.7 && worn > fresh0 * 0.5)) fail('wear', `worn damage ${worn} vs fresh ${fresh0}`);
+  if (!T.G.hints.wear) fail('wear', 'no hint below 60');
+  if (T.repairWeapon('machete')) fail('wear', 'repaired without a workbench');
+  T.G.buildings.bench = 1; T.G.atShelter = true; T.G.store.scrap = 3;
+  if (T.repairCost('machete') !== 4 || T.repairWeapon('machete')) fail('wear', 'repair needs 4 scrap');
+  T.G.store.scrap = 4; if (!T.repairWeapon('machete') || T.weaponCond('machete') !== 100 || T.G.store.scrap) fail('wear', 'repair failed');
+  delete T.G.pack.axe; delete T.G.store.axe; T.wearWeapon('axe', 30); T.give('axe', 1); if (T.weaponCond('axe') !== 100) fail('wear', 'a new find should be fresh');
+  T.G.atShelter = false;
+} catch (err) { fail('wear', err); }
 
 /* ---- 14 days of time: horde nights (unfought), act gates, endings, save/load ---- */
 try {

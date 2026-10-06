@@ -677,7 +677,7 @@ function newGame(name, bgId, attrs, worldName) {
     p: { name, bg: bgId, attr: a, hp: 100, maxHp: 100, sta: 0, maxSta: 0, hunger: 80, thirst: 70, morale: 60, inf: 0, xp: 0, level: 1, points: 0, weapon: null, x: 0, y: 0, face: 0, status: {} },
     pack: {}, store: { canned: 2, water: 2, wood: 6, cloth: 3 },
     survivors: [], buildings: {}, flags: {}, seenEnc: {}, seenScenes: {}, journal: [], loreRead: [], log: [],
-    locs: {}, cont: {}, unlocks: {}, hints: {}, fog: '', noise: 0, encTimer: rnd(70, 110), nextId: 1, hordeDay: 0, hordeNight: false, hordeResult: null,
+    locs: {}, cont: {}, wear: {}, unlocks: {}, hints: {}, fog: '', noise: 0, encTimer: rnd(70, 110), nextId: 1, hordeDay: 0, hordeNight: false, hordeResult: null,
     stats: { kills: 0, searches: 0, encounters: 0, recruited: 0 },
     mapV: 2, weather: 'clear', weatherH: rnd(5, 9), season: 'autumn', snowCover: 0, storm: false,
   };
@@ -724,6 +724,7 @@ function weaponOf() { const w = G.p.weapon; return (w && G.pack[w]) ? w : null; 
 function log(msg, cls) { G.log.push({ t: `D${G.day} ${String(G.hour).padStart(2, '0')}:00`, msg, cls: cls || '' }); if (G.log.length > 120) G.log.shift(); Hooks.log(msg, cls); }
 function give(id, qty) {
   qty = qty == null ? 1 : qty; if (!ITEMS[id] || qty <= 0) return '';
+  if (G.wear && G.wear[id] != null && !G.pack[id] && !G.store[id]) delete G.wear[id]; // a newly found weapon is a fresh one
   if (G.atShelter) { G.store[id] = (G.store[id] || 0) + qty; return `+${qty} ${itemName(id)}`; }
   const free = carryCap() - packWeight(), w = ITEMS[id].w || 0;
   let fit = w > 0 ? Math.min(qty, Math.floor(free / w + 1e-9)) : qty;
@@ -1127,11 +1128,27 @@ function weaponProfile() {
   if (!it) return Object.assign({ id: null, ranged: false }, WEAPON_FISTS);
   return Object.assign({ id: w, ranged: !!it.ammo }, it);
 }
-/* Damage the player deals with one hit (melee adds STR; exhausted swings are weak). */
+/* Damage the player deals with one hit (melee adds STR; exhausted swings are weak; a worn weapon hits softer). */
 function playerHitDamage(prof) {
   let d = rnd(prof.dmg[0], prof.dmg[1]);
   if (!prof.ranged) { d += Math.round(A('str') * 0.6); if (G.p.sta < 5) d = Math.round(d * 0.6); }
+  if (prof.id) d = Math.max(1, Math.round(d * (0.6 + 0.4 * weaponCond(prof.id) / 100)));
   return d;
+}
+/* ---------- weapon wear: condition 100..0 per weapon type (the pack holds counts, so your machetes share one). Never breaks:
+   at 0 a weapon still hits for 60%. Melee wears per connecting swing, guns per shot. Repaired with scrap at the workbench. ---------- */
+const WEAR_MELEE = 1, WEAR_SHOT = 0.4;
+function weaponCond(id) { return id && G.wear && G.wear[id] != null ? G.wear[id] : 100; }
+function wearWeapon(id, amt) {
+  if (!id || !ITEMS[id] || ITEMS[id].c !== 'weapon') return;
+  if (!G.wear) G.wear = {};
+  const before = weaponCond(id), now = Math.max(0, +(before - amt).toFixed(2)); G.wear[id] = now;
+  if (before >= 60 && now < 60) hintOnce('wear', `Your ${ITEMS[id].n.toLowerCase()} is wearing down. Scrap fixes it at the workbench.`);
+}
+function repairCost(id) { const miss = 100 - weaponCond(id); return miss < 1 ? 0 : Math.ceil(miss / 25); }
+function repairWeapon(id) {
+  const n = repairCost(id); if (!n || bl('bench') < 1 || !has('scrap', n)) return false;
+  take('scrap', n, true); G.wear[id] = 100; return true;
 }
 /* Spend one round of ammo for the current gun; false if none. Adds noise. */
 function useAmmo(prof) { if (!prof.ranged) return true; if (!take(prof.ammo, 1)) return false; addNoise(prof.noise || 0); return true; }

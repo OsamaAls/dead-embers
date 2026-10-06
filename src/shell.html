@@ -144,6 +144,9 @@ body.lowhp #edge{opacity:1;animation:edgep 1.25s ease-in-out infinite}
 #wpn .n{font:800 17px/1 var(--display);letter-spacing:.07em;text-transform:uppercase}
 #wpn .a{font:600 13px/1 var(--mono);color:var(--ember2)}
 #wpn .a.out{color:#ff6a55}
+#wpn .c{width:30px;height:4px;background:var(--line2)}
+#wpn .c i{display:block;height:100%;background:var(--ember2)}
+#wpn .c.low i{background:#ff6a55}
 #wpn .k{font:600 10px var(--mono);color:var(--mute)}
 #wpn.swap{animation:objnew .6s}
 #barri{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--sab) + 92px);width:min(320px,70vw);text-align:center}
@@ -597,7 +600,7 @@ body.touch .hb .lb,body.touch .hb .hk{display:none}
     </div>
   </div>
   <div id="toasts"></div>
-  <div class="hud-br"><div id="wpn"><span class="n"></span><span class="a"></span><span class="k k-hide"></span></div></div>
+  <div class="hud-br"><div id="wpn"><span class="n"></span><span class="c" hidden><i></i></span><span class="a"></span><span class="k k-hide"></span></div></div>
   <div id="barri" hidden><div class="lb">Barricade <span class="pc"></span></div><div class="tr"><div class="gh"></div><div class="fl"></div></div></div>
   <div id="prompt" hidden><span class="key"><svg class="ring" width="40" height="40"><rect class="tk" x="2" y="2" width="36" height="36" rx="5" pathLength="100"/><rect class="pg" x="2" y="2" width="36" height="36" rx="5" pathLength="100"/></svg><span class="kt">E</span></span><span class="tx"></span></div>
   <div id="hint"></div>

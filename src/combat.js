@@ -290,6 +290,7 @@ const Combat = (function () {
     }
     hits.sort((a, b) => a[0] - b[0]);
     const max = arc >= 1.6 ? 3 : 2;
+    if (hits.length && prof.id) wearWeapon(prof.id, WEAR_MELEE);
     hits.slice(0, max).forEach(([d, e], i) => {
       let n = playerHitDamage(prof); if (i > 0) n = Math.max(1, Math.round(n * 0.7));
       /* sneak attack: an unaware zombie takes triple damage (rewards crouching and the awareness meters) */
@@ -342,7 +343,7 @@ const Combat = (function () {
       if (!PS.noAmmoTold) { PS.noAmmoTold = true; toast('No ammo.', 'warn'); }
       return;
     }
-    PS.noAmmoTold = false;
+    PS.noAmmoTold = false; wearWeapon(prof.id, WEAR_SHOT);
     const pellets = prof.pellets || 1, rng = prof.rng || 8, spread = prof.spread || 0.05;
     const mx0 = p.x + Math.sin(face) * 0.45, my0 = p.y + Math.cos(face) * 0.45, h = 1.35;
     for (let i = 0; i < pellets; i++) {

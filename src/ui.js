@@ -469,9 +469,12 @@ const UI = (() => {
     let ammo = '', out = false;
     if (it && it.ammo) { const n = G.pack[it.ammo] || 0; ammo = n + ' ' + (it.ammo === 'shells' ? 'SH' : it.ammo === 'bolts' ? 'BLT' : 'RND'); out = n === 0; }
     const owned = Object.keys(G.pack).filter(k => ITEMS[k] && ITEMS[k].c === 'weapon').length;
-    const key = name + ammo + owned;
+    const cond = w ? Math.round(safe(() => weaponCond(w), 100)) : 100;
+    const key = name + ammo + owned + '|' + cond;
     if (S.c.wpn === key) return; S.c.wpn = key;
     D.wpn.querySelector('.n').textContent = name;
+    /* condition pip: only once this weapon has started to wear */
+    const c = D.wpn.querySelector('.c'); c.hidden = cond >= 100; c.classList.toggle('low', cond < 60); c.firstChild.style.width = cond + '%'; c.title = `Condition ${cond}%`;
     const a = D.wpn.querySelector('.a'); a.textContent = ammo; a.classList.toggle('out', out);
     D.wpn.querySelector('.k').textContent = owned > 1 ? 'Q' : '';
   }
@@ -1302,7 +1305,13 @@ const UI = (() => {
         }
         if (tab === 'craft') {
           const list = RECIPES.map((r, i) => [r, i]).filter(([r]) => r.bench <= bl('bench') + 1);
-          return `<p class="hintline">Workbench level ${bl('bench')} · INT ${G.p.attr.int || 0}. Crafted items go to your pack.</p>` + (list.length ? list.map(([r, i]) => {
+          /* repairs: worn weapons you have (pack or storage), once there is a workbench */
+          const worn = bl('bench') >= 1 ? Object.keys(ITEMS).filter(k => ITEMS[k].c === 'weapon' && (G.pack[k] || G.store[k]) && safe(() => repairCost(k), 0) > 0) : [];
+          const rep = worn.map(k => {
+            const n = repairCost(k), ok = has('scrap', n);
+            return `<div class="row" data-row="repair:${k}"><span class="grow"><span class="t1">Repair ${esc(iname(k))} · ${Math.round(weaponCond(k))}%</span><br><span class="cost">${costHtml({ scrap: n })}</span></span>${ok ? '' : '<span class="why">Missing scrap</span>'}<button class="btn sm ${ok ? 'pri' : ''}" data-a="repair:${k}" ${ok ? '' : 'disabled'}>Repair</button></div>`;
+          }).join('');
+          return `<p class="hintline">Workbench level ${bl('bench')} · INT ${G.p.attr.int || 0}. Crafted items go to your pack.</p>` + rep + (list.length ? list.map(([r, i]) => {
             const ck = canCraft(r);
             return `<div class="row" data-row="craft:${i}"><span class="grow"><span class="t1">${esc(r.label || iname(r.out))}${r.q > 1 ? ' ×' + r.q : ''}</span><br><span class="cost">${costHtml(r.in)}</span></span>${ck.ok ? '' : `<span class="why">${esc(ck.why)}</span>`}<button class="btn sm ${ck.ok ? 'pri' : ''}" data-a="craft:${i}" ${ck.ok ? '' : 'disabled'}>Craft</button></div>`;
           }).join('') : emptyState('tool', 'Nothing to craft yet.', 'Build a workbench in the yard to unlock recipes.'));
@@ -1352,6 +1361,7 @@ const UI = (() => {
         }
         if (a === 'eat') useItem(arg);
         if (a === 'craft') craft(+arg);
+        if (a === 'repair' && safe(() => repairWeapon(arg), false)) { safe(() => advance(20)); toast(`Repaired ${iname(arg)}`, 'good'); SFX.play('build'); }
         if (a === 'comp') toggleCompanion(arg === 'dog' ? 'dog' : 'survivor', arg === 'dog' ? 'dog' : +arg);
         if (a === 'mv') {
           const [dir, id] = arg.split(':'), from = dir === 'in' ? G.pack : G.store, to = dir === 'in' ? G.store : G.pack;

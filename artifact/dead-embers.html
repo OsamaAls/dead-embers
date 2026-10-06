@@ -144,6 +144,9 @@ body.lowhp #edge{opacity:1;animation:edgep 1.25s ease-in-out infinite}
 #wpn .n{font:800 17px/1 var(--display);letter-spacing:.07em;text-transform:uppercase}
 #wpn .a{font:600 13px/1 var(--mono);color:var(--ember2)}
 #wpn .a.out{color:#ff6a55}
+#wpn .c{width:30px;height:4px;background:var(--line2)}
+#wpn .c i{display:block;height:100%;background:var(--ember2)}
+#wpn .c.low i{background:#ff6a55}
 #wpn .k{font:600 10px var(--mono);color:var(--mute)}
 #wpn.swap{animation:objnew .6s}
 #barri{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--sab) + 92px);width:min(320px,70vw);text-align:center}
@@ -597,7 +600,7 @@ body.touch .hb .lb,body.touch .hb .hk{display:none}
     </div>
   </div>
   <div id="toasts"></div>
-  <div class="hud-br"><div id="wpn"><span class="n"></span><span class="a"></span><span class="k k-hide"></span></div></div>
+  <div class="hud-br"><div id="wpn"><span class="n"></span><span class="c" hidden><i></i></span><span class="a"></span><span class="k k-hide"></span></div></div>
   <div id="barri" hidden><div class="lb">Barricade <span class="pc"></span></div><div class="tr"><div class="gh"></div><div class="fl"></div></div></div>
   <div id="prompt" hidden><span class="key"><svg class="ring" width="40" height="40"><rect class="tk" x="2" y="2" width="36" height="36" rx="5" pathLength="100"/><rect class="pg" x="2" y="2" width="36" height="36" rx="5" pathLength="100"/></svg><span class="kt">E</span></span><span class="tx"></span></div>
   <div id="hint"></div>
@@ -3479,7 +3482,7 @@ function newGame(name, bgId, attrs, worldName) {
     p: { name, bg: bgId, attr: a, hp: 100, maxHp: 100, sta: 0, maxSta: 0, hunger: 80, thirst: 70, morale: 60, inf: 0, xp: 0, level: 1, points: 0, weapon: null, x: 0, y: 0, face: 0, status: {} },
     pack: {}, store: { canned: 2, water: 2, wood: 6, cloth: 3 },
     survivors: [], buildings: {}, flags: {}, seenEnc: {}, seenScenes: {}, journal: [], loreRead: [], log: [],
-    locs: {}, cont: {}, unlocks: {}, hints: {}, fog: '', noise: 0, encTimer: rnd(70, 110), nextId: 1, hordeDay: 0, hordeNight: false, hordeResult: null,
+    locs: {}, cont: {}, wear: {}, unlocks: {}, hints: {}, fog: '', noise: 0, encTimer: rnd(70, 110), nextId: 1, hordeDay: 0, hordeNight: false, hordeResult: null,
     stats: { kills: 0, searches: 0, encounters: 0, recruited: 0 },
     mapV: 2, weather: 'clear', weatherH: rnd(5, 9), season: 'autumn', snowCover: 0, storm: false,
   };
@@ -3526,6 +3529,7 @@ function weaponOf() { const w = G.p.weapon; return (w && G.pack[w]) ? w : null; 
 function log(msg, cls) { G.log.push({ t: `D${G.day} ${String(G.hour).padStart(2, '0')}:00`, msg, cls: cls || '' }); if (G.log.length > 120) G.log.shift(); Hooks.log(msg, cls); }
 function give(id, qty) {
   qty = qty == null ? 1 : qty; if (!ITEMS[id] || qty <= 0) return '';
+  if (G.wear && G.wear[id] != null && !G.pack[id] && !G.store[id]) delete G.wear[id]; // a newly found weapon is a fresh one
   if (G.atShelter) { G.store[id] = (G.store[id] || 0) + qty; return `+${qty} ${itemName(id)}`; }
   const free = carryCap() - packWeight(), w = ITEMS[id].w || 0;
   let fit = w > 0 ? Math.min(qty, Math.floor(free / w + 1e-9)) : qty;
@@ -3929,11 +3933,27 @@ function weaponProfile() {
   if (!it) return Object.assign({ id: null, ranged: false }, WEAPON_FISTS);
   return Object.assign({ id: w, ranged: !!it.ammo }, it);
 }
-/* Damage the player deals with one hit (melee adds STR; exhausted swings are weak). */
+/* Damage the player deals with one hit (melee adds STR; exhausted swings are weak; a worn weapon hits softer). */
 function playerHitDamage(prof) {
   let d = rnd(prof.dmg[0], prof.dmg[1]);
   if (!prof.ranged) { d += Math.round(A('str') * 0.6); if (G.p.sta < 5) d = Math.round(d * 0.6); }
+  if (prof.id) d = Math.max(1, Math.round(d * (0.6 + 0.4 * weaponCond(prof.id) / 100)));
   return d;
+}
+/* ---------- weapon wear: condition 100..0 per weapon type (the pack holds counts, so your machetes share one). Never breaks:
+   at 0 a weapon still hits for 60%. Melee wears per connecting swing, guns per shot. Repaired with scrap at the workbench. ---------- */
+const WEAR_MELEE = 1, WEAR_SHOT = 0.4;
+function weaponCond(id) { return id && G.wear && G.wear[id] != null ? G.wear[id] : 100; }
+function wearWeapon(id, amt) {
+  if (!id || !ITEMS[id] || ITEMS[id].c !== 'weapon') return;
+  if (!G.wear) G.wear = {};
+  const before = weaponCond(id), now = Math.max(0, +(before - amt).toFixed(2)); G.wear[id] = now;
+  if (before >= 60 && now < 60) hintOnce('wear', `Your ${ITEMS[id].n.toLowerCase()} is wearing down. Scrap fixes it at the workbench.`);
+}
+function repairCost(id) { const miss = 100 - weaponCond(id); return miss < 1 ? 0 : Math.ceil(miss / 25); }
+function repairWeapon(id) {
+  const n = repairCost(id); if (!n || bl('bench') < 1 || !has('scrap', n)) return false;
+  take('scrap', n, true); G.wear[id] = 100; return true;
 }
 /* Spend one round of ammo for the current gun; false if none. Adds noise. */
 function useAmmo(prof) { if (!prof.ranged) return true; if (!take(prof.ammo, 1)) return false; addNoise(prof.noise || 0); return true; }
@@ -7628,6 +7648,7 @@ const Combat = (function () {
     }
     hits.sort((a, b) => a[0] - b[0]);
     const max = arc >= 1.6 ? 3 : 2;
+    if (hits.length && prof.id) wearWeapon(prof.id, WEAR_MELEE);
     hits.slice(0, max).forEach(([d, e], i) => {
       let n = playerHitDamage(prof); if (i > 0) n = Math.max(1, Math.round(n * 0.7));
       /* sneak attack: an unaware zombie takes triple damage (rewards crouching and the awareness meters) */
@@ -7680,7 +7701,7 @@ const Combat = (function () {
       if (!PS.noAmmoTold) { PS.noAmmoTold = true; toast('No ammo.', 'warn'); }
       return;
     }
-    PS.noAmmoTold = false;
+    PS.noAmmoTold = false; wearWeapon(prof.id, WEAR_SHOT);
     const pellets = prof.pellets || 1, rng = prof.rng || 8, spread = prof.spread || 0.05;
     const mx0 = p.x + Math.sin(face) * 0.45, my0 = p.y + Math.cos(face) * 0.45, h = 1.35;
     for (let i = 0; i < pellets; i++) {
@@ -10588,9 +10609,12 @@ const UI = (() => {
     let ammo = '', out = false;
     if (it && it.ammo) { const n = G.pack[it.ammo] || 0; ammo = n + ' ' + (it.ammo === 'shells' ? 'SH' : it.ammo === 'bolts' ? 'BLT' : 'RND'); out = n === 0; }
     const owned = Object.keys(G.pack).filter(k => ITEMS[k] && ITEMS[k].c === 'weapon').length;
-    const key = name + ammo + owned;
+    const cond = w ? Math.round(safe(() => weaponCond(w), 100)) : 100;
+    const key = name + ammo + owned + '|' + cond;
     if (S.c.wpn === key) return; S.c.wpn = key;
     D.wpn.querySelector('.n').textContent = name;
+    /* condition pip: only once this weapon has started to wear */
+    const c = D.wpn.querySelector('.c'); c.hidden = cond >= 100; c.classList.toggle('low', cond < 60); c.firstChild.style.width = cond + '%'; c.title = `Condition ${cond}%`;
     const a = D.wpn.querySelector('.a'); a.textContent = ammo; a.classList.toggle('out', out);
     D.wpn.querySelector('.k').textContent = owned > 1 ? 'Q' : '';
   }
@@ -11421,7 +11445,13 @@ const UI = (() => {
         }
         if (tab === 'craft') {
           const list = RECIPES.map((r, i) => [r, i]).filter(([r]) => r.bench <= bl('bench') + 1);
-          return `<p class="hintline">Workbench level ${bl('bench')} · INT ${G.p.attr.int || 0}. Crafted items go to your pack.</p>` + (list.length ? list.map(([r, i]) => {
+          /* repairs: worn weapons you have (pack or storage), once there is a workbench */
+          const worn = bl('bench') >= 1 ? Object.keys(ITEMS).filter(k => ITEMS[k].c === 'weapon' && (G.pack[k] || G.store[k]) && safe(() => repairCost(k), 0) > 0) : [];
+          const rep = worn.map(k => {
+            const n = repairCost(k), ok = has('scrap', n);
+            return `<div class="row" data-row="repair:${k}"><span class="grow"><span class="t1">Repair ${esc(iname(k))} · ${Math.round(weaponCond(k))}%</span><br><span class="cost">${costHtml({ scrap: n })}</span></span>${ok ? '' : '<span class="why">Missing scrap</span>'}<button class="btn sm ${ok ? 'pri' : ''}" data-a="repair:${k}" ${ok ? '' : 'disabled'}>Repair</button></div>`;
+          }).join('');
+          return `<p class="hintline">Workbench level ${bl('bench')} · INT ${G.p.attr.int || 0}. Crafted items go to your pack.</p>` + rep + (list.length ? list.map(([r, i]) => {
             const ck = canCraft(r);
             return `<div class="row" data-row="craft:${i}"><span class="grow"><span class="t1">${esc(r.label || iname(r.out))}${r.q > 1 ? ' ×' + r.q : ''}</span><br><span class="cost">${costHtml(r.in)}</span></span>${ck.ok ? '' : `<span class="why">${esc(ck.why)}</span>`}<button class="btn sm ${ck.ok ? 'pri' : ''}" data-a="craft:${i}" ${ck.ok ? '' : 'disabled'}>Craft</button></div>`;
           }).join('') : emptyState('tool', 'Nothing to craft yet.', 'Build a workbench in the yard to unlock recipes.'));
@@ -11471,6 +11501,7 @@ const UI = (() => {
         }
         if (a === 'eat') useItem(arg);
         if (a === 'craft') craft(+arg);
+        if (a === 'repair' && safe(() => repairWeapon(arg), false)) { safe(() => advance(20)); toast(`Repaired ${iname(arg)}`, 'good'); SFX.play('build'); }
         if (a === 'comp') toggleCompanion(arg === 'dog' ? 'dog' : 'survivor', arg === 'dog' ? 'dog' : +arg);
         if (a === 'mv') {
           const [dir, id] = arg.split(':'), from = dir === 'in' ? G.pack : G.store, to = dir === 'in' ? G.store : G.pack;
