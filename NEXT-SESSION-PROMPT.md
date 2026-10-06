@@ -10,8 +10,8 @@ The computer may restart or lose internet mid-session (another session shares it
 **Osama's decision for this session: code first, one full browser run.** Build everything below with `node build.js` + `node test.js` only. Then run the whole browser suite plus `balance` **once**, one check at a time in the background at BelowNormal priority, with logs in `C:\Users\computerh\de-checks\` (outside the repo; survives a restart). Push only after the suite passes. If a run was cut off by a restart, rerun just the checks without an `OK`/exit-0 line in their log.
 
 Status (✅ committed, ⏳ in progress, ☐ not started):
-- ⏳ 1a. Snow footprints (`world.js`, InstancedMesh ring buffer, dog paw prints)
-- ☐ 1b. No ambient spawns in closed districts: `spotNear` (moments.js), `waveSpawnPoint` (combat.js), plus an assert in `biomes.js`
+- ✅ 1a. Snow footprints (`world.js`, InstancedMesh ring buffer, dog paw prints)
+- ⏳ 1b. No ambient spawns in closed districts: `spotNear` (moments.js), `waveSpawnPoint` (combat.js), plus an assert in `biomes.js`
 - ☐ 1c. Draw-call assert (<180) in `biomes.js`
 - ☐ 1d. Playthrough flake: a guard for container-search encounters during scripted steps; let the `lock` minigame finish under `sim()`
 - ☐ 1e. `question` issue: real-phone FPS (needs internet)

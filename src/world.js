@@ -1457,7 +1457,8 @@ const World3D = (() => {
   /* engine placeProps puts them: notes on walls by story places, bodies on streets and indoors, hand pumps in parks and farms, beds in homes.
      Notes, pumps and beds go into the merged static chunks (no extra draw calls); bodies get one mesh of their own so a search can darken one;
      crows are one InstancedMesh that gathers round the outdoor bodies near the player by day. */
-  let bodyGeo = null, bodyR = {}, crowMesh = null, crows = [], crowT = 0;
+  let bodyGeo = null, bodyR = {}, crowMesh = null, crows = [], crowT = 0, printMesh = null, prints = [], printHead = 0, walkers = {};
+  const _pc = new THREE.Color();
   const PUMP = () => kit('pump', b => {
     const iron = col(0x2e3a30, 0.1), dk = col(0x1e2420);
     b.box(0, 0, 0, 0.9, 0.16, 0.9, col(0x7a766c, 0.1));
@@ -1547,6 +1548,7 @@ const World3D = (() => {
     for (const x of [-0.04, 0.04]) cb.box(x, 0, 0.02, 0.015, 0.06, 0.015, bk);
     crowMesh = new THREE.InstancedMesh(own(cb.geometry()), mats.inst, 18); crowMesh.count = 0; crowMesh.castShadow = true; crowMesh.frustumCulled = false; root.add(crowMesh);
     crows = []; crowT = 0;
+    buildPrints();
   }
   /* crows settle on the outdoor bodies near the player by day; they lift off and circle away when you come close, and drift back later */
   function updateCrows(dt, px, py) {
@@ -1595,6 +1597,63 @@ const World3D = (() => {
       crowMesh.setMatrixAt(n++, M(c.x, c.y + (air ? Math.abs(flap) * 0.08 : 0), c.z, c.ry, air ? 1.5 + flap * 0.4 : 1, 1, 1, bob, 0));
     }
     crowMesh.count = n; crowMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /* snow footprints: a ring of PRINTS flat decals, one draw call. Laid behind the player (boots) and the dog (paws) on outdoor
+     snow; the blend multiplies the ground underneath, so they darken correctly by day and night. Fresh snow fills them in over
+     PRINT_LIFE seconds (the instance colour climbs to 1/tint, where the multiply is neutral). */
+  const PRINTS = 160, PRINT_LIFE = 90, PRINT_TINT = [0.42, 0.48, 0.6];
+  function buildPrints() {
+    const c = document.createElement('canvas'); c.width = 32; c.height = 64; const x = c.getContext('2d');
+    x.fillStyle = '#fff'; x.filter = 'blur(1.5px)';
+    x.beginPath(); x.ellipse(16, 21, 10, 16, 0, 0, Math.PI * 2); x.fill();
+    x.beginPath(); x.ellipse(16, 51, 8, 10, 0, 0, Math.PI * 2); x.fill();
+    const mat = own(new THREE.MeshBasicMaterial({
+      map: own(new THREE.CanvasTexture(c)), color: new THREE.Color(...PRINT_TINT), transparent: true, premultipliedAlpha: true, depthWrite: false,
+      fog: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2,
+      blending: THREE.CustomBlending, blendSrc: THREE.DstColorFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    }));
+    const g = own(new THREE.PlaneGeometry(1, 1)); g.rotateX(-Math.PI / 2);
+    printMesh = new THREE.InstancedMesh(g, mat, PRINTS); printMesh.count = 0; printMesh.frustumCulled = false; printMesh.renderOrder = 1;
+    printMesh.setColorAt(0, _pc.setRGB(1, 1, 1)); root.add(printMesh);
+    prints = []; printHead = 0; walkers = {};
+  }
+  function layPrint(x, z, ry, sx, sz) {
+    const p = { x, z, ry, sx, sz, t: 0 };
+    if (prints.length < PRINTS) prints.push(p); else prints[printHead] = p;
+    printHead = (printHead + 1) % PRINTS;
+  }
+  /* one walker = the player or the dog; a print every stride while it moves over snowed-over open ground */
+  function stepWalker(key, x, y, stride, paw) {
+    const w = walkers[key] || (walkers[key] = { x, y, side: 1 });
+    const dx = x - w.x, dy = y - w.y, d = Math.hypot(dx, dy);
+    if (d > 3) { w.x = x; w.y = y; return; } // teleported or respawned
+    if (d < stride) return;
+    w.x = x; w.y = y; w.side = -w.side;
+    const t = tileAt(Math.floor(x), Math.floor(y));
+    if (t === T_WATER || t === T_SHALLOW || t === T_BRIDGE || indoors(x, y)) return;
+    const ry = Math.atan2(-dx, -dy), ox = -dy / d * w.side, oy = dx / d * w.side;
+    if (paw) { for (const s of [1, -1]) layPrint((x + ox * 0.07 * s) * TILE, (y + oy * 0.07 * s) * TILE, ry, 0.15, 0.17); }
+    else layPrint((x + ox * 0.06) * TILE, (y + oy * 0.06) * TILE, ry, 0.22, 0.44);
+  }
+  function updatePrints(dt) {
+    if (!printMesh) return;
+    const snow = (typeof R !== 'undefined' && R.env) ? R.env.uSnow.value : 0;
+    if (G && G.p && (G.snowCover || 0) > 0.3 && !(typeof Cine !== 'undefined' && Cine.active)) {
+      stepWalker('p', G.p.x, G.p.y, 0.36, false);
+      const c = typeof Combat !== 'undefined' && Combat.companion;
+      if (c && c.kind === 'dog') stepWalker('dog', c.x, c.y, 0.3, true); else delete walkers.dog;
+    } else walkers = {};
+    /* melting snow takes the prints with it */
+    const k = clamp((snow - 0.2) / 0.3, 0, 1);
+    let n = 0;
+    for (const p of prints) {
+      p.t += dt; const f = Math.min(1, p.t / PRINT_LIFE) ** 1.5 * k + (1 - k);
+      if (f >= 1) continue;
+      printMesh.setMatrixAt(n, M(p.x, 0.03, p.z, p.ry, p.sx, 1, p.sz));
+      printMesh.setColorAt(n++, _pc.setRGB(...PRINT_TINT.map(c => 1 + (1 / c - 1) * f)));
+    }
+    printMesh.count = n; printMesh.instanceMatrix.needsUpdate = true; if (printMesh.instanceColor) printMesh.instanceColor.needsUpdate = true;
   }
 
   /* ================================================================ containers ================================================================ */
@@ -1835,7 +1894,7 @@ const World3D = (() => {
     dispose() {
       if (root) { R.scene.remove(root); root.traverse(o => { if ((o.isInstancedMesh || o.isMesh || o.isPoints) && o.geometry && !o.geometry._de) o.geometry.dispose(); }); }
       for (const o of owned) o.dispose && o.dispose();
-      owned = []; root = this.group = null; shelterGroup = null; bodyGeo = null; bodyR = {}; crowMesh = null; crows = []; busMesh = null; lampPools = firePools = null; ghostMesh = ghostIcons = null; ghostSlots = []; gateMesh = null; puddles = null;
+      owned = []; root = this.group = null; shelterGroup = null; bodyGeo = null; bodyR = {}; crowMesh = null; crows = []; printMesh = null; prints = []; walkers = {}; busMesh = null; lampPools = firePools = null; ghostMesh = ghostIcons = null; ghostSlots = []; gateMesh = null; puddles = null;
     },
 
     heightAt(i) { return heights[i] || 0; },
@@ -1852,6 +1911,7 @@ const World3D = (() => {
       tAcc += dt; const t = tAcc, nk = R.nightK || 0;
       this._animate(dt);
       updateCrows(dt, px, py);
+      updatePrints(dt);
       /* glow: night-only emitters scale with darkness, fires flicker */
       U.uGlowN.value = 0.12 + nk * 2.6;
       U.uGlowA.value = 1.15 + Math.sin(t * 11.3) * 0.18 + Math.sin(t * 23.7 + 1.3) * 0.12 + Math.sin(t * 3.1) * 0.1;
