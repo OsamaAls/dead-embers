@@ -13,9 +13,9 @@ Status (✅ committed, ⏳ in progress, ☐ not started):
 - ✅ 1a. Snow footprints (`world.js`, InstancedMesh ring buffer, dog paw prints)
 - ✅ 1b. No ambient spawns in closed districts: `spotNear` (moments.js), `waveSpawnPoint` (combat.js), plus an assert in `biomes.js`
 - ✅ 1c. Draw-call assert (<180) in `biomes.js`
-- ⏳ 1d. Playthrough flake: a guard for container-search encounters during scripted steps; let the `lock` minigame finish under `sim()`
+- ✅ 1d. Playthrough flake: a guard for container-search encounters during scripted steps; let the `lock` minigame finish under `sim()`
 - ☐ 1e. `question` issue: real-phone FPS (needs internet)
-- ☐ 2a. Weapon wear · ☐ 2b. Act bosses · ☐ 2c. Night haul · ☐ 2d. Dog fetch (key R)
+- ⏳ 2a. Weapon wear · ☐ 2b. Act bosses · ☐ 2c. Night haul · ☐ 2d. Dog fetch (key R)
 - ☐ 3. Docs: README, API.md, scheduled-task SKILL.md
 - ☐ 4. Full browser run + balance tuning
 - ☐ 5. Push, confirm Pages, final update of this file

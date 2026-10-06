@@ -323,6 +323,7 @@ const UI = (() => {
   function showHud(v) { if (S.hudShown === v) return; S.hudShown = v; D.hud.hidden = !v; if (!v) { D.prompt.hidden = true; D.vig.style.opacity = 0; } }
   function update(dt) {
     if (!G || !D.hud) return;
+    if (S.mg && S.mg.tick) S.mg.tick(dt || 0);
     if (S.title) closeTitle();
     if (S.end) { showHud(false); return; }
     showHud(true);
@@ -1569,7 +1570,7 @@ const UI = (() => {
     done = done || (() => { });
     o = o || {}; const mode = o.mode === 'pry' ? 'pry' : 'pick', diff = cl(o.diff || 4, 1, 10);
     const A_ = k => (G && G.p.attr[k]) || 4;
-    const m = { mode, diff, pins: 0, miss: 0, a: Math.random() * 6.28, dir: 1, fill: 0, t: 0, t0: performance.now(), time: 4.2, over: false, flashT: 0, flashOk: true };
+    const m = { mode, diff, pins: 0, miss: 0, a: Math.random() * 6.28, dir: 1, fill: 0, t: 0, time: 4.2, over: false, overT: 0, flashT: 0, flashOk: true };
     m.win = cl(0.62 + (A_('agi') + A_('per') - 8) * 0.045 - (diff - 3) * 0.05, 0.22, 1.05);
     m.spd = 2.1 + diff * 0.16;
     m.newTarget = () => { let c; do { c = Math.random() * Math.PI * 2; } while (angd(c, m.a) < 1.4); m.c = c; };
@@ -1591,27 +1592,26 @@ const UI = (() => {
     const finish = ok => {
       m.over = true; m.ok = ok; SFX.play(ok ? 'open' : 'bad');
       const tip = D.mg.querySelector('.tip'); if (tip) tip.outerHTML = `<div class="res ${ok ? 'ok' : 'no'}">${ok ? (mode === 'pick' ? 'Open' : 'Forced') : (mode === 'pick' ? 'Jammed' : 'It holds')}</div>`;
-      setTimeout(() => { if (S.mg === m) { closeMg(); done(ok); } }, 900);
+      m.done = done; // the result closes itself after 0.9 s (in tick)
     };
     m.key = e => {
       if (m.over) { if (['KeyE', 'Space', 'Enter', 'Escape'].includes(e.code) && !e.repeat && S.mg === m) { e.preventDefault(); closeMg(); done(m.ok); } return; }   // dismiss the result at once
       if (['KeyE', 'Space', 'Enter', 'KeyJ'].includes(e.code)) { e.preventDefault(); if (!e.repeat) press(); } else if (e.code === 'Escape') finish(false);
     };
     D.mg.onpointerdown = e => { if (e.target.closest('.box') || INPUT.touch) { e.preventDefault(); press(); } };
-    let lt = performance.now();
-    const loop = t => {
+    /* stepped by UI.update from the game loop (not its own rAF), so it also runs under the test harness's sim() */
+    m.tick = dt => {
       if (m.dead) return;
-      const dt = Math.min(0.1, (t - lt) / 1000); lt = t;
+      dt = Math.min(0.1, dt);
       if (!m.over) {
         if (mode === 'pick') m.a = (m.a + m.dir * m.spd * dt + Math.PI * 2) % (Math.PI * 2);
-        else { m.t = (performance.now() - m.t0) / 1000; m.fill = Math.max(0, m.fill - m.decay * dt * (m.fill > 0.02 ? 1 : 0)); if (m.t >= m.time) finish(false); }
-      }
+        else { m.t += dt; m.fill = Math.max(0, m.fill - m.decay * dt * (m.fill > 0.02 ? 1 : 0)); if (m.t >= m.time) finish(false); }
+      } else if ((m.overT += dt) >= 0.9 && S.mg === m) { closeMg(); m.done(m.ok); return; }
       m.flashT = Math.max(0, m.flashT - dt);
       drawMg(x, m);
       stEl.innerHTML = mode === 'pick' ? `<span>PINS <b>${m.pins}/3</b></span><span>SLIPS <b>${m.miss}/2</b></span>` : `<span>TIME <b>${Math.max(0, m.time - m.t).toFixed(1)}s</b></span>`;
-      requestAnimationFrame(loop);
     };
-    requestAnimationFrame(loop);
+    m.tick(0);
     SFX.play('ui');
   }
   function angd(a, b) { let d = Math.abs(a - b) % (Math.PI * 2); return d > Math.PI ? Math.PI * 2 - d : d; }

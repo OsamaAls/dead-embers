@@ -1050,7 +1050,8 @@ function searchContainer(c) {
   if (unread.length && chance(0.1)) { const i = pick(unread); G.loreRead.push(i); lore = C.lore[i]; journal(lore.title, lore.text); }
   xp(2); addNoise(0.3);
   let enc = null;
-  if (chance(0.04 + (L.danger || 0) * 0.015 + (G.isNight ? 0.03 : 0) + G.noise * 0.01)) enc = pickEncounter(c.loc);
+  /* scenarios park the field timer at 1e9 to switch random encounters off; the search roll honours that too */
+  if (!(G.encTimer >= 1e6) && chance(0.04 + (L.danger || 0) * 0.015 + (G.isNight ? 0.03 : 0) + G.noise * 0.01)) enc = pickEncounter(c.loc);
   if (G.stats.searches === 1) hintOnce('first_loot', 'Loot goes in your pack. Bring it home to the bunker to store and build.');
   return { loot: loot.filter(Boolean), empty: false, story, lore, enc };
 }
