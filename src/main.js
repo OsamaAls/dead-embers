@@ -342,7 +342,7 @@ function boot() {
 window.__skipTo = function (act) {
   if (!G) return;
   give('canned', 10); give('water', 10);
-  if (act >= 2) { G.flags.q_radio = true; G.flags.radio_built = true; G.buildings.radio = 1; G.buildings.walls = 1; G.buildings.bed = 2; G.buildings.rain = 1; while (G.survivors.length < 4) recruit(); storyCheck(); }
+  if (act >= 2) { G.flags.q_radio = true; G.flags.radio_built = true; G.seenScenes.radio_fixed = true; G.buildings.radio = 1; G.buildings.walls = 1; G.buildings.bed = 2; G.buildings.rain = 1; while (G.survivors.length < 4) recruit(); storyCheck(); }
   if (act >= 3) { G.flags.q_bus = true; G.hordeDay = G.day; G.flags.bus_ready = true; G.pack.haven_map = 1; G.flags.warden_met = true; G.flags.final = false; storyCheck(); }
   World3D.refreshShelter();
   return objective();
