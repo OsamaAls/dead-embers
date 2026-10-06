@@ -82,6 +82,40 @@ for (let seed = 1; seed <= 25; seed++) {
     for (const b of T.BIOMES) if (!w.biome.includes(T.BIOMES.indexOf(b))) fail('world seed ' + seed, 'missing biome ' + b);
   } catch (err) { fail('world', err); }
 }
+/* ---- interaction props: notes on walls, bodies and beds on walkable tiles, pumps reachable; placing them never shifts the map ---- */
+for (let seed = 1; seed <= 25; seed++) {
+  try {
+    const w = T.genWorld(seed * 7919), Wn = T.W, tag = 'props seed ' + seed, t = (x, y) => w.tiles[y * Wn + x];
+    if (w.notes.length < 10 || w.bodies.length < 15 || w.pumps.length < 5 || w.beds.length < 15) fail(tag, `too few props: ${w.notes.length} notes, ${w.bodies.length} bodies, ${w.pumps.length} pumps, ${w.beds.length} beds`);
+    const seen = new Set();
+    for (const [kind, list] of [['note', w.notes], ['body', w.bodies], ['bed', w.beds]]) for (const o of list) {
+      if (T.SOLID.has(t(o.x, o.y)) || t(o.x, o.y) === T.T_DOOR) fail(tag, `${kind} on a solid tile ${o.x},${o.y}`);
+      if (seen.has(o.x + ',' + o.y)) fail(tag, `two props on ${o.x},${o.y}`); seen.add(o.x + ',' + o.y);
+    }
+    for (const n of w.notes) if (t(n.x + n.fx, n.y + n.fy) !== 3 /* T_WALL */) fail(tag, `note ${n.x},${n.y} not facing a wall`);
+    for (const b of w.beds) if (!['bed', 'couch', 'cot'].includes(b.kind)) fail(tag, 'bed kind ' + b.kind);
+    const flood = () => {
+      const solid = (x, y) => x < 0 || y < 0 || x >= Wn || y >= T.H || T.SOLID.has(w.tiles[y * Wn + x]);
+      const sn = new Uint8Array(Wn * T.H), q = [[w.hatch.x, w.hatch.y + 1]]; sn[(w.hatch.y + 1) * Wn + w.hatch.x] = 1;
+      while (q.length) { const [x, y] = q.pop(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (!solid(nx, ny) && !sn[ny * Wn + nx]) { sn[ny * Wn + nx] = 1; q.push([nx, ny]); } } }
+      return sn;
+    };
+    for (const id in w.gates) T.openGateTiles(w, id);
+    const sn = flood();
+    for (const p of w.pumps) if (![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => sn[(p.y + b) * Wn + p.x + a])) fail(tag, `pump ${p.x},${p.y} unreachable`);
+    for (const b of w.bodies) if (!sn[b.y * Wn + b.x]) fail(tag, `body ${b.x},${b.y} unreachable`);
+  } catch (err) { fail('props', err); }
+}
+{
+  /* recorded before the props existed: the layout, containers, POIs and buildings of these seeds must never change (old saves load onto them) */
+  const fnv = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h.toString(16); };
+  for (const [seed, want] of [[7919, '9f6bcbf4'], [123456, '5d67c14d'], [987654321, 'f4b93318']]) {
+    const w = T.genWorld(seed), under = {}; for (const p of w.pumps) under[p.y * T.W + p.x] = p.under;
+    let s = ''; for (let i = 0; i < w.tiles.length; i++) s += String.fromCharCode(65 + (under[i] != null ? under[i] : w.tiles[i]));
+    const got = fnv(s + JSON.stringify(w.containers) + JSON.stringify(w.pois) + JSON.stringify(w.roofs));
+    if (got !== want) fail('world stability', `seed ${seed} layout changed (${got}): old saves would load onto a different map`);
+  }
+}
 /* gates open on their story beats */
 try {
   fresh(); const f = T.G.flags;
@@ -180,6 +214,7 @@ try {
   if (!T.siphonCar(car[0], car[1]).ok || (T.G.pack.fuel || 0) <= f0 || T.siphonCar(car[0], car[1]).ok) fail('siphon', 'hose siphon / once per car');
   /* water and cooking */
   T.G.pack.bottle = 1; delete T.G.pack.dirtywater; if (!T.fillBottle() || T.G.pack.bottle || T.G.pack.dirtywater !== 1) fail('water', 'fill');
+  T.G.pack.bottle = 1; const cw = T.G.pack.water || 0; if (!T.fillBottle(true) || T.G.pack.water !== cw + 1) fail('water', 'pump gives clean water');
   if (!T.cookOption() || !T.cookAt() || T.G.pack.dirtywater || !T.G.pack.water) fail('cook', 'boil');
   T.G.pack.rawmeat = 1; if (!/Meal/.test(T.cookAt())) fail('cook', 'meat');
   const rb = T.radioBroadcast(); if (!rb.lines.length || rb.lines.some(l => typeof l !== 'string')) fail('radio', 'broadcast');

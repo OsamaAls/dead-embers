@@ -1453,6 +1453,150 @@ const World3D = (() => {
     }
   }
 
+  /* ================================================================ interaction props: notes, bodies, pumps, beds; crows ================================================================ */
+  /* engine placeProps puts them: notes on walls by story places, bodies on streets and indoors, hand pumps in parks and farms, beds in homes.
+     Notes, pumps and beds go into the merged static chunks (no extra draw calls); bodies get one mesh of their own so a search can darken one;
+     crows are one InstancedMesh that gathers round the outdoor bodies near the player by day. */
+  let bodyGeo = null, bodyR = {}, crowMesh = null, crows = [], crowT = 0;
+  const PUMP = () => kit('pump', b => {
+    const iron = col(0x2e3a30, 0.1), dk = col(0x1e2420);
+    b.box(0, 0, 0, 0.9, 0.16, 0.9, col(0x7a766c, 0.1));
+    b.geo(G_CYL8, 0, 0.75, 0, 0.26, 1.2, 0.26, iron, { grad: 0.6 });
+    b.geo(G_CYL8, 0, 1.4, 0, 0.36, 0.14, 0.36, dk);
+    b.geo(G_CONE5, 0, 1.52, 0, 0.3, 0.14, 0.3, iron);
+    b.box(0, 1.0, 0.24, 0.1, 0.1, 0.4, iron); b.box(0, 0.92, 0.42, 0.1, 0.14, 0.08, dk);
+    b.beam(0, 1.46, -0.08, 0.0, 1.62, -0.75, 0.06, iron); b.geo(G_CYL6, 0, 1.62, -0.78, 0.09, 0.2, 0.09, col(0x4a3a2a), { rx: Math.PI / 2 });
+    b.geo(G_CYL12, 0, 0.17, 0.55, 0.62, 0.22, 0.62, col(0x5a5c58, 0.1)); b.geo(G_CYL12, 0, 0.27, 0.55, 0.5, 0.02, 0.5, col(0x2a3438));
+  });
+  const BEDK = {
+    bed: () => kit('bed', b => {
+      const wd = col(0x4e3a28, 0.1);
+      b.box(0, 0, 0, 1.15, 0.32, 1.95, wd); b.box(0, 0, -0.94, 1.15, 0.85, 0.08, wd);
+      b.box(0, 0.32, 0.03, 1.05, 0.16, 1.82, col(0xa8a090, 0.1));
+      b.box(0, 0.48, -0.7, 0.8, 0.12, 0.34, col(0xc8c2b4, 0.1), { rz: 0.05 });
+      b.box(0.02, 0.48, 0.3, 1.1, 0.1, 1.15, col(rpick([0x5a3a34, 0x3a4a5a, 0x5a5a3a, 0x6a5a48]), 0.12), { ry: rf(-0.12, 0.12), rz: rf(-0.04, 0.04) });
+    }),
+    couch: () => kit('couch', b => {
+      const c = col(rpick([0x5a4632, 0x4a3a3a, 0x3e4a44, 0x6a5440]), 0.1), d = c.clone().multiplyScalar(0.8);
+      b.box(0, 0.08, 0, 1.85, 0.36, 0.85, c); b.box(0, 0.08, -0.36, 1.85, 0.85, 0.2, d);
+      for (const x of [-0.86, 0.86]) b.box(x, 0.08, 0.02, 0.18, 0.62, 0.85, d);
+      for (const x of [-0.42, 0.42]) b.box(x, 0.44, 0.06, 0.8, 0.12, 0.66, c.clone().multiplyScalar(1.08), { rz: rf(-0.04, 0.04) });
+      for (const [x, z] of [[-0.82, -0.36], [0.82, -0.36], [-0.82, 0.36], [0.82, 0.36]]) b.box(x, 0, z, 0.08, 0.08, 0.08, col(0x1e1a16));
+    }),
+    cot: () => kit('cot', b => {
+      const fr = col(0x3a3c36), cv = col(0x55603e, 0.1);
+      for (const x of [-0.42, 0.42]) b.box(x, 0.38, 0, 0.05, 0.05, 1.9, fr);
+      for (const z of [-0.8, 0.8]) { b.beam(-0.42, 0, z - 0.15, 0.42, 0.4, z + 0.15, 0.04, fr); b.beam(0.42, 0, z - 0.15, -0.42, 0.4, z + 0.15, 0.04, fr); }
+      b.box(0, 0.4, 0, 0.84, 0.04, 1.85, cv); b.box(0, 0.44, 0.2, 0.86, 0.06, 1.0, col(0x4a4a42, 0.15), { ry: rf(-0.15, 0.15) });
+    }),
+  };
+  /* a body lying on its back along local x, head at +x; coat colour, skin and pose vary */
+  function bodyParts(B, m, inside) {
+    m = m.clone();
+    const coat = col(rpick([0x3a3430, 0x2e3440, 0x4a3e2e, 0x3e2a2a, 0x353a2e, 0x5a4a3a]), 0.15), trousers = col(rpick([0x26282c, 0x3a3a36, 0x2a3040]), 0.1);
+    const skin = col(rpick([0x8a8a72, 0x7a7462, 0x9a8a74]), 0.1), boot = col(0x1c1a18);
+    const T = new Bld(), sp = rf(-0.25, 0.25);
+    T.box(0.15, 0, 0, 0.8, 0.26, 0.5, coat);
+    T.box(-0.5, 0, -0.12 + sp * 0.3, 0.75, 0.18, 0.19, trousers, { ry: sp * 0.4 }); T.box(-0.5, 0, 0.12, 0.75, 0.18, 0.19, trousers, { ry: -0.15 });
+    T.box(-0.92, 0, -0.14 + sp * 0.5, 0.2, 0.2, 0.17, boot); T.box(-0.92, 0, 0.16, 0.2, 0.2, 0.17, boot);
+    T.geo(G_ICO, 0.72, 0.13, 0.04, 0.27, 0.24, 0.27, skin);
+    T.box(0.32, 0, -0.38, 0.55, 0.13, 0.14, coat, { ry: 0.5 + sp }); T.box(0.1, 0, 0.36, 0.5, 0.13, 0.14, coat, { ry: -0.35 });
+    T.geo(G_ICO, -0.12, 0.05, 0.52, 0.14, 0.09, 0.14, skin);
+    B.add(T.geometry(), m, WHITE);
+    /* a dark stain under it (ground, never changes) */
+    const e = m.elements; GD.geo(G_CYL8, e[12] + rf(-0.2, 0.2), 0.008, e[14] + rf(-0.2, 0.2), rf(1.3, 1.8), 0.008, rf(0.9, 1.3), col(inside ? 0x221c18 : 0x2a1e18), { ry: rf(0, 3) });
+  }
+  function buildInteractProps() {
+    /* notes: spray paint on the wall plus a pinned paper, on the face the note tile looks at */
+    for (const n of WORLD.notes || []) {
+      const fx = (n.x + 0.5) * 2 + n.fx * 0.99, fz = (n.y + 0.5) * 2 + n.fy * 0.99, nx = -n.fx, nz = -n.fy, ry = Math.atan2(nx, nz);
+      const at = (along, h, d) => [fx + nx * d + nz * along, h, fz + nz * d - nx * along];
+      const paint = col(n.place ? rpick([0xe8e0d0, 0xb83a2a, 0xd8b040]) : rpick([0xb83a2a, 0xe8e0d0, 0x3a7a9a, 0x6a9a3a]), 0.1);
+      for (let i = 0; i < 4; i++) { const [x, y, z] = at(rf(-0.8, 0.5) + i * 0.15, rf(1.3, 2.1), 0.04); S.geo(G_BOX, x, y, z, rf(0.3, 0.8), rf(0.06, 0.12), 0.02, paint, { ry, rz: rf(-0.35, 0.35) }); }
+      if (n.place) {
+        const [x, y, z] = at(rf(0.2, 0.5), 1.25, 0.05); S.geo(G_BOX, x, y, z, 0.42, 0.56, 0.015, col(0xd8d0bc, 0.1), { ry, rz: rf(-0.12, 0.12) });
+        for (let k = 0; k < 4; k++) { const [a, b2, c] = at(rf(0.25, 0.45), 1.4 - k * 0.09, 0.062); S.geo(G_BOX, a, b2, c, 0.28, 0.02, 0.01, col(0x2a2622), { ry }); }
+      }
+    }
+    /* hand pumps, spout towards the open side */
+    for (const p of WORLD.pumps || []) {
+      const o = [[0, 1], [1, 0], [-1, 0], [0, -1]].find(([a, b]) => !SOLID.has(tileAt(p.x + a, p.y + b))) || [0, 1];
+      S.add(PUMP(), M((p.x + 0.5) * 2, 0, (p.y + 0.5) * 2, Math.atan2(o[0], o[1]) + rf(-0.15, 0.15), 1, 1, 1), null);
+    }
+    /* beds, couches and cots: the head (or the back) against the wall */
+    for (const b of WORLD.beds || []) {
+      const K = BEDK[b.kind] || BEDK.bed, ry = Math.atan2(-b.fx, -b.fy), back = b.kind === 'couch' ? 0.5 : 0;
+      S.add(K(), M((b.x + 0.5) * 2 + b.fx * back, 0, (b.y + 0.5) * 2 + b.fy * back, ry + rf(-0.04, 0.04), 1, 1, 1), null);
+    }
+    /* bodies: one mesh, a vertex range each so setBodySearched can darken one */
+    const BB = new Bld(); bodyR = {};
+    for (const b of WORLD.bodies || []) {
+      const s = BB.count; bodyParts(BB, M((b.x + 0.5) * 2 + rf(-0.3, 0.3), 0, (b.y + 0.5) * 2 + rf(-0.3, 0.3), b.r * Math.PI / 2 + rf(-0.5, 0.5), 1, 1, 1), b.in);
+      bodyR[b.x + ',' + b.y] = { s, n: BB.count - s, b, searched: false };
+    }
+    if (BB.count) {
+      bodyGeo = own(BB.geometry());
+      for (const k in bodyR) { const r = bodyR[k]; r.col = bodyGeo.attributes.color.array.slice(r.s * 3, (r.s + r.n) * 3); }
+      const mesh = new THREE.Mesh(bodyGeo, mats.cont); mesh.castShadow = mesh.receiveShadow = true; root.add(mesh);
+      const done = (G && G.bodies) || {}; for (const k in done) if (bodyR[k]) self.setBodySearched(bodyR[k].b, true, true);
+    }
+    /* crows: a little flock of black birds, one draw call */
+    const cb = new Bld(), blk = col(0x141416), bk = col(0x3a3020);
+    cb.box(0, 0.08, 0, 0.16, 0.13, 0.3, blk); cb.geo(G_ICO, 0, 0.23, 0.15, 0.13, 0.12, 0.13, blk); cb.geo(G_CONE5, 0, 0.23, 0.26, 0.05, 0.1, 0.05, bk, { rx: Math.PI / 2 });
+    cb.box(0, 0.1, -0.2, 0.12, 0.03, 0.16, blk, { rx: -0.3 }); for (const x of [-0.11, 0.11]) cb.box(x, 0.13, -0.02, 0.05, 0.08, 0.26, blk);
+    for (const x of [-0.04, 0.04]) cb.box(x, 0, 0.02, 0.015, 0.06, 0.015, bk);
+    crowMesh = new THREE.InstancedMesh(own(cb.geometry()), mats.inst, 18); crowMesh.count = 0; crowMesh.castShadow = true; crowMesh.frustumCulled = false; root.add(crowMesh);
+    crows = []; crowT = 0;
+  }
+  /* crows settle on the outdoor bodies near the player by day; they lift off and circle away when you come close, and drift back later */
+  function updateCrows(dt, px, py) {
+    if (!crowMesh) return;
+    const hour = G ? G.hour + (G.minute || 0) / 60 : 12, day = hour >= 6 && hour < 19.5, wx = typeof weatherAt === 'function' && G ? weatherAt(px, py) : '', bad = /storm|blizzard/.test(wx || '') || (G && G.storm);
+    crowT -= dt;
+    if (crowT <= 0) {
+      crowT = 1.5;
+      const want = day && !bad && px != null ? (WORLD.bodies || []).filter(b => !b.in && Math.hypot(b.x + 0.5 - px, b.y + 0.5 - py) < 26).sort((a, b) => Math.hypot(a.x - px, a.y - py) - Math.hypot(b.x - px, b.y - py)).slice(0, 6) : [];
+      for (const c of crows) if (!want.includes(c.b) && c.mode !== 'gone') { c.mode = 'fly'; c.leave = true; }
+      for (const b of want) {
+        const have = crows.filter(c => c.b === b && !c.leave).length, n = 2 + ((b.x * 7 + b.y * 3) % 2);
+        for (let i = have; i < n && crows.length < 18; i++) {
+          const a = rr() * 6.28, hx = (b.x + 0.5) * 2 + Math.cos(a) * rf(0.6, 1.4), hz = (b.y + 0.5) * 2 + Math.sin(a) * rf(0.6, 1.4);
+          crows.push({ b, hx, hz, x: hx + rf(-12, 12), y: 14, z: hz + rf(-12, 12), ry: rr() * 6, mode: 'land', t: 0, peck: rr() * 3, rest: 0 });
+        }
+      }
+    }
+    const P = px != null ? [px * 2, py * 2] : null;
+    for (let i = crows.length - 1; i >= 0; i--) {
+      const c = crows[i]; c.t += dt;
+      const close = P && Math.hypot(c.hx - P[0], c.hz - P[1]) < 10;
+      if ((c.mode === 'ground' || c.mode === 'land') && close) { c.mode = 'fly'; c.flee = true; c.vx = (c.x - P[0]) || 1; c.vz = (c.z - P[1]) || 1; const l = Math.hypot(c.vx, c.vz); c.vx /= l; c.vz /= l; c.t = 0; self.crowsFlushed = tAcc; }
+      if (c.mode === 'land') {
+        const dx = c.hx - c.x, dz = c.hz - c.z, d = Math.hypot(dx, dz), sp = Math.min(d, 7 * dt);
+        if (d > 0.05) { c.x += dx / d * sp; c.z += dz / d * sp; c.ry = Math.atan2(dx, dz); }
+        c.y = Math.max(0, c.y - Math.max(2.5, c.y * 1.2) * dt * (d < 3 ? 1.6 : 0.4));
+        if (d < 0.1 && c.y <= 0.01) { c.mode = 'ground'; c.y = 0; }
+      } else if (c.mode === 'ground') {
+        c.peck -= dt;
+        if (c.peck <= 0) { c.peck = rf(0.6, 2.6); if (rr() < 0.35) { const a = rr() * 6.28; c.hx = (c.b.x + 0.5) * 2 + Math.cos(a) * rf(0.5, 1.4); c.hz = (c.b.y + 0.5) * 2 + Math.sin(a) * rf(0.5, 1.4); c.mode = 'land'; c.y = 0.25; } else c.ry += rf(-1.2, 1.2); }
+      } else if (c.mode === 'fly') {
+        if (c.flee) { c.x += c.vx * 9 * dt; c.z += c.vz * 9 * dt; c.y += 5 * dt; c.ry = Math.atan2(c.vx, c.vz); const a = c.t * 1.4; c.vx = c.vx * 0.99 + Math.cos(a) * 0.012; c.vz = c.vz * 0.99 + Math.sin(a) * 0.012; }
+        else { c.y += 6 * dt; c.x += Math.sin(c.ry) * 8 * dt; c.z += Math.cos(c.ry) * 8 * dt; }
+        if (c.y > 16) { if (c.leave || !P) { crows.splice(i, 1); continue; } c.mode = 'gone'; c.rest = rf(14, 30); }
+      } else if (c.mode === 'gone') {
+        c.rest -= dt;
+        if (c.leave) { crows.splice(i, 1); continue; }
+        if (c.rest <= 0 && !close && !(P && Math.hypot(c.hx - P[0], c.hz - P[1]) < 16)) { c.mode = 'land'; c.flee = false; c.y = 14; }
+      }
+    }
+    let n = 0;
+    for (const c of crows) {
+      if (c.mode === 'gone') continue;
+      const air = c.mode !== 'ground' && c.y > 0.05, bob = c.mode === 'ground' && c.peck < 0.25 ? 0.35 : 0, flap = air ? Math.sin(tAcc * 26 + c.hx) * 0.5 : 0;
+      crowMesh.setMatrixAt(n++, M(c.x, c.y + (air ? Math.abs(flap) * 0.08 : 0), c.z, c.ry, air ? 1.5 + flap * 0.4 : 1, 1, 1, bob, 0));
+    }
+    crowMesh.count = n; crowMesh.instanceMatrix.needsUpdate = true;
+  }
+
   /* ================================================================ containers ================================================================ */
   function buildContainers() {
     const BB = new Bld(), LB = new Bld(), tmp = new Bld();
@@ -1651,6 +1795,7 @@ const World3D = (() => {
       buildFlora(); buildOutskirts();
       buildProps(lampSpots);
       buildContainers();
+      buildInteractProps();
       for (const k in chunkMap) {
         const b = chunkMap[k]; if (!b.count) continue;
         const cat = k[0], mat = cat === 's' ? mats.solid : cat === 'f' ? mats.foliage : cat === 'h' ? mats.herb : cat === 'w' ? mats.still : mats.ground;
@@ -1690,7 +1835,7 @@ const World3D = (() => {
     dispose() {
       if (root) { R.scene.remove(root); root.traverse(o => { if ((o.isInstancedMesh || o.isMesh || o.isPoints) && o.geometry && !o.geometry._de) o.geometry.dispose(); }); }
       for (const o of owned) o.dispose && o.dispose();
-      owned = []; root = this.group = null; shelterGroup = null; busMesh = null; lampPools = firePools = null; ghostMesh = ghostIcons = null; ghostSlots = []; gateMesh = null; puddles = null;
+      owned = []; root = this.group = null; shelterGroup = null; bodyGeo = null; bodyR = {}; crowMesh = null; crows = []; busMesh = null; lampPools = firePools = null; ghostMesh = ghostIcons = null; ghostSlots = []; gateMesh = null; puddles = null;
     },
 
     heightAt(i) { return heights[i] || 0; },
@@ -1706,6 +1851,7 @@ const World3D = (() => {
       if (!root || !WORLD) return;
       tAcc += dt; const t = tAcc, nk = R.nightK || 0;
       this._animate(dt);
+      updateCrows(dt, px, py);
       /* glow: night-only emitters scale with darkness, fires flicker */
       U.uGlowN.value = 0.12 + nk * 2.6;
       U.uGlowA.value = 1.15 + Math.sin(t * 11.3) * 0.18 + Math.sin(t * 23.7 + 1.3) * 0.12 + Math.sin(t * 3.1) * 0.1;
@@ -1847,6 +1993,21 @@ const World3D = (() => {
       if (on) this.burst(c.c.x + 0.5, c.c.y + 0.5, 0x9a8a72, 6, 0.6);
       if (c.bc) { const a = contGeo.attributes.color.array, k = on ? 0.45 : 1; for (let i = 0; i < c.col.length; i++) a[c.bs * 3 + i] = c.col[i] * k; contGeo.attributes.color.needsUpdate = true; }
       if (hlState.kind === 'container' && hlState.id === id) this.highlight('container', id);
+    },
+
+    /* a searched body: darker, a little dust */
+    setBodySearched(b, on, quiet) {
+      const r = b && bodyR[b.x + ',' + b.y]; on = !!on; if (!r || !bodyGeo || r.searched === on) return;
+      r.searched = on; const a = bodyGeo.attributes.color.array, k = on ? 0.55 : 1;
+      for (let i = 0; i < r.col.length; i++) a[r.s * 3 + i] = r.col[i] * k;
+      bodyGeo.attributes.color.needsUpdate = true;
+      if (on && !quiet) this.burst(b.x + 0.5, b.y + 0.5, 0x6a5a4a, 5, 0.5);
+    },
+    /* crows within r tiles of (x,y): on the ground, and how long since a flock last lifted off */
+    crowsNear(x, y, r) {
+      const out = { ground: [], air: 0, flushed: this.crowsFlushed != null ? tAcc - this.crowsFlushed : 99 };
+      for (const c of crows) { const cx = c.x / 2, cy = c.z / 2; if (Math.hypot(cx - x, cy - y) > r) continue; if (c.mode === 'ground') out.ground.push({ x: cx, y: cy }); else if (c.mode !== 'gone') out.air++; }
+      return out;
     },
 
     highlight(kind, id) {

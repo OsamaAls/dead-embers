@@ -20,7 +20,7 @@ window.fightBot = (ids, gun, maxS) => { if (ids) { clearFoes(); window.__won = 0
   INPUT.mx = INPUT.my = 0; return { won: window.__won, secs: t, swings, minHp: Math.round(minHp), hp: Math.round(G.p.hp), kills: G.stats.kills }; };
 window.nearestCont = () => WORLD.containers.filter(c => containerState(c) !== 'empty').sort((a, b) => ((a.x - G.p.x) ** 2 + (a.y - G.p.y) ** 2) - ((b.x - G.p.x) ** 2 + (b.y - G.p.y) ** 2))[0];
 /* unblock(): clear whatever is in the way (cutscene, dialogue with choices: picks the last option, story beats) */
-window.unblock = (max) => { for (let i = 0; i < (max || 20) && UI.blocking(); i++) { if (typeof Cine !== 'undefined' && Cine.active) { Cine.skip(); sim(0.2); continue; } const mg = document.querySelector('#mg'); if (mg && !mg.hidden) { kd('Escape'); ku('Escape'); sim(0.3); continue; } const bs = dlgButtons(); if (bs.length > 1) bs[bs.length - 1].click(); else { kd('Space'); ku('Space'); } sim(0.3); if (Moments.active) fightBot(null, true, 10); } return !UI.blocking(); };
+window.unblock = (max) => { for (let i = 0; i < (max || 20) && UI.blocking(); i++) { if (typeof Cine !== 'undefined' && Cine.active) { Cine.skip(); sim(0.2); continue; } if (UI.state.mg || UI.state.panel) { kd('Escape'); ku('Escape'); sim(0.3); continue; } const bs = dlgButtons(); if (bs.length > 1) bs[bs.length - 1].click(); else { kd('Space'); ku('Space'); } sim(0.3); if (Moments.active) fightBot(null, true, 10); } return !UI.blocking(); };
 /* searchNearest(): walk to the nearest unsearched container (from a free side that has a path; same side of the wall as the container)
    and hold E until the search completes. Returns {kind, ok, held} plus diagnostics when it fails. */
 window.searchNearest = () => {

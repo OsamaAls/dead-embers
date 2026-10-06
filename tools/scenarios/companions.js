@@ -1,7 +1,8 @@
 /* Companions and world interactions: node tools/browser-check.js --scenario tools/scenarios/companions.js [--mobile] [--shots dir]
    Dog: adopted via the story flag path, follows on a run, sniffs out an unsearched container, growls at aware zombies, a bite stuns.
    Helper: a survivor follows and fights, carries +8 kg, is downed and revived with hold E. Talk to a survivor and assign a job.
-   Siphon a wreck, fill a bottle at the river, cook at a fire, barricade a door and watch a zombie stop at it.
+   Siphon a wreck, fill a bottle at the river, read a wall, crows on a body, search it, pump clean water, rest in a bed,
+   cook at a fire, barricade a door and watch a zombie stop at it.
    Prints "STEP name: ok|FAIL detail" and throws if any step failed. */
 const fs = require('fs'), path = require('path');
 module.exports = async B => {
@@ -58,9 +59,29 @@ module.exports = async B => {
   await B.shot('c06-talk');
 
   /* ---------- world interactions ---------- */
-  await step('siphon a wreck (hose)', `calm(); const t=tileNear((x,y)=>tileAt(x,y)===T_CAR&&!carSiphoned(x,y)&&!containerNear(x+0.5,y+0.5,2.2)&&!!openNb({x,y}), G.p); const n=openNb(t); goto(n[0]+0.5,n[1]+0.5,0.3,90); calm(); G.pack.hose=1; const f0=G.pack.fuel||0; const lb=label(); holdE(4); return {label:lb, fuel:(G.pack.fuel||0)-f0, done:carSiphoned(t.x,t.y)}`, '/Siphon/.test(r.label) && r.fuel>=1 && r.done');
+  await step('siphon a wreck (hose)', `calm(); const t=tileNear((x,y)=>tileAt(x,y)===T_CAR&&!carSiphoned(x,y)&&!containerNear(x+0.5,y+0.5,2.2)&&!propNear(WORLD.bodies,x+0.5,y+0.5,3.2)&&!!openNb({x,y}), G.p); const n=openNb(t); goto(n[0]+0.5,n[1]+0.5,0.3,90); calm(); G.pack.hose=1; const f0=G.pack.fuel||0; const lb=label(); holdE(4); return {label:lb, fuel:(G.pack.fuel||0)-f0, done:carSiphoned(t.x,t.y)}`, '/Siphon/.test(r.label) && r.fuel>=1 && r.done');
   await step('fill a bottle at the water', `calm(); const t=tileNear((x,y)=>tileAt(x,y)===T_WATER&&!!openNb({x,y}), G.p); const n=openNb(t); goto(n[0]+0.5,n[1]+0.5,0.3,120); calm(); G.pack.bottle=2; const d0=G.pack.dirtywater||0; const lb=label(); holdE(2.5); return {label:lb, dirty:(G.pack.dirtywater||0)-d0, bottles:G.pack.bottle}`, '/bottle/.test(r.label) && r.dirty===1 && r.bottles===1');
   await B.shot('c07-water');
+  /* ---------- world props: notes, bodies (with crows), pumps, beds ---------- */
+  await ev(`window.openAt = (x, y) => typeof districtOpen !== 'function' || districtOpen(biomeAt(x + 0.5, y + 0.5));
+    window.nearestProp = (list, ok) => list.filter(o => openAt(o.x, o.y) && (!ok || ok(o))).sort((a, b) => Math.hypot(a.x - G.p.x, a.y - G.p.y) - Math.hypot(b.x - G.p.x, b.y - G.p.y))[0]; 1`);
+  await step('read writing on a wall', `calm(); const n=nearestProp(WORLD.notes, o=>!!path(o.x+0.5,o.y+0.5)); goto(n.x+0.5,n.y+0.5,0.3,150); calm(); const lb=label(); const j0=G.journal.length; kd('KeyE'); ku('KeyE'); sim(0.3);
+    return {label:lb, place:n.place||null, read:!!(G.notesRead&&G.notesRead[n.x+','+n.y]), journal:G.journal.length-j0, title:G.journal[0].title}`, "/Read the writing/.test(r.label) && r.read && r.journal===1 && r.title==='Written on a wall'");
+  await B.shot('c08a-note');
+  await step('crows settle on a body by day, lift off as you come close', `calm(); const b=nearestProp(WORLD.bodies, o=>!o.in && !(G.bodies&&G.bodies[o.x+','+o.y]) && !!path(o.x+0.5,o.y+0.5)); window.__body=b;
+    const cand=[]; for (let y=b.y-11;y<=b.y+11;y++) for (let x=b.x-11;x<=b.x+11;x++) { const d=Math.hypot(x-b.x,y-b.y); if (d>=9&&d<=11&&!solidAt(x+0.5,y+0.5)&&openAt(x,y)) cand.push([x+0.5,y+0.5]); }
+    cand.sort((p,q)=>Math.hypot(p[0]-G.p.x,p[1]-G.p.y)-Math.hypot(q[0]-G.p.x,q[1]-G.p.y)); const far=cand.find(q=>!!path(q[0],q[1])); goto(far[0],far[1],0.5,150); calm(); let ground=0; sim(40, () => { calm(); ground=World3D.crowsNear(b.x+0.5,b.y+0.5,2.5).ground.length; if (ground>=2) return 'stop'; });
+    goto(b.x+0.5,b.y+0.5,0.6,40); calm(); sim(0.5); const c=World3D.crowsNear(b.x+0.5,b.y+0.5,2.5); return {ground, after:c.ground.length, air:c.air, flushed:+c.flushed.toFixed(1)}`, 'r.ground>=2 && r.after===0 && r.flushed<15');
+  await B.shot('c08b-crows');
+  await step('search a body', `calm(); const b=window.__body; let marked=0; const f=World3D.setBodySearched; World3D.setBodySearched=(x,on)=>{ marked++; return f.call(World3D,x,on); };
+    goto(b.x+0.5,b.y+0.5,0.3,20); calm(); const lb=label(); const s0=JSON.stringify(G.pack); holdE(3); World3D.setBodySearched=f;
+    return {label:lb, searched:!!(G.bodies&&G.bodies[b.x+','+b.y]), marked, got:JSON.stringify(G.pack)!==s0, again:label()}`, "/Search the body/.test(r.label) && r.searched && r.marked===1 && r.got && !/Search the body/.test(r.again||'')");
+  await step('pump clean water', `calm(); const p=nearestProp(WORLD.pumps, o=>!!openNb(o)); const n=openNb(p); goto(n[0]+0.5,n[1]+0.5,0.3,200); calm(); G.pack.bottle=1; const w0=G.pack.water||0, d0=G.pack.dirtywater||0; const lb=label(); holdE(2.5);
+    return {label:lb, water:(G.pack.water||0)-w0, dirty:(G.pack.dirtywater||0)-d0}`, "/Pump clean water/.test(r.label) && r.water===1 && r.dirty===0");
+  await B.shot('c08c-pump');
+  await step('rest in a bed indoors', `calm(); const b=nearestProp(WORLD.beds, o=>!!path(o.x+0.5,o.y+0.5)); goto(b.x+0.5,b.y+0.5,0.3,200); calm(); G.p.hp=50; const t0=G.hour*60+G.minute, d0=G.day; const lb=label(); holdE(2.5); unblock(8);
+    return {kind:b.kind, label:lb, mins:(G.day-d0)*1440+G.hour*60+G.minute-t0, hp:Math.round(G.p.hp)}`, "/(bed|couch|cot)/.test(r.label) && r.mins>=55 && r.hp>50");
+  await B.shot('c08d-bed');
   await step('cook at a fire', `calm(); const reach=f=>{ if (typeof districtOpen==='function' && !districtOpen(biomeAt(f.x,f.y))) return null; const n=openNb({x:Math.floor(f.x),y:Math.floor(f.y)}); return n && path(n[0]+0.5,n[1]+0.5) ? n : null; }; const f=(WORLD.fires||[]).slice().sort((a,b)=>Math.hypot(a.x-G.p.x,a.y-G.p.y)-Math.hypot(b.x-G.p.x,b.y-G.p.y)).find(reach); const n=reach(f); goto(n[0]+0.5,n[1]+0.5,0.3,150); calm();
     G.pack.dirtywater=1; const w0=G.pack.water||0; const lb=label(); holdE(3.5); return {label:lb, water:(G.pack.water||0)-w0, dirty:G.pack.dirtywater||0, d:+Math.hypot(f.x-G.p.x,f.y-G.p.y).toFixed(2)}`, '/at the fire/.test(r.label) && r.water===1 && !r.dirty');
   await B.shot('c08-cook');

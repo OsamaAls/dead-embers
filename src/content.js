@@ -797,7 +797,20 @@
     "If you can read this you're still alive. Good.",
     "HAVEN IS REAL. 3 DAYS ON FOOT.",
   ];
+  /* placeNotes: writing on the walls of story places (WORLD.notes with a place) */
+  var placeNotes = {
+    shelter: ["BUNKER FULL. Not really. Knock twice.", "Whoever's in there: we left you the tins. Pay it on.", "Hatch sticks in the cold. Kick it, don't shout."],
+    depot: ["Last bus: 06:40. Nobody drove it.", "Engine block's good. Parts are in the back. - R", "Bus 12 runs. It just needs someone brave."],
+    radiotower: ["The voice on 98.6 is real. She answered me.", "Mast works. Copper's gone. Bring wire.", "DON'T BROADCAST AT NIGHT. THEY FOLLOW THE HUM."],
+    hospital: ["NO MORE BEDS. NO MORE DOCTORS. GO.", "The last doctor took the antibiotics north. Follow.", "Ward 3 sealed. Don't open it. Don't."],
+    police: ["Armoury empty. Cells are not.", "Sgt. Doyle held this door four days. Remember him.", "If you're bit, sit by the wall and wait. We'll be kind."],
+    ranger: ["Ranger log: woods quiet. Too quiet for deer.", "Stove's dry wood under the floor. Leave some.", "Snares on the east trail. Mind your ankles."],
+    military: ["CHECKPOINT ECHO. Route north by convoy only.", "We had orders. Then we had none.", "Map to Haven in the CO's desk. Burn it if they come."],
+    harbour: ["Last ferry left without us. Tide's still honest.", "Bloaters wash up on the high tide. Burn them.", "Diesel at the jetty. Don't smoke near it, idiot."],
+    flooded: ["The water rose in a night. We went up.", "Rooftops connect. Keep off the street.", "Something swims down there. Not a fish."],
+    tollcamp: ["Toll paid in full. -A. (they took my boots)", "One Tollman sleeps on watch. Thursdays.", "The Warden keeps a book of names. Mine's in it."],
+  };
 
   window.CONTENT = { story: story, lore: lore, radio: radio, names: names, barks: barks, shelterEvents: shelterEvents, epilogues: epilogues,
-    survivorTalk: survivorTalk, radioHints: radioHints, graffiti: graffiti };
+    survivorTalk: survivorTalk, radioHints: radioHints, graffiti: graffiti, placeNotes: placeNotes };
 })();

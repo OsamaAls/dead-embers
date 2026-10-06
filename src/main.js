@@ -155,8 +155,9 @@ function extraTargets(p, d2) {
   if (car && !fight) out.push({ key: `car${car.tx},${car.ty}`, d: car.d + 0.3, label: has('hose') ? 'Siphon fuel (hose)' : 'Siphon fuel from the wreck', time: 3, hl: ['point', pt(car.tx, car.ty)],
     act: () => { const r = siphonCar(car.tx, car.ty); Combat.noise(G.p.x, G.p.y, 4); UI.toast(r.text, r.ok ? 'loot' : 'dim'); SFX.play(r.ok ? 'pickup' : 'ui'); if (!r.ok && !has('hose')) hintOnce('hose', 'A Siphon Hose gets fuel out of every wreck. Look in garages and gas stations.'); } });
   const pump = propNear(WORLD.pumps, p.x, p.y, 1.4);
-  if ((water || pump) && G.pack.bottle > 0 && !fight) out.push({ key: 'water', d: (pump ? d2(pump.x + 0.5, pump.y + 0.5) : water.d) + 0.5, label: pump ? 'Pump water into a bottle' : 'Fill a bottle with dirty water', time: 1.5,
-    act: () => { const l = fillBottle(); UI.toast(l ? l + ' (boil it at a fire)' : 'No room in your pack.', l ? 'loot' : 'warn'); SFX.play(l ? 'pickup' : 'bad'); } });
+  if ((water || pump) && G.pack.bottle > 0 && !fight) out.push({ key: 'water', d: (pump ? d2(pump.x + 0.5, pump.y + 0.5) : water.d) + 0.5, label: pump ? 'Pump clean water into a bottle' : 'Fill a bottle with dirty water', time: 1.5,
+    hl: pump ? ['point', pt(pump.x, pump.y)] : undefined,
+    act: () => { const l = fillBottle(!!pump); if (l && pump) Combat.noise(G.p.x, G.p.y, 2); UI.toast(l ? l + (pump ? '' : ' (boil it at a fire)') : 'No room in your pack.', l ? 'loot' : 'warn'); SFX.play(l ? 'pickup' : 'bad'); } });
   const cook = cookOption();
   if (cook && !fight) {
     let fire = null, fd = 1.9 * 1.9;
@@ -176,14 +177,15 @@ function extraTargets(p, d2) {
   if (!fight && !G.atShelter && indoors(p.x, p.y)) {
     const c = containerNear(p.x, p.y, 1.45), bed = propNear(WORLD.beds, p.x, p.y, 1.4);
     const spot = bed || (c && containerState(c) === 'empty' ? c : null);
-    if (spot) out.push({ key: 'rest', d: d2(spot.x + 0.5, spot.y + 0.5) + 0.1, label: 'Rest here an hour', time: 1.5,
+    if (spot) out.push({ key: 'rest', d: d2(spot.x + 0.5, spot.y + 0.5) + 0.1, label: bed ? (bed.kind === 'couch' ? 'Rest on the couch an hour' : bed.kind === 'cot' ? 'Rest on the cot an hour' : 'Sleep in the bed an hour') : 'Rest here an hour', time: 1.5,
+      hl: bed ? ['point', pt(bed.x, bed.y)] : undefined,
       act: () => { UI.flash('sleep'); const enc = restOutside(); heal(6); UI.toast('An hour of shallow sleep. +6 HP', 'dim'); if (enc) { UI.toast('Something wakes you.', 'warn'); Game.Q.push({ type: 'enc', enc }); } } });
   }
   if (G.atShelter && bl('radio')) { const r = slotCentre('radio'), dd = d2(r.x, r.y); if (dd < 1.6 * 1.6) out.push({ key: 'radio', d: dd, label: 'Listen to the radio', time: 0, act: () => UI.radio() }); }
   const note = propNear(WORLD.notes, p.x, p.y, 1.4);
-  if (note) out.push({ key: `note${note.x},${note.y}`, d: d2(note.x + 0.5, note.y + 0.5) + 0.2, label: 'Read the writing', time: 0, act: () => UI.toast(readNote(note), 'story') });
+  if (note) out.push({ key: `note${note.x},${note.y}`, d: d2(note.x + 0.5, note.y + 0.5) + 0.2, label: 'Read the writing', time: 0, hl: ['point', pt(note.x, note.y)], act: () => UI.toast(readNote(note), 'story') });
   const body = propNear(WORLD.bodies, p.x, p.y, 1.4);
-  if (body && !(G.bodies && G.bodies[body.x + ',' + body.y]) && !fight) out.push({ key: `body${body.x},${body.y}`, d: d2(body.x + 0.5, body.y + 0.5), label: 'Search the body', time: 2,
+  if (body && !(G.bodies && G.bodies[body.x + ',' + body.y]) && !fight) out.push({ key: `body${body.x},${body.y}`, d: d2(body.x + 0.5, body.y + 0.5), label: 'Search the body', time: 2, hl: ['point', pt(body.x, body.y)],
     act: () => { const l = searchBody(body); for (const x of l) UI.toast(x, 'loot'); if (!l.length) UI.toast('Nothing on them.', 'dim'); Combat.noise(G.p.x, G.p.y, 2); if (World3D.setBodySearched) World3D.setBodySearched(body, true); } });
   return out;
 }

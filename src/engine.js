@@ -29,7 +29,7 @@ const T_GRASS = 0, T_ROAD = 1, T_WALL = 3, T_DOOR = 4, T_TREE = 5, T_WATER = 6, 
    T_ROCK: boulder / cliff / old stone wall (WORLD.flora says which). T_PATH: dirt trail. T_FENCE: garden fence. T_PLANK: boardwalk / pier. */
 const SOLID = new Set([T_WALL, T_TREE, T_WATER, T_CAR, T_ROOF, T_PROP, T_GATE, T_DECO, T_ROCK, T_FENCE]);
 /* WORLD.flora per tile: why a plant (or rock) is there, read by World3D. Non-solid entries are decoration only. */
-const FLORA = { SAPLING: 1, YOUNG: 2, OLD: 3, WILLOW: 4, REED: 5, HEDGE: 6, FLOWERS: 7, FERN: 8, BIRCH: 9, DEAD: 10, CROP: 11, SUNKROAD: 12, STONEWALL: 13, CLIFF: 14, SNOWPINE: 15 };
+const FLORA = { SAPLING: 1, YOUNG: 2, OLD: 3, WILLOW: 4, REED: 5, HEDGE: 6, FLOWERS: 7, FERN: 8, BIRCH: 9, DEAD: 10, CROP: 11, SUNKROAD: 12, STONEWALL: 13, CLIFF: 14, SNOWPINE: 15, STREET: 16 };
 /* Old Town grid (2-tile roads). */
 const ROADS_Y = [18, 28, 38, 48, 58], ROADS_X = [22, 34, 46, 58, 70, 82];
 const BLOCKS_X = [[24, 33], [36, 45], [48, 57], [60, 69], [72, 81]], BLOCKS_Y = [[20, 27], [30, 37], [40, 47], [50, 57]];
@@ -70,7 +70,7 @@ function genWorld(seed) {
   const bio = (x, y) => inb(x, y) ? BIOMES[biome[y * W + x]] : null;
   const fill = (x0, y0, x1, y1, t) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, t); };
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) biome[y * W + x] = BIOMES.indexOf(biomeOf(x, y));
-  const pois = {}, roofs = [], containers = [], decos = [], fires = [], gates = {}, noPath = new Set(), keep = new Uint8Array(N);
+  const pois = {}, roofs = [], containers = [], decos = [], fires = [], gates = {}, noPath = new Set(), keep = new Uint8Array(N), parks = [];
   let cid = 0, shelterRect = null, bunker = null, hatch = null, bus = null, gate = null, camp = null;
   const addPoi = (x, y, type, label, outdoor, np) => { const k = x + ',' + y; pois[k] = { x, y, type, label: label || LOCS[type].n }; if (outdoor) pois[k].outdoor = true; else set(x, y, T_DOOR); if (np) noPath.add(k); return k; };
   const addCont = (x, y, kind, loc, poi) => { set(x, y, T_PROP); containers.push({ id: 'c' + (cid++), x, y, kind, loc, poi }); };
@@ -140,6 +140,7 @@ function genWorld(seed) {
   const sideTile = (x, y) => [[-1, 0], [1, 0], [0, -1], [-1, -1], [1, -1]].map(([a, b]) => [x + a, y + b]).find(([a, b]) => get(a, b) === T_GRASS);
   /* ---- city park: crossing paths, tree clumps round them, a pond in the low corner, hedges on the edge ---- */
   const park = (x0, y0, x1, y1) => {
+    parks.push({ x0, y0, x1, y1 });
     const cx = x0 + ((x1 - x0) >> 1), cy = y0 + ((y1 - y0) >> 1);
     for (let x = x0; x <= x1; x++) set(x, cy, T_PATH);
     for (let y = y0; y <= y1; y++) set(cx, y, T_PATH);
@@ -452,7 +453,105 @@ function genWorld(seed) {
     more(48, 60, 61, 71, 1, t => t === T_YARD);
   }
 
-  return { tiles, biome, flora, pois, roofs, containers, decos, fires, gates, shelterRect, bunker, hatch, bus, gate, camp };
+  const w = { tiles, biome, flora, pois, roofs, containers, decos, fires, gates, shelterRect, bunker, hatch, bus, gate, camp };
+  Object.assign(w, placeProps(seed, w, parks));
+  return w;
+}
+/* Interaction props: notes on walls by story places, bodies in streets and buildings, hand pumps in parks and farms, beds and couches in homes.
+   Placed after everything else from their own random stream, so the layout, container ids and old saves never shift.
+   notes [{x,y,fx,fy,place?,i}] (fx,fy points at the wall), bodies [{x,y,in,r}], pumps [{x,y,under}] (tile becomes T_DECO), beds [{x,y,kind,fx,fy}] (walkable). */
+const NOTE_PLACES = { depot: 'depot', radiotower: 'radiotower', hospital: 'hospital', police: 'police', ranger: 'ranger', military: 'military' };
+function placeProps(seed, w, parks) {
+  const P = seeded((seed ^ 0x9e0b1e5) >>> 0), tl = w.tiles;
+  const get = (x, y) => x >= 0 && y >= 0 && x < W && y < H ? tl[y * W + x] : T_WALL, bio = (x, y) => BIOMES[w.biome[y * W + x]];
+  const N4 = [[0, 1], [1, 0], [-1, 0], [0, -1]], used = new Set(), K = (x, y) => x + ',' + y;
+  const pickOut = a => a.splice(Math.floor(P() * a.length), 1)[0];
+  const near = (x, y, r, f) => { for (let b = -r; b <= r; b++) for (let a = -r; a <= r; a++) if (f(get(x + a, y + b), x + a, y + b)) return true; return false; };
+  const walk = t => !SOLID.has(t) && t !== T_DOOR && t !== T_BRIDGE;
+  const doorNear = (x, y, r) => near(x, y, r, t => t === T_DOOR);
+  const contNear = (x, y) => near(x, y, 1, t => t === T_PROP || t === T_CAR);
+  const notes = [], bodies = [], pumps = [], beds = [];
+  /* ---- notes: one on an outside wall of each story place (two at the bunker), plus a few on Old Town walls ---- */
+  const wallSpots = (x0, y0, x1, y1) => {
+    const out = [];
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      if (get(x, y) !== T_WALL) continue;
+      for (const [a, b] of N4) {
+        const ox = x + a, oy = y + b; if (ox >= x0 && ox <= x1 && oy >= y0 && oy <= y1) continue;
+        const t = get(ox, oy);
+        if (!walk(t) || t === T_SHALLOW || doorNear(ox, oy, 1) || used.has(K(ox, oy))) continue;
+        out.push({ x: ox, y: oy, fx: -a, fy: -b, south: b === 1 });
+      }
+    }
+    const s = out.filter(o => o.south); return s.length ? s : out;
+  };
+  const addNote = (spots, place) => { if (!spots.length) return; const o = pickOut(spots); used.add(K(o.x, o.y)); notes.push({ x: o.x, y: o.y, fx: o.fx, fy: o.fy, place, i: Math.floor(P() * 8) }); };
+  const rectOf = r => [r.x, r.y, r.x + r.w - 1, r.y + r.h - 1];
+  if (w.bunker) { const b = w.bunker; for (let i = 0; i < 2; i++) addNote(wallSpots(b.x, b.y, b.x + b.w - 1, b.y + b.h - 1), 'shelter'); }
+  const sunk = w.roofs.filter(r => r.type === 'flooded');
+  for (const r of w.roofs) {
+    if (r.closed) continue;
+    const label = w.pois[r.poi] && w.pois[r.poi].label;
+    const place = NOTE_PLACES[r.type] || (label === 'Harbour Office' ? 'harbour' : r === sunk[(seed >>> 3) % (sunk.length || 1)] ? 'flooded' : null);
+    if (place) addNote(wallSpots(...rectOf(r)), place);
+  }
+  if (w.camp) { const c = w.camp; addNote(wallSpots(c.x0 + 1, c.y0 + 1, c.x1 - 1, c.y1 - 1), 'tollcamp'); }
+  const town = w.roofs.filter(r => !r.closed && ['street', 'apartments', 'supermarket', 'gas', 'electronics', 'factory'].includes(r.type));
+  for (let i = 0; i < 6 && town.length; i++) addNote(wallSpots(...rectOf(pickOut(town))), null);
+  /* ---- bodies: on the roads among the wrecks (never by the bunker), and indoors where people holed up ---- */
+  const sr = w.shelterRect, scx = sr ? (sr.x0 + sr.x1) / 2 : 0, scy = sr ? (sr.y0 + sr.y1) / 2 : 0;
+  const spaced = (x, y, d) => bodies.every(b => Math.abs(b.x - x) + Math.abs(b.y - y) >= d);
+  const road = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (get(x, y) !== T_ROAD || !['oldtown', 'suburbs', 'docks'].includes(bio(x, y))) continue;
+    if (Math.hypot(x - scx, y - scy) < 11 || doorNear(x, y, 2) || !near(x, y, 2, t => t === T_CAR) || near(x, y, 1, (t, a, b) => w.pois[K(a, b)])) continue;
+    road.push([x, y]);
+  }
+  for (let n = 0; n < 16 && road.length;) { const [x, y] = pickOut(road); if (!spaced(x, y, 7)) continue; used.add(K(x, y)); bodies.push({ x, y, in: false, r: Math.floor(P() * 4) }); n++; }
+  for (const [x, y] of [[65, 13], [68, 13], [63, 11]]) if (walk(get(x, y)) && !used.has(K(x, y)) && P() < 0.7) { used.add(K(x, y)); bodies.push({ x, y, in: false, r: Math.floor(P() * 4) }); }
+  const INDOOR = { apartments: 0.8, hospital: 1, police: 0.8, flooded: 0.6, military: 1, supermarket: 0.5, street: 0.5, house: 0.25, docks: 0.5, warehouse: 0.5 };
+  for (const r of w.roofs) {
+    if (r.closed || !(P() < (INDOOR[r.type] || 0))) continue;
+    const c = [];
+    for (let y = r.y + 1; y < r.y + r.h - 1; y++) for (let x = r.x + 1; x < r.x + r.w - 1; x++) if ((get(x, y) === T_FLOOR || get(x, y) === T_SHALLOW) && !doorNear(x, y, 1) && !contNear(x, y) && !used.has(K(x, y))) c.push([x, y]);
+    if (c.length) { const [x, y] = pickOut(c); used.add(K(x, y)); bodies.push({ x, y, in: true, r: Math.floor(P() * 4) }); }
+  }
+  /* ---- hand pumps: one in every park, two in Teodor's yard, one at the allotments, one at the old campsite ---- */
+  const pumpOK = (x, y) => {
+    if (![T_GRASS, T_YARD].includes(get(x, y)) || used.has(K(x, y)) || doorNear(x, y, 1) || near(x, y, 1, t => t === T_PROP || t === T_DECO || t === T_CAR)) return false;
+    /* the walkable neighbours must stay joined round the pump (a 5x5 flood without its tile) */
+    const nb = N4.map(([a, b]) => [x + a, y + b]).filter(([a, b]) => walk(get(a, b)));
+    if (nb.length < 2) return false;
+    const seen = new Set([K(nb[0][0], nb[0][1])]), q = [nb[0]];
+    while (q.length) {
+      const [a, b] = q.pop();
+      for (const [da, db] of N4) { const na = a + da, nb2 = b + db, k = K(na, nb2); if (Math.abs(na - x) > 2 || Math.abs(nb2 - y) > 2 || (na === x && nb2 === y) || seen.has(k) || !walk(get(na, nb2))) continue; seen.add(k); q.push([na, nb2]); }
+    }
+    return nb.every(([a, b]) => seen.has(K(a, b)));
+  };
+  const addPump = cands => { while (cands.length) { const [x, y] = pickOut(cands); if (!pumpOK(x, y)) continue; used.add(K(x, y)); pumps.push({ x, y, under: get(x, y) }); tl[y * W + x] = T_DECO; return; } };
+  const area = (x0, y0, x1, y1, ok) => { const c = []; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (ok(x, y)) c.push([x, y]); return c; };
+  for (const p of parks) addPump(area(p.x0, p.y0, p.x1, p.y1, (x, y) => get(x, y) === T_GRASS && N4.some(([a, b]) => get(x + a, y + b) === T_PATH)));
+  for (let i = 0; i < 2; i++) addPump(area(48, 67, 61, 71, (x, y) => get(x, y) === T_YARD && pumps.every(p => Math.abs(p.x - x) + Math.abs(p.y - y) >= 5)));
+  addPump(area(0, 79, 21, 82, (x, y) => get(x, y) === T_GRASS && N4.some(([a, b]) => get(x + a, y + b) === T_FIELD)));
+  addPump(area(37, 3, 43, 8, (x, y) => get(x, y) === T_GRASS && Math.hypot(x - 40, y - 5) < 3.2));
+  /* ---- beds and couches against the walls of homes (walkable: you lie down on them) ---- */
+  const HOME = { house: ['bed', 'couch'], apartments: ['bed', 'bed', 'couch'], flooded: ['bed'], ranger: ['bed', 'bed'], pass: ['bed'], military: ['cot', 'cot'] };
+  for (const r of w.roofs) {
+    const kinds = HOME[r.type]; if (r.closed || !kinds) continue;
+    for (const kind of kinds) {
+      if (kind === 'couch' && P() < 0.4) continue;
+      const c = [];
+      for (let y = r.y + 1; y < r.y + r.h - 1; y++) for (let x = r.x + 1; x < r.x + r.w - 1; x++) {
+        if (get(x, y) !== T_FLOOR || used.has(K(x, y)) || doorNear(x, y, 1) || get(x, y + 1) === T_DOOR || get(x, y + 2) === T_DOOR) continue;
+        if (get(x - 1, y) === T_WALL && get(x + 1, y) === T_WALL || get(x, y - 1) === T_WALL && get(x, y + 1) === T_WALL) continue;   // a gap in a partition
+        const f = [[0, -1], [-1, 0], [1, 0]].find(([a, b]) => get(x + a, y + b) === T_WALL); if (f) c.push([x, y, f]);
+      }
+      if (!c.length) break;
+      const [x, y, f] = pickOut(c); used.add(K(x, y)); beds.push({ x, y, kind, fx: f[0], fy: f[1] });
+    }
+  }
+  return { notes, bodies, pumps, beds };
 }
 /* smooth per-cell noise for generation (birch groves, etc.) */
 function vnoiseCell(x, y, seed) { const h = (a, b) => { let t = (Math.imul(a, 374761393) + Math.imul(b, 668265263) + (seed | 0)) | 0; t = Math.imul(t ^ (t >>> 13), 1274126177); return ((t ^ (t >>> 16)) >>> 0) / 4294967296; }; const fx = x / 5, fy = y / 5, ix = Math.floor(fx), iy = Math.floor(fy), u = fx - ix, v = fy - iy; return h(ix, iy) * (1 - u) * (1 - v) + h(ix + 1, iy) * u * (1 - v) + h(ix, iy + 1) * (1 - u) * v + h(ix + 1, iy + 1) * u * v; }
@@ -1367,10 +1466,10 @@ function siphonCar(tx, ty) {
   if (!hose && !chance(0.4)) return { ok: false, text: 'Nothing but fumes. A hose would help.' };
   return { ok: true, text: give('fuel', hose ? rnd(1, 2) : 1) };
 }
-/* an empty bottle filled at the river (or a pump) */
-function fillBottle() {
+/* an empty bottle filled at the river (dirty) or a hand pump (clean well water) */
+function fillBottle(clean) {
   if (!(G.pack.bottle > 0)) return '';
-  take('bottle', 1); const l = give('dirtywater', 1);
+  take('bottle', 1); const l = give(clean ? 'water' : 'dirtywater', 1);
   if (!/^\+/.test(l)) { G.pack.bottle = (G.pack.bottle || 0) + 1; return ''; }
   advance(2); return l;
 }
@@ -1394,10 +1493,10 @@ function radioBroadcast() {
   lines.push(here ? 'Caravan: "We\'re at your bunker gate until dusk. Call us on this set."' : `Caravan: next stop at your bunker on day ${td}, 08:00 to dusk.`);
   return { lines: lines.map(fmtName), trader: here };
 }
-/* optional world props (only if world.js provides them): WORLD.notes [{x,y,text?}], WORLD.bodies [{x,y}], WORLD.pumps [{x,y}], WORLD.beds [{x,y,kind}] */
+/* interaction props (placeProps): WORLD.notes [{x,y,place?,i,text?}], WORLD.bodies [{x,y,in}], WORLD.pumps [{x,y}], WORLD.beds [{x,y,kind}] */
 function propNear(list, x, y, r) { let best = null, bd = r * r; for (const q of list || []) { const d = (q.x + 0.5 - x) ** 2 + (q.y + 0.5 - y) ** 2; if (d <= bd) { bd = d; best = q; } } return best; }
 function readNote(n) {
-  const C = CONTENT_().graffiti || ['Someone scratched a name here. Then crossed it out.'];
+  const CC = CONTENT_(), PN = n.place && CC.placeNotes && CC.placeNotes[n.place], C = PN && PN.length ? PN : CC.graffiti || ['Someone scratched a name here. Then crossed it out.'];
   const i = n.i != null ? n.i : Math.abs((n.x * 31 + n.y * 17) | 0), line = fmtName(n.text || C[i % C.length]);
   G.notesRead = G.notesRead || {}; const k = n.x + ',' + n.y;
   if (!G.notesRead[k]) { G.notesRead[k] = 1; G.journal.unshift({ day: G.day, title: 'Written on a wall', text: line }); xp(2); }

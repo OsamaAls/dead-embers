@@ -18,11 +18,14 @@ const [vw, vh] = mobile ? [390, 844] : [1280, 800];
 const proc = spawn(exe, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${prof}`, '--no-first-run', '--no-default-browser-check',
   '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--allow-file-access-from-files', `--window-size=${vw},${vh}`, 'about:blank'], { stdio: 'ignore' });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+/* never leave a headless browser behind (a killed or timed-out check used to orphan it) */
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { try { proc.kill(); } catch (e) { } process.exit(1); });
+process.on('exit', () => { try { proc.kill(); } catch (e) { } });
 const errors = [], logs = [];
 let ws, msgId = 0; const pending = {};
 const send = (method, params) => new Promise((res, rej) => { const id = ++msgId; pending[id] = { res, rej }; ws.send(JSON.stringify({ id, method, params: params || {} })); });
 async function connect() {
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 240; i++) {
     try { const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json(); const t = list.find(x => x.type === 'page'); if (t) return t.webSocketDebuggerUrl; } catch (e) { }
     await sleep(250);
   }

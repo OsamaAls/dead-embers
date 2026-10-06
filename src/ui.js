@@ -1593,7 +1593,10 @@ const UI = (() => {
       const tip = D.mg.querySelector('.tip'); if (tip) tip.outerHTML = `<div class="res ${ok ? 'ok' : 'no'}">${ok ? (mode === 'pick' ? 'Open' : 'Forced') : (mode === 'pick' ? 'Jammed' : 'It holds')}</div>`;
       setTimeout(() => { if (S.mg === m) { closeMg(); done(ok); } }, 900);
     };
-    m.key = e => { if (['KeyE', 'Space', 'Enter', 'KeyJ'].includes(e.code)) { e.preventDefault(); if (!e.repeat) press(); } else if (e.code === 'Escape' && !m.over) finish(false); };
+    m.key = e => {
+      if (m.over) { if (['KeyE', 'Space', 'Enter', 'Escape'].includes(e.code) && !e.repeat && S.mg === m) { e.preventDefault(); closeMg(); done(m.ok); } return; }   // dismiss the result at once
+      if (['KeyE', 'Space', 'Enter', 'KeyJ'].includes(e.code)) { e.preventDefault(); if (!e.repeat) press(); } else if (e.code === 'Escape') finish(false);
+    };
     D.mg.onpointerdown = e => { if (e.target.closest('.box') || INPUT.touch) { e.preventDefault(); press(); } };
     let lt = performance.now();
     const loop = t => {

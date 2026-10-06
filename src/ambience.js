@@ -229,10 +229,14 @@ const Ambience = (() => {
     if (day && !snow && /forest|wood/.test(dist) && trees.w > 5) out.emit.push({ key: 'woodpecker', src: 'woodpecker', reason: 'forest by day', x: px + trees.x / trees.w * 7, y: py + trees.y / trees.w * 7, gain: 0.3, every: [12, 26] });
     if (day && !snow && /forest|wood/.test(dist) && trees.w > 5) out.emit.push({ key: 'branch', src: 'crack', reason: 'forest by day', x: px + trees.x / trees.w * 6, y: py + trees.y / trees.w * 6, gain: 0.28, every: [14, 32] });
     if (night && trees.w > 3 && !rain) out.emit.push({ key: 'owl', src: 'owl', reason: `night, trees ${trees.w.toFixed(1)}`, x: px + trees.x / trees.w * 8, y: py + trees.y / trees.w * 8, gain: 0.26, every: [16, 38] });
-    /* crows: by day near bodies or open fields */
+    /* crows: by day from the crows actually sitting on the bodies in the street (World3D.crowsNear), else near fresh kills or open fields;
+       a burst of calls when a flock lifts off */
     const C_ = typeof Combat !== 'undefined' ? Combat : null;
+    const cn = typeof World3D !== 'undefined' && World3D.crowsNear ? safe(() => World3D.crowsNear(px, py, 16), null) : null;
     const bodies = C_ ? C_.enemies.filter(e => e.dead && !e.gone && Math.hypot(e.x - px, e.y - py) < 14) : [];
-    if (day && !storm && (bodies.length || fields.w > 4)) { const b = bodies[0]; out.emit.push({ key: 'crows', src: 'caw', reason: bodies.length ? `${bodies.length} bod${bodies.length > 1 ? 'ies' : 'y'} nearby` : 'open fields', x: b ? b.x : px + fields.x / fields.w * 8, y: b ? b.y : py + fields.y / fields.w * 8, gain: 0.3, every: [8, 20] }); }
+    if (cn && cn.ground.length) { const c = cn.ground[0]; out.emit.push({ key: 'crows', src: 'caw', reason: `${cn.ground.length} crow(s) on a body`, x: c.x, y: c.y, gain: 0.32, every: [6, 16] }); }
+    else if (day && !storm && (bodies.length || fields.w > 4)) { const b = bodies[0]; out.emit.push({ key: 'crows', src: 'caw', reason: bodies.length ? `${bodies.length} bod${bodies.length > 1 ? 'ies' : 'y'} nearby` : 'open fields', x: b ? b.x : px + fields.x / fields.w * 8, y: b ? b.y : py + fields.y / fields.w * 8, gain: 0.3, every: [8, 20] }); }
+    if (cn && cn.air && cn.flushed < 3) out.emit.push({ key: 'crowsup', src: 'caw', reason: `${cn.air} crow(s) lifting off`, x: px, y: py - 3, gain: 0.4, every: [0.3, 0.9] });
     /* rain on cars pings; wind makes wrecks creak */
     if (rain && !inside && cars.w > 0.2) out.emit.push({ key: 'pings', src: 'ping', reason: 'rain on metal', x: px + cars.nx, y: py + cars.ny, gain: 0.22 * Math.min(1, cars.w * 2), every: [0.12, 0.6] });
     if (wind > 0.35 && cars.w > 0.2) out.emit.push({ key: 'creak', src: 'creak', reason: `wind ${wind.toFixed(2)} on wrecks`, x: px + cars.nx, y: py + cars.ny, gain: 0.2, every: [9, 22] });
