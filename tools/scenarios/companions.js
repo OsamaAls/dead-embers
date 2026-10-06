@@ -33,6 +33,14 @@ module.exports = async B => {
   await step('dog sniffs an unsearched container', `calm(); let found=null; sim(10, () => { calm(); safeHp(); const c=Combat.companion; if (c && c.sniff) { found=c.sniff; return 'stop'; } }); const c=Combat.companion;
     return found ? {kind:found.kind, state:containerState(found), d:+Math.hypot(found.x+0.5-c.x, found.y+0.5-c.y).toFixed(1), sniffs:c.sniffs} : {none:true}`, "r.kind && r.state!=='empty' && r.d<=12.5");
   await B.shot('c02-dog-sniff');
+  await step('R does nothing on the first day', `calm(); kd('KeyR'); ku('KeyR'); sim(0.5); return {fetching:!!Combat.companion.fetch, unlocked:isUnlocked('fetch')}`, '!r.fetching && !r.unlocked');
+  await step('after a day together, R: the dog fetches one item', `calm(); G.dog.since=G.day-1; checkUnlocks(); sim(0.3, skipDlg);
+    const tot=()=>Object.keys(G.pack).reduce((s,k)=>s+G.pack[k],0); const n0=tot(); kd('KeyR'); ku('KeyR'); sim(0.2); const c=Combat.companion, F=c.fetch, k=F&&F.k, st0=k&&containerState(k);
+    let far=0, back=false; sim(30, () => { calm(); safeHp(); if (c.fetch) far=Math.max(far, Math.hypot(c.x-G.p.x,c.y-G.p.y)); else { back=true; return 'stop'; } });
+    const btn=document.getElementById('t-fetch');
+    return {started:!!F, kind:k&&k.kind, far:+far.toFixed(1), back, got:tot()-n0, stays:k&&containerState(k)===st0, btnShown:INPUT.touch?!btn.hidden:null, unlocked:isUnlocked('fetch')}`, 'r.started && r.back && r.got===1 && r.far>1 && r.stays && r.unlocked');
+  await B.shot('c02b-dog-fetched');
+  await step('fetch has a cooldown', `calm(); kd('KeyR'); ku('KeyR'); sim(0.3); const now=!!Combat.companion.fetch; sim(95, () => { clearFoes(); G.encTimer=1e9; safeHp(); }); kd('KeyR'); ku('KeyR'); sim(0.3); const later=!!Combat.companion.fetch; Combat.companion.fetch=null; return {now, later}`, '!r.now && r.later');
   await step('dog warns and bites (stun)', `calm(); const p=G.p; const sp=tileNear((x,y)=>!solidAt(x+0.5,y+0.5)&&Math.hypot(x-p.x,y-p.y)>3&&Math.hypot(x-p.x,y-p.y)<5, p);
     const e=Combat.spawnAt('walker', sp.x+0.5, sp.y+0.5, {aware:true}); e.hp=e.maxHp=60; const c=Combat.companion; const w0=c.warned, b0=c.bites; let stun=0;
     sim(12, () => { safeHp(); G.encTimer=1e9; if (c.bites>b0 && !stun) { stun=e.stun; return 'stop'; } }); return {warned:c.warned-w0, bites:c.bites-b0, stun:+stun.toFixed(2)}`, 'r.warned>=1 && r.bites>=1 && r.stun>0.3');

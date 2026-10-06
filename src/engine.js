@@ -857,6 +857,7 @@ function checkUnlocks() {
   if (bl('bench') || G.day >= 3) unlock('craft');
   if (G.flags.q_radio) unlock('radio');
   if (G.journal.length > 1) unlock('journal');
+  if (G.dog && G.companion && G.companion.kind === 'dog' && G.day - G.dog.since >= 1) { if (unlock('fetch')) hintOnce('fetch', `${G.dog.name} trusts you now. R: send them to fetch.`); }
 }
 function zombieTypes() { const out = []; for (const [d, ids] of ZTIERS) if (G.day >= d) out.push(...ids); return out; }
 
@@ -1431,6 +1432,32 @@ function companionHome(why) {
   if (c.kind === 'dog') { G.dog.restUntil = G.day + 1; G.dog.hp = Math.max(G.dog.hp, 20); log(`${c.name} whimpers and limps home to rest.`, 'warn'); }
   else { c.s.hp = Math.max(c.s.hp, 25); if (why !== 'leave') { c.s.restUntil = G.day + 1; log(`${c.name} limps home, hurt.`, 'warn'); } }
   G.companion = null; return c.name;
+}
+/* ---------- dog fetch (R, unlocked after a day together): the dog runs to the nearest container within FETCH_R tiles that it hasn't
+   raided today and brings back one item from it (the container itself stays for you to search). FETCH_CD game minutes (= real
+   seconds) between runs. The run itself is in combat.js (updateCompanion). ---------- */
+const FETCH_CD = 90, FETCH_R = 12;
+const nowMin = () => G.day * 1440 + G.hour * 60 + Math.floor(G.minute || 0);
+/* why the dog can't fetch now (a short line), or null */
+function fetchBlock() {
+  if (!G.dog || !G.companion || G.companion.kind !== 'dog') return 'No dog with you.';
+  if (!isUnlocked('fetch')) return `${G.dog.name} doesn't know you well enough yet.`;
+  if (G.fetchAt != null && nowMin() - G.fetchAt < FETCH_CD) return `${G.dog.name} is still panting.`;
+  return null;
+}
+function fetchTarget(x, y) {
+  let best = null, bd = FETCH_R;
+  for (const k of WORLD.containers) {
+    if (containerState(k) === 'empty' || (G.fetched && G.fetched[k.id] === G.day) || inShelter(k.x + 0.5, k.y + 0.5)) continue;
+    const d = Math.hypot(k.x + 0.5 - x, k.y + 0.5 - y); if (d < bd) { bd = d; best = k; }
+  }
+  return best;
+}
+/* the dog has its teeth in container c: starts the cooldown, returns the item id it carries back */
+function dogFetch(c) {
+  G.fetchAt = nowMin(); (G.fetched || (G.fetched = {}))[c.id] = G.day;
+  const K = CONTAINERS[c.kind] || {}, L = LOCS[c.loc] || LOCS.street, pool = (L.loot || []).filter(e => !K.cats || K.cats.includes(ITEMS[e[0]].c));
+  return wpick(pool.length ? pool : (L.loot || LOCS.street.loot), x => x[1])[0];
 }
 function adoptDog(name) {
   setFlag('dog_adopted');

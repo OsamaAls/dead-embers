@@ -224,6 +224,7 @@ body.blocked #touch,body.blocked #hud .hbtns{visibility:hidden}
 #t-throw{width:48px;height:48px;right:calc(var(--sar) + 171px);bottom:calc(var(--sab) + 103px);font-size:9px;border-color:rgba(255,176,103,.5)}
 #touch.throw #t-pack{display:none}
 #t-comp{width:50px;height:50px;left:calc(var(--sal) + 18px);bottom:calc(var(--sab) + 196px);font-size:9px;border-color:rgba(255,176,103,.45)}
+#t-fetch{width:50px;height:50px;left:calc(var(--sal) + 18px);bottom:calc(var(--sab) + 254px);font-size:9px;border-color:rgba(255,176,103,.45)}
 body.touch .hud-br{bottom:calc(var(--sab) + 190px)}
 body.touch #prompt{bottom:calc(var(--sab) + 176px)}
 body.touch #barri{bottom:calc(var(--sab) + 226px)}
@@ -619,6 +620,7 @@ body.touch .hb .lb,body.touch .hb .hk{display:none}
   <button class="tb" id="t-tgt" aria-label="Next target"><svg viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/></svg><span>Target</span></button>
   <button class="tb" id="t-throw" hidden>Throw</button>
   <button class="tb" id="t-comp" hidden aria-label="Companion: stay or follow">Stay</button>
+  <button class="tb" id="t-fetch" hidden aria-label="Send the dog to fetch">Fetch</button>
 </div>
 <div id="dlg" class="dlg" hidden></div>
 <div id="pnl-wrap" hidden><div id="pnl"></div></div>
@@ -3678,6 +3680,7 @@ function checkUnlocks() {
   if (bl('bench') || G.day >= 3) unlock('craft');
   if (G.flags.q_radio) unlock('radio');
   if (G.journal.length > 1) unlock('journal');
+  if (G.dog && G.companion && G.companion.kind === 'dog' && G.day - G.dog.since >= 1) { if (unlock('fetch')) hintOnce('fetch', `${G.dog.name} trusts you now. R: send them to fetch.`); }
 }
 function zombieTypes() { const out = []; for (const [d, ids] of ZTIERS) if (G.day >= d) out.push(...ids); return out; }
 
@@ -4252,6 +4255,32 @@ function companionHome(why) {
   if (c.kind === 'dog') { G.dog.restUntil = G.day + 1; G.dog.hp = Math.max(G.dog.hp, 20); log(`${c.name} whimpers and limps home to rest.`, 'warn'); }
   else { c.s.hp = Math.max(c.s.hp, 25); if (why !== 'leave') { c.s.restUntil = G.day + 1; log(`${c.name} limps home, hurt.`, 'warn'); } }
   G.companion = null; return c.name;
+}
+/* ---------- dog fetch (R, unlocked after a day together): the dog runs to the nearest container within FETCH_R tiles that it hasn't
+   raided today and brings back one item from it (the container itself stays for you to search). FETCH_CD game minutes (= real
+   seconds) between runs. The run itself is in combat.js (updateCompanion). ---------- */
+const FETCH_CD = 90, FETCH_R = 12;
+const nowMin = () => G.day * 1440 + G.hour * 60 + Math.floor(G.minute || 0);
+/* why the dog can't fetch now (a short line), or null */
+function fetchBlock() {
+  if (!G.dog || !G.companion || G.companion.kind !== 'dog') return 'No dog with you.';
+  if (!isUnlocked('fetch')) return `${G.dog.name} doesn't know you well enough yet.`;
+  if (G.fetchAt != null && nowMin() - G.fetchAt < FETCH_CD) return `${G.dog.name} is still panting.`;
+  return null;
+}
+function fetchTarget(x, y) {
+  let best = null, bd = FETCH_R;
+  for (const k of WORLD.containers) {
+    if (containerState(k) === 'empty' || (G.fetched && G.fetched[k.id] === G.day) || inShelter(k.x + 0.5, k.y + 0.5)) continue;
+    const d = Math.hypot(k.x + 0.5 - x, k.y + 0.5 - y); if (d < bd) { bd = d; best = k; }
+  }
+  return best;
+}
+/* the dog has its teeth in container c: starts the cooldown, returns the item id it carries back */
+function dogFetch(c) {
+  G.fetchAt = nowMin(); (G.fetched || (G.fetched = {}))[c.id] = G.day;
+  const K = CONTAINERS[c.kind] || {}, L = LOCS[c.loc] || LOCS.street, pool = (L.loot || []).filter(e => !K.cats || K.cats.includes(ITEMS[e[0]].c));
+  return wpick(pool.length ? pool : (L.loot || LOCS.street.loot), x => x[1])[0];
 }
 function adoptDog(name) {
   setFlag('dog_adopted');
@@ -8588,6 +8617,52 @@ const Combat = (function () {
     marker('sniff', { x: best.x + 0.5, y: best.y + 0.5 }, 0xffb067);
     if (best !== sniffLast || sniffHintT <= 0) { sniffLast = best; sniffHintT = 30; if (typeof UI !== 'undefined' && UI.hint) UI.hint(`${c.name} found something.`); sfx('bark'); }
   }
+  /* ---------- dog fetch: a BFS distance field to the container, followed downhill; then home on the normal follow ---------- */
+  function fieldTo(gx, gy) {
+    const f = new Int16Array(W * H).fill(-1), q = [gx, gy]; f[gy * W + gx] = 0;
+    for (let i = 0; i < q.length; i += 2) {
+      const x = q[i], y = q[i + 1], d = f[y * W + x]; if (d >= 36) continue;
+      for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + ox, ny = y + oy; if (nx < 0 || ny < 0 || nx >= W || ny >= H || f[ny * W + nx] >= 0 || solidAt(nx + 0.5, ny + 0.5)) continue;
+        f[ny * W + nx] = d + 1; q.push(nx, ny);
+      }
+    }
+    return f;
+  }
+  function startFetch(c) {
+    const why = fetchBlock(); if (why) { toast(why, 'dim'); return; }
+    const k = fetchTarget(G.p.x, G.p.y); if (!k) { toast(`Nothing for ${c.name} to fetch here.`, 'dim'); return; }
+    /* stand next to it: the walkable side closest to the dog */
+    const sides = [[0, 1], [0, -1], [1, 0], [-1, 0], [0, 0]].map(([ox, oy]) => [k.x + ox, k.y + oy]).filter(([x, y]) => !solidAt(x + 0.5, y + 0.5));
+    sides.sort((a, b) => dist(a[0], a[1], c.x, c.y) - dist(b[0], b[1], c.x, c.y));
+    const g = sides[0]; if (!g) { toast(`${c.name} can't get at it.`, 'dim'); return; }
+    const f = fieldTo(g[0], g[1]); if (f[Math.floor(c.y) * W + Math.floor(c.x)] < 0) { toast(`${c.name} can't get at it.`, 'dim'); return; }
+    c.fetch = { k, g, f, phase: 'go', t: 0, item: null };
+    marker('fetch', { x: k.x + 0.5, y: k.y + 0.5 }, 0xffb067);
+    toast(`${c.name} runs off.`, 'dim'); sfx('bark');
+  }
+  /* go / dig: where to run this frame ({x,y}, or {} to stand) */
+  function fetchStep(c, dt) {
+    const F = c.fetch; F.t += dt;
+    if (F.phase === 'go') {
+      const gx = F.g[0] + 0.5, gy = F.g[1] + 0.5;
+      if (dist(c.x, c.y, gx, gy) < 0.45 || F.t > 20) { F.phase = 'dig'; F.dig = 1.1; c.faceT = Math.atan2(F.k.x + 0.5 - c.x, F.k.y + 0.5 - c.y); return {}; }
+      if (los(c.x, c.y, gx, gy)) return { x: gx, y: gy };
+      const fx = Math.floor(c.x), fy = Math.floor(c.y), d0 = F.f[fy * W + fx]; let best = null, bd = d0 < 0 ? 1e9 : d0;
+      for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const v = F.f[(fy + oy) * W + fx + ox]; if (v >= 0 && v < bd) { bd = v; best = { x: fx + ox + 0.5, y: fy + oy + 0.5 }; } }
+      return best || { x: gx, y: gy };
+    }
+    F.dig -= dt;
+    if (F.dig <= 0) { F.item = dogFetch(F.k); F.phase = 'back'; F.t = 0; marker('fetch', null); sfx('bark'); }
+    return {};
+  }
+  function deliverFetch(c) {
+    const F = c.fetch; c.fetch = null; if (!F || !F.item) return;
+    const n0 = (G.pack[F.item] || 0) + (G.store[F.item] || 0); found(F.item, 1);
+    const got = (G.pack[F.item] || 0) + (G.store[F.item] || 0) > n0;
+    toast(got ? `${c.name} drops ${itemName(F.item)} at your feet.` : `${c.name} brought ${itemName(F.item)}. No room in your pack.`, got ? 'good' : 'warn');
+    if (!got) C.drop(G.p.x, G.p.y + 0.6, F.item, 1, {});
+  }
   function updateCompanion(dt) {
     const c = syncCompanion(); if (!c) { INPUT.companionCmd = false; return; }
     const p = G.p, dog = c.kind === 'dog';
@@ -8599,7 +8674,8 @@ const Combat = (function () {
         sfx(dog ? 'bark' : 'ui');
       }
     }
-    if (c.mode === 'downed') { compDowned(c, dt); return; }
+    if (INPUT.fetchCmd) { INPUT.fetchCmd = false; if (dog && c.mode !== 'downed' && !c.fetch) startFetch(c); }
+    if (c.mode === 'downed') { if (c.fetch) { c.fetch = null; marker('fetch', null); } compDowned(c, dt); return; }
     c.cd -= dt;
     let d = dist(c.x, c.y, p.x, p.y);
     /* warp: far behind, stuck out of sight, or left outside when you went home */
@@ -8626,8 +8702,11 @@ const Combat = (function () {
     lastFight = fighting;
     /* fight or follow */
     let spd = 0, tx = null, ty = null, fast = false;
-    const e = compTarget(c); c.target = e;
-    if (e) {
+    if (c.fetch && c.fetch.phase === 'back') { c.fetch.t += dt; if (d < 2.2 || c.fetch.t > 30) deliverFetch(c); }
+    const fe = c.fetch && c.fetch.phase !== 'back' ? fetchStep(c, dt) : null;
+    const e = fe ? null : compTarget(c); c.target = e;
+    if (fe) { if (fe.x != null) { tx = fe.x; ty = fe.y; fast = true; } }
+    else if (e) {
       const de = dist(c.x, c.y, e.x, e.y), reach = (dog ? 0.75 : 0.95) + e.r;
       if (c.gun && de < 7 && PS.grabBy !== e && los(c.x, c.y, e.x, e.y)) compAttack(c, e, de);
       else if (de <= reach + 0.15) compAttack(c, e, de);
@@ -10254,7 +10333,7 @@ const Ambience = (() => {
      INPUT.cyclePressed   F: next lock-on target.   INPUT.clearLock: Shift+F, drop the lock.   INPUT.throwPressed: G, throw a bottle.
    Keyboard: every panel, dialogue, title and end screen can be driven with arrows/WASD + E/Enter (+ X drop, 1-6, T trade, Esc).
    Dialogue `lines` may be strings or {who, line} beats. A choice is {label, note, disabled, onPick}. */
-const INPUT = { mx: 0, my: 0, sprint: false, crouch: false, attack: false, interact: false, attackPressed: false, dodgePressed: false, interactPressed: false, aimX: null, aimY: null, touch: false, mouseAim: false, cyclePressed: false, clearLock: false, throwPressed: false, companionCmd: false };
+const INPUT = { mx: 0, my: 0, sprint: false, crouch: false, attack: false, interact: false, attackPressed: false, dodgePressed: false, interactPressed: false, aimX: null, aimY: null, touch: false, mouseAim: false, cyclePressed: false, clearLock: false, throwPressed: false, companionCmd: false, fetchCmd: false };
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -10427,6 +10506,7 @@ const UI = (() => {
     if (c === 'KeyF') { if (e.shiftKey) INPUT.clearLock = true; else INPUT.cyclePressed = true; }
     if (c === 'KeyG') INPUT.throwPressed = true;
     if (c === 'KeyH') INPUT.companionCmd = true;
+    if (c === 'KeyR') INPUT.fetchCmd = true;
     syncMove();
     const open = { KeyI: 'pack', Tab: 'journal', KeyB: 'char', KeyM: 'map', Escape: 'menu' }[c];
     if (open) { delete K[c]; U.open(open); }
@@ -10538,6 +10618,7 @@ const UI = (() => {
     hold('t-tgt', () => { INPUT.cyclePressed = true; });
     hold('t-throw', () => { INPUT.throwPressed = true; });
     hold('t-comp', () => { INPUT.companionCmd = true; });
+    hold('t-fetch', () => { INPUT.fetchCmd = true; });
   }
 
   /* ---------- HUD ---------- */
@@ -11665,15 +11746,16 @@ const UI = (() => {
   function companionChip() {
     const box = D.cmp, tb = el('t-comp'), c = typeof Combat !== 'undefined' ? Combat.companion : null;
     if (!box) return;
-    if (!c) { if (!box.hidden) { box.hidden = true; S.c.cmp = null; } if (tb && !tb.hidden) tb.hidden = true; return; }
+    if (!c) { if (!box.hidden) { box.hidden = true; S.c.cmp = null; } if (tb && !tb.hidden) tb.hidden = true; const fb = el('t-fetch'); if (fb && !fb.hidden) fb.hidden = true; return; }
     const info = safe(() => companionInfo(), null), f = info ? cl(info.hp / info.maxHp, 0, 1) : 0;
     const mode = c.mode === 'downed' ? 'Down' : c.mode === 'stay' ? 'Staying' : 'Following';
     if (tb) { if (tb.hidden) tb.hidden = false; const lb = c.mode === 'stay' ? 'Follow' : 'Stay'; if (tb.textContent !== lb) tb.textContent = lb; }
-    const key = c.kind + c.name + mode + Math.round(f * 60);
+    const fb = el('t-fetch'), canF = c.kind === 'dog' && safe(() => isUnlocked('fetch'), false); if (fb && fb.hidden === canF) fb.hidden = !canF;
+    const key = c.kind + c.name + mode + Math.round(f * 60) + !!c.fetch;
     if (S.c.cmp === key) return; S.c.cmp = key;
     box.hidden = false;
     box.querySelector('.nm').innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${COMP_IC[c.kind] || COMP_IC.survivor}"/></svg>${esc(c.name)}`;
-    box.querySelector('.md').textContent = mode + (INPUT.touch ? '' : ' · H');
+    box.querySelector('.md').textContent = mode + (INPUT.touch ? '' : ' · H') + (c.fetch ? ' · fetching' : '');
     box.querySelector('.fl').style.transform = `scaleX(${f})`;
     box.classList.toggle('low', f < 0.35); box.classList.toggle('down', c.mode === 'downed');
   }
@@ -11721,8 +11803,8 @@ const UI = (() => {
   function setAmb(v) { safe(() => Ambience.setVolume(Math.round(cl(v, 0, 1) * 20) / 20)); SFX.play('ui'); }
   function helpCard() {
     const rows = INPUT.touch
-      ? [['Move', 'Drag left side'], ['Sprint', 'Push the stick far'], ['Attack', 'ATTACK (hold)'], ['Next target', 'TARGET'], ['Throw a bottle', 'THROW'], ['Dodge roll', 'DODGE'], ['Search / use', 'USE (hold)'], ['Sneak', 'CROUCH'], ['Zoom', 'Pinch'], ['Map', 'Tap the minimap'], ['Swap weapon', 'Tap weapon'], ['Companion: stay / follow', 'STAY / FOLLOW']]
-      : [['Move', 'WASD / arrows'], ['Sprint', 'Shift'], ['Crouch', 'C'], ['Dodge roll', 'Space'], ['Attack', 'J / click'], ['Next target', 'F'], ['Clear target', 'Shift+F'], ['Throw a bottle', 'G'], ['Aim (optional)', 'Mouse'], ['Search / use', 'Hold E'], ['Swap weapon', 'Q'], ['Companion: stay / follow', 'H'], ['Pack', 'I'], ['Character', 'B'], ['Journal', 'Tab'], ['Map', 'M'], ['Zoom', 'Wheel'], ['Menu', 'Esc']];
+      ? [['Move', 'Drag left side'], ['Sprint', 'Push the stick far'], ['Attack', 'ATTACK (hold)'], ['Next target', 'TARGET'], ['Throw a bottle', 'THROW'], ['Dodge roll', 'DODGE'], ['Search / use', 'USE (hold)'], ['Sneak', 'CROUCH'], ['Zoom', 'Pinch'], ['Map', 'Tap the minimap'], ['Swap weapon', 'Tap weapon'], ['Companion: stay / follow', 'STAY / FOLLOW'], ['Dog: fetch', 'FETCH']]
+      : [['Move', 'WASD / arrows'], ['Sprint', 'Shift'], ['Crouch', 'C'], ['Dodge roll', 'Space'], ['Attack', 'J / click'], ['Next target', 'F'], ['Clear target', 'Shift+F'], ['Throw a bottle', 'G'], ['Aim (optional)', 'Mouse'], ['Search / use', 'Hold E'], ['Swap weapon', 'Q'], ['Companion: stay / follow', 'H'], ['Dog: fetch', 'R'], ['Pack', 'I'], ['Character', 'B'], ['Journal', 'Tab'], ['Map', 'M'], ['Zoom', 'Wheel'], ['Menu', 'Esc']];
     return `<div class="help">${rows.map(r => `<div><span>${r[0]}</span><span>${r[1]}</span></div>`).join('')}</div>
       ${INPUT.touch ? '' : `<p class="hintline" style="margin-top:12px">The whole game plays on the keyboard. Without the mouse, attacks lock on to the nearest enemy and F picks the next one; move the mouse to aim more precisely. In menus: arrows select, E or Enter acts, X drops, Esc closes.</p>`}
       <p class="hintline">Crouch to stay unseen. Sprinting and gunfire draw the dead. Bring loot home to build. Be in the bunker on horde nights.</p>`;

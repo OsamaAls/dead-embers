@@ -24,7 +24,7 @@
      INPUT.cyclePressed   F: next lock-on target.   INPUT.clearLock: Shift+F, drop the lock.   INPUT.throwPressed: G, throw a bottle.
    Keyboard: every panel, dialogue, title and end screen can be driven with arrows/WASD + E/Enter (+ X drop, 1-6, T trade, Esc).
    Dialogue `lines` may be strings or {who, line} beats. A choice is {label, note, disabled, onPick}. */
-const INPUT = { mx: 0, my: 0, sprint: false, crouch: false, attack: false, interact: false, attackPressed: false, dodgePressed: false, interactPressed: false, aimX: null, aimY: null, touch: false, mouseAim: false, cyclePressed: false, clearLock: false, throwPressed: false, companionCmd: false };
+const INPUT = { mx: 0, my: 0, sprint: false, crouch: false, attack: false, interact: false, attackPressed: false, dodgePressed: false, interactPressed: false, aimX: null, aimY: null, touch: false, mouseAim: false, cyclePressed: false, clearLock: false, throwPressed: false, companionCmd: false, fetchCmd: false };
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -197,6 +197,7 @@ const UI = (() => {
     if (c === 'KeyF') { if (e.shiftKey) INPUT.clearLock = true; else INPUT.cyclePressed = true; }
     if (c === 'KeyG') INPUT.throwPressed = true;
     if (c === 'KeyH') INPUT.companionCmd = true;
+    if (c === 'KeyR') INPUT.fetchCmd = true;
     syncMove();
     const open = { KeyI: 'pack', Tab: 'journal', KeyB: 'char', KeyM: 'map', Escape: 'menu' }[c];
     if (open) { delete K[c]; U.open(open); }
@@ -308,6 +309,7 @@ const UI = (() => {
     hold('t-tgt', () => { INPUT.cyclePressed = true; });
     hold('t-throw', () => { INPUT.throwPressed = true; });
     hold('t-comp', () => { INPUT.companionCmd = true; });
+    hold('t-fetch', () => { INPUT.fetchCmd = true; });
   }
 
   /* ---------- HUD ---------- */
@@ -1435,15 +1437,16 @@ const UI = (() => {
   function companionChip() {
     const box = D.cmp, tb = el('t-comp'), c = typeof Combat !== 'undefined' ? Combat.companion : null;
     if (!box) return;
-    if (!c) { if (!box.hidden) { box.hidden = true; S.c.cmp = null; } if (tb && !tb.hidden) tb.hidden = true; return; }
+    if (!c) { if (!box.hidden) { box.hidden = true; S.c.cmp = null; } if (tb && !tb.hidden) tb.hidden = true; const fb = el('t-fetch'); if (fb && !fb.hidden) fb.hidden = true; return; }
     const info = safe(() => companionInfo(), null), f = info ? cl(info.hp / info.maxHp, 0, 1) : 0;
     const mode = c.mode === 'downed' ? 'Down' : c.mode === 'stay' ? 'Staying' : 'Following';
     if (tb) { if (tb.hidden) tb.hidden = false; const lb = c.mode === 'stay' ? 'Follow' : 'Stay'; if (tb.textContent !== lb) tb.textContent = lb; }
-    const key = c.kind + c.name + mode + Math.round(f * 60);
+    const fb = el('t-fetch'), canF = c.kind === 'dog' && safe(() => isUnlocked('fetch'), false); if (fb && fb.hidden === canF) fb.hidden = !canF;
+    const key = c.kind + c.name + mode + Math.round(f * 60) + !!c.fetch;
     if (S.c.cmp === key) return; S.c.cmp = key;
     box.hidden = false;
     box.querySelector('.nm').innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${COMP_IC[c.kind] || COMP_IC.survivor}"/></svg>${esc(c.name)}`;
-    box.querySelector('.md').textContent = mode + (INPUT.touch ? '' : ' · H');
+    box.querySelector('.md').textContent = mode + (INPUT.touch ? '' : ' · H') + (c.fetch ? ' · fetching' : '');
     box.querySelector('.fl').style.transform = `scaleX(${f})`;
     box.classList.toggle('low', f < 0.35); box.classList.toggle('down', c.mode === 'downed');
   }
@@ -1491,8 +1494,8 @@ const UI = (() => {
   function setAmb(v) { safe(() => Ambience.setVolume(Math.round(cl(v, 0, 1) * 20) / 20)); SFX.play('ui'); }
   function helpCard() {
     const rows = INPUT.touch
-      ? [['Move', 'Drag left side'], ['Sprint', 'Push the stick far'], ['Attack', 'ATTACK (hold)'], ['Next target', 'TARGET'], ['Throw a bottle', 'THROW'], ['Dodge roll', 'DODGE'], ['Search / use', 'USE (hold)'], ['Sneak', 'CROUCH'], ['Zoom', 'Pinch'], ['Map', 'Tap the minimap'], ['Swap weapon', 'Tap weapon'], ['Companion: stay / follow', 'STAY / FOLLOW']]
-      : [['Move', 'WASD / arrows'], ['Sprint', 'Shift'], ['Crouch', 'C'], ['Dodge roll', 'Space'], ['Attack', 'J / click'], ['Next target', 'F'], ['Clear target', 'Shift+F'], ['Throw a bottle', 'G'], ['Aim (optional)', 'Mouse'], ['Search / use', 'Hold E'], ['Swap weapon', 'Q'], ['Companion: stay / follow', 'H'], ['Pack', 'I'], ['Character', 'B'], ['Journal', 'Tab'], ['Map', 'M'], ['Zoom', 'Wheel'], ['Menu', 'Esc']];
+      ? [['Move', 'Drag left side'], ['Sprint', 'Push the stick far'], ['Attack', 'ATTACK (hold)'], ['Next target', 'TARGET'], ['Throw a bottle', 'THROW'], ['Dodge roll', 'DODGE'], ['Search / use', 'USE (hold)'], ['Sneak', 'CROUCH'], ['Zoom', 'Pinch'], ['Map', 'Tap the minimap'], ['Swap weapon', 'Tap weapon'], ['Companion: stay / follow', 'STAY / FOLLOW'], ['Dog: fetch', 'FETCH']]
+      : [['Move', 'WASD / arrows'], ['Sprint', 'Shift'], ['Crouch', 'C'], ['Dodge roll', 'Space'], ['Attack', 'J / click'], ['Next target', 'F'], ['Clear target', 'Shift+F'], ['Throw a bottle', 'G'], ['Aim (optional)', 'Mouse'], ['Search / use', 'Hold E'], ['Swap weapon', 'Q'], ['Companion: stay / follow', 'H'], ['Dog: fetch', 'R'], ['Pack', 'I'], ['Character', 'B'], ['Journal', 'Tab'], ['Map', 'M'], ['Zoom', 'Wheel'], ['Menu', 'Esc']];
     return `<div class="help">${rows.map(r => `<div><span>${r[0]}</span><span>${r[1]}</span></div>`).join('')}</div>
       ${INPUT.touch ? '' : `<p class="hintline" style="margin-top:12px">The whole game plays on the keyboard. Without the mouse, attacks lock on to the nearest enemy and F picks the next one; move the mouse to aim more precisely. In menus: arrows select, E or Enter acts, X drops, Esc closes.</p>`}
       <p class="hintline">Crouch to stay unseen. Sprinting and gunfire draw the dead. Bring loot home to build. Be in the bunker on horde nights.</p>`;

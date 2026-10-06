@@ -1165,6 +1165,52 @@ const Combat = (function () {
     marker('sniff', { x: best.x + 0.5, y: best.y + 0.5 }, 0xffb067);
     if (best !== sniffLast || sniffHintT <= 0) { sniffLast = best; sniffHintT = 30; if (typeof UI !== 'undefined' && UI.hint) UI.hint(`${c.name} found something.`); sfx('bark'); }
   }
+  /* ---------- dog fetch: a BFS distance field to the container, followed downhill; then home on the normal follow ---------- */
+  function fieldTo(gx, gy) {
+    const f = new Int16Array(W * H).fill(-1), q = [gx, gy]; f[gy * W + gx] = 0;
+    for (let i = 0; i < q.length; i += 2) {
+      const x = q[i], y = q[i + 1], d = f[y * W + x]; if (d >= 36) continue;
+      for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + ox, ny = y + oy; if (nx < 0 || ny < 0 || nx >= W || ny >= H || f[ny * W + nx] >= 0 || solidAt(nx + 0.5, ny + 0.5)) continue;
+        f[ny * W + nx] = d + 1; q.push(nx, ny);
+      }
+    }
+    return f;
+  }
+  function startFetch(c) {
+    const why = fetchBlock(); if (why) { toast(why, 'dim'); return; }
+    const k = fetchTarget(G.p.x, G.p.y); if (!k) { toast(`Nothing for ${c.name} to fetch here.`, 'dim'); return; }
+    /* stand next to it: the walkable side closest to the dog */
+    const sides = [[0, 1], [0, -1], [1, 0], [-1, 0], [0, 0]].map(([ox, oy]) => [k.x + ox, k.y + oy]).filter(([x, y]) => !solidAt(x + 0.5, y + 0.5));
+    sides.sort((a, b) => dist(a[0], a[1], c.x, c.y) - dist(b[0], b[1], c.x, c.y));
+    const g = sides[0]; if (!g) { toast(`${c.name} can't get at it.`, 'dim'); return; }
+    const f = fieldTo(g[0], g[1]); if (f[Math.floor(c.y) * W + Math.floor(c.x)] < 0) { toast(`${c.name} can't get at it.`, 'dim'); return; }
+    c.fetch = { k, g, f, phase: 'go', t: 0, item: null };
+    marker('fetch', { x: k.x + 0.5, y: k.y + 0.5 }, 0xffb067);
+    toast(`${c.name} runs off.`, 'dim'); sfx('bark');
+  }
+  /* go / dig: where to run this frame ({x,y}, or {} to stand) */
+  function fetchStep(c, dt) {
+    const F = c.fetch; F.t += dt;
+    if (F.phase === 'go') {
+      const gx = F.g[0] + 0.5, gy = F.g[1] + 0.5;
+      if (dist(c.x, c.y, gx, gy) < 0.45 || F.t > 20) { F.phase = 'dig'; F.dig = 1.1; c.faceT = Math.atan2(F.k.x + 0.5 - c.x, F.k.y + 0.5 - c.y); return {}; }
+      if (los(c.x, c.y, gx, gy)) return { x: gx, y: gy };
+      const fx = Math.floor(c.x), fy = Math.floor(c.y), d0 = F.f[fy * W + fx]; let best = null, bd = d0 < 0 ? 1e9 : d0;
+      for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const v = F.f[(fy + oy) * W + fx + ox]; if (v >= 0 && v < bd) { bd = v; best = { x: fx + ox + 0.5, y: fy + oy + 0.5 }; } }
+      return best || { x: gx, y: gy };
+    }
+    F.dig -= dt;
+    if (F.dig <= 0) { F.item = dogFetch(F.k); F.phase = 'back'; F.t = 0; marker('fetch', null); sfx('bark'); }
+    return {};
+  }
+  function deliverFetch(c) {
+    const F = c.fetch; c.fetch = null; if (!F || !F.item) return;
+    const n0 = (G.pack[F.item] || 0) + (G.store[F.item] || 0); found(F.item, 1);
+    const got = (G.pack[F.item] || 0) + (G.store[F.item] || 0) > n0;
+    toast(got ? `${c.name} drops ${itemName(F.item)} at your feet.` : `${c.name} brought ${itemName(F.item)}. No room in your pack.`, got ? 'good' : 'warn');
+    if (!got) C.drop(G.p.x, G.p.y + 0.6, F.item, 1, {});
+  }
   function updateCompanion(dt) {
     const c = syncCompanion(); if (!c) { INPUT.companionCmd = false; return; }
     const p = G.p, dog = c.kind === 'dog';
@@ -1176,7 +1222,8 @@ const Combat = (function () {
         sfx(dog ? 'bark' : 'ui');
       }
     }
-    if (c.mode === 'downed') { compDowned(c, dt); return; }
+    if (INPUT.fetchCmd) { INPUT.fetchCmd = false; if (dog && c.mode !== 'downed' && !c.fetch) startFetch(c); }
+    if (c.mode === 'downed') { if (c.fetch) { c.fetch = null; marker('fetch', null); } compDowned(c, dt); return; }
     c.cd -= dt;
     let d = dist(c.x, c.y, p.x, p.y);
     /* warp: far behind, stuck out of sight, or left outside when you went home */
@@ -1203,8 +1250,11 @@ const Combat = (function () {
     lastFight = fighting;
     /* fight or follow */
     let spd = 0, tx = null, ty = null, fast = false;
-    const e = compTarget(c); c.target = e;
-    if (e) {
+    if (c.fetch && c.fetch.phase === 'back') { c.fetch.t += dt; if (d < 2.2 || c.fetch.t > 30) deliverFetch(c); }
+    const fe = c.fetch && c.fetch.phase !== 'back' ? fetchStep(c, dt) : null;
+    const e = fe ? null : compTarget(c); c.target = e;
+    if (fe) { if (fe.x != null) { tx = fe.x; ty = fe.y; fast = true; } }
+    else if (e) {
       const de = dist(c.x, c.y, e.x, e.y), reach = (dog ? 0.75 : 0.95) + e.r;
       if (c.gun && de < 7 && PS.grabBy !== e && los(c.x, c.y, e.x, e.y)) compAttack(c, e, de);
       else if (de <= reach + 0.15) compAttack(c, e, de);
