@@ -6,7 +6,11 @@ A 3D zombie survival RPG that runs in the browser. You walk a ruined city, fight
 - **Many endings.** Haven by bus, the Convoy with Sgt. Vance's escort, holding the bunker, an alliance with the Warden, storming the Tollmen camp, broadcasting Dr. Okafor's formula from KVAL, the Choir's bells, or walking north alone. Each one adds epilogue lines that depend on the people you helped or failed.
 - **Eight character arcs:** Eli, Dr. Okafor, Marcus, the Choir, the Relay, Teodor, Rosa the lamplighter and Sgt. Ada Vance. There are around a hundred encounters, played as moments (rescues, screamers, collapses, locks, races, trades) or short decisions.
 - **A backstory intro and cutscenes.** The intro plays once; replay it from the title or the menu. Story beats and endings have short cutscenes you can skip.
-- **Companions.** A dog (Biscuit, or a stray you feed) or a survivor can follow you on runs.
+- **Companions.** A dog (Biscuit, or a stray you feed) or a survivor can follow you on runs. After a day together the dog fetches for you.
+- **Bosses.** Each act has one named dead waiting in its lair: the Orderly in the hospital, the Butcher in the docks' Cold Store, the Sergeant at the Wrecked Convoy. Each guards a guaranteed drop and earns a journal line and an epilogue mention.
+- **A world you can touch.** Notes on the walls, bodies to search (crows settle on them by day), hand pumps for clean water, and beds and couches to rest on. Snow keeps your footprints, and the dog's, for a minute or so.
+- **Weapons wear** with use but never break; a worn one hits softer. Repair with scrap at the workbench.
+- **Night runs pay.** Dawn reports what the night brought in, against your best haul.
 - **Several saved worlds** side by side.
 - **Quiet ambient sound** that comes only from what is actually around you. There is no music.
 
@@ -22,7 +26,7 @@ A 3D zombie survival RPG that runs in the browser. You walk a ruined city, fight
   - With the keyboard only, lock-on picks the target. F cycles targets, Shift+F clears the lock.
   - The game switches between the two on its own, and every screen works with the keyboard alone.
 - Hit an unaware zombie for triple damage.
-- Pack: I. Journal: Tab. Character: B. Map: M. Swap weapon: Q. Companion stay / follow: H. Menu: Esc.
+- Pack: I. Journal: Tab. Character: B. Map: M. Swap weapon: Q. Companion stay / follow: H. Dog, fetch: R. Menu: Esc.
 - Saves: several worlds side by side. Continue, Worlds (load or delete; fallen and finished worlds stay as memorials) and New world on the title; Save now and Save as new world in the menu (Esc).
 - Zoom: wheel.
 - On phones: a virtual joystick plus on-screen buttons.
@@ -59,7 +63,7 @@ Everything about this game is driven from this repo's issues.
 | `build.js` | Bundles everything into `index.html`, `Dead Embers.html` and `artifact/dead-embers.html` |
 | `test.js` | Headless checks: every encounter and callback, item/enemy ids, world reachability, 14 simulated days, save/load |
 | `tools/browser-check.js` | Headless Edge/Chrome smoke test: loads the built page, plays a scenario, reports page errors, saves screenshots |
-| `tools/scenarios/` | Browser-check scenarios: `playthrough.js` (end-to-end route), `endings.js` (every ending), `keyboard.js` (no mouse), `worlds.js`, `companions.js`, `biomes.js`, `cinematic.js`, `world.js`, `combat.js`, `ui.js` |
+| `tools/scenarios/` | Browser-check scenarios: `playthrough.js` (end-to-end route), `endings.js` (every ending), `keyboard.js` (no mouse), `worlds.js`, `companions.js`, `biomes.js`, `cinematic.js`, `balance.js` (measurements, not a pass/fail check), `world.js`, `combat.js`, `ui.js` |
 | `tools/harness.js` | In-page test harness (deterministic frames, pathing, bots); never bundled |
 
 ## Build and check
@@ -74,8 +78,11 @@ node tools/browser-check.js --scenario tools/scenarios/worlds.js       # saved w
 node tools/browser-check.js --scenario tools/scenarios/companions.js   # dog, helper, interactions
 node tools/browser-check.js --scenario tools/scenarios/endings.js      # every last-night ending
 node tools/browser-check.js --scenario tools/scenarios/keyboard.js     # keyboard only (also --mobile)
-node tools/browser-check.js --scenario tools/scenarios/biomes.js       # each biome, weather and season (screenshots)
+node tools/browser-check.js --scenario tools/scenarios/biomes.js       # each biome, weather and season (screenshots); no spawns past closed gates; draw calls < 180
 node tools/browser-check.js --scenario tools/scenarios/cinematic.js    # intro once, cutscenes, animations, ambience
+node tools/browser-check.js --scenario tools/scenarios/balance.js      # BAL lines: travel, zombie density, cold, the bus quest, the final stand (BAL_N=10 for more stand runs)
 ```
+
+Each headless check takes several minutes (much longer on a slow laptop) because the browser renders in software. Run them one at a time.
 
 `test.js` checks the rules and every piece of content headless. `browser-check.js` loads the built page in headless Edge or Chrome, reports page errors and saves screenshots. The playthrough scenario plays the whole core route (search, fights, building, moments, a decision, sleep, a horde night, an ending) and fails on any broken step. `tools/harness.js` is the in-page test harness it uses; see `src/API.md` §4.

@@ -66,7 +66,7 @@ weatherTick queues `first_frost` (first late-season morning) and `first_snow` (f
 ---------------------------------------------------------------------------------------------------
 ## 2. Engine (engine.js): pure rules, no THREE, no DOM (it runs headless in `test.js`)
 
-Coordinates are **tiles** (floats). `W=64, H=48`, `TILE=2` world metres per tile. Tile (x,y) → world `(x*TILE, 0, y*TILE)`. +y is world +z (south).
+Coordinates are **tiles** (floats). `W=112, H=84`, `TILE=2` world metres per tile. Tile (x,y) → world `(x*TILE, 0, y*TILE)`. +y is world +z (south).
 `WORLD = { tiles:Uint8Array, pois, roofs, containers, shelterRect, bunker, hatch, bus, gate }` (see engine.js `genWorld`).
 - tiles: `T_GRASS, T_ROAD, T_WALL, T_DOOR, T_TREE, T_WATER, T_BRIDGE, T_RUBBLE, T_CAR, T_YARD, T_FIELD, T_ROOF (solid closed building), T_FLOOR (walkable interior), T_PROP (solid furniture/container)`.
   `SOLID` set; `tileAt(x,y)`, `solidAt(x,y)`.
@@ -82,7 +82,7 @@ Player state: `G.p` `{x,y,face,hp,maxHp,sta,maxSta,hunger,thirst,morale,inf,stat
 Combat rules (numbers only): `weaponProfile()` → `{id, ranged, dmg, reach|rng, wind, cd, sta, arc, spread, pellets, ammo, noise}`; `playerHitDamage(prof)`; `useAmmo(prof)`;
 `moveSpeed('walk'|'sprint'|'crouch')` tiles/s; `sprintCost()` stamina/s; `DODGE_COST`; `enemyHitsPlayer(enemyId, mult)` (applies armour, bites, bleeding);
 `onKill(enemyId)` → drops `[{id,qty}]` (counts the kill, gives XP); `pickup(id,qty)` → label; `zombieTypes()` (the types unlocked so far); `ENEMIES[id].spd/sense/reach/lunge/grab/shape/scale/rng/cd`.
-Progression: `G.unlocks` keys `needs, build, craft, people, horde, radio, journal`. `unlock(k)`, `isUnlocked(k)`, `hintOnce(key,text)`.
+Progression: `G.unlocks` keys `needs, build, craft, people, horde, radio, journal, fetch`. `unlock(k)`, `isUnlocked(k)`, `hintOnce(key,text)`.
 Objective: `objectiveInfo()` → `{text, target:{x,y}|null}`.
 Horde: `G.hordeNight` (tonight), `hordeWaveSize()`, `resolveHorde({held,kills,breaches})`. Endings: `finalOptions()`, `chooseFinal(id)` → ending id | 'wait' | 'wave', `finishStand(held)`.
 Encounters: `pickEncounter(type)`, `fieldEncounterRoll(dtSec)`, `checkChance({attr,diff})`, `encEligible`. Shelter: `build(k)`, `canBuild(k)`, `buildCost(k)`, `bl(k)`, `bName(k)`, `sleep()`, `canSleep()`, `eat(id)`.
@@ -99,7 +99,20 @@ Trader: `makeTrader()`, `buyPrice(id)`, `sellPrice(id)`, `traderDay()` (the cara
 **Talk:** `survivorMood(s)`, `chatSurvivor(s)` (+morale once a day), `giftItem()`, `giftSurvivor(s)`, `maybeRequest(s)` / `requestOf(s)` / `canDeliver(s)` / `deliverRequest(s)` (`G.requests [{sid,item,qty,day}]`), `jobChoices(s)`, `setJob(s,job)`. Lines: `CONTENT.survivorTalk`.
 **Interactions:** doors `G.doorBars[tileIndex]=hp`: `barDoor(tx,ty)` (2 wood), `unbarDoor`, `doorBarred`, `doorBlocked(x,y)` (collision, both ways), `hitDoorBar(tx,ty,dmg)` (~6 s of one zombie), `barredAny()`;
 wrecks `siphonCar(tx,ty)` / `carSiphoned` (`G.siphoned`, once per car; `hose` item always works, else 40%); `fillBottle()` (bottle → dirty water); `cookOption()` / `cookAt()` (fires and the kitchen: boil, meat, stew);
-`restOutside()` (+ main heals 6); `radioBroadcast()` → `{lines, trader}` (`CONTENT.radio`, `CONTENT.radioHints`); optional world props `WORLD.notes|bodies|pumps|beds` with `propNear`, `readNote(n)` (`CONTENT.graffiti`), `searchBody(b)`.
+`restOutside()` (+ main heals 6); `radioBroadcast()` → `{lines, trader}` (`CONTENT.radio`, `CONTENT.radioHints`).
+**Props** (`placeProps(seed, w, parks)`, called last in `genWorld` with its own random stream, so old saves keep their exact map; `test.js` pins the layout of three seeds):
+`WORLD.notes [{x,y,fx,fy,place,i}]` (writing on a wall facing fx,fy; `place` = a story place, whose lines come from `CONTENT.placeNotes[place]`, else `CONTENT.graffiti[i]`),
+`WORLD.bodies [{x,y,in,r}]` (about 30, on roads by wrecks and indoors; `G.bodies['x,y']` = day searched), `WORLD.pumps [{x,y,under}]` (7 hand pumps, solid `T_DECO`: a bottle → clean water),
+`WORLD.beds [{x,y,kind,fx,fy}]` (bed / couch / cot in homes). `propNear(list,x,y,r)`, `readNote(n)`, `searchBody(b)`.
+**Weapon wear:** `G.wear[id]` 100..0 per weapon type. `weaponCond(id)`, `wearWeapon(id, amt)` (`WEAR_MELEE` 1 per connecting swing, `WEAR_SHOT` 0.4 per shot; hint below 60),
+`playerHitDamage` scales by ×(0.6+0.4·cond/100), never breaks. `repairCost(id)` = ceil(missing/25) scrap, `repairWeapon(id)` (workbench ≥1). A type you own none of comes back fresh in `give()`.
+**Act bosses:** `actNow()` 1|2|3 (from `radio_built` / `q_bus`, like the seasons). `BOSS_LAIR[id] = {act, type|label, r?, minDay?, journal}` for `orderly` (hospital, day 3+), `butcher` (Cold Store), `sergeant` (Wrecked Convoy, within 5 tiles).
+`bossHere(x,y)` → the boss id that should be there now | null; `bossMet(id)` (true the first time: show the intro); `onKill` calls `bossKilled(id)` (journal + toast). `G.bosses[id]` = 'met'|'dead'.
+Boss `ENEMIES` entries borrow a kind's `shape` with a bigger `scale`, a `look` (KINDS overrides) and `guar` drops. The `bosses` epilogue names the dead ones.
+**The night's haul:** `found(id, qty)` = `give()` for things found out in the world (containers, bodies, pickups, the dog); with kills it adds to `G.haul {items,value,kills}` while `isNight()`.
+`dailyTick` opens the dawn summary with the haul (only after a night run) and keeps `G.best.haul` (by value).
+**Dog fetch:** `fetchBlock()` → why not (no dog, not unlocked, `FETCH_CD` 90 game min) | null; `fetchTarget(x,y)` (nearest non-empty container within `FETCH_R` 12 not raided today, `G.fetched[id]`);
+`dogFetch(c)` → item id (starts the cooldown). Unlock key `fetch`, after a day with the dog (`G.day - G.dog.since >= 1`).
 
 ### World, biomes, gates, weather, seasons
 - **Map.** `W×H = 112×84`. Biomes (`BIOMES`, `biomeAt(x,y)`): oldtown, suburbs, forest (with the hills), farm, flooded, docks, pass. The river is at x 85–87; Haven's road leaves the top edge at about x 74.
@@ -109,7 +122,7 @@ wrecks `siphonCar(tx,ty)` / `carSiphoned` (`G.siphoned`, once per car; `hose` it
   - `WORLD.flora`, `decos`, `fires` (engine-placed barrel fires), `gates` and `camp`. New LOCS (each with an `alias` for older encounters): park, docks, warehouse, suburbs, house, garage, ranger, flooded, pass.
 - **Story gates.** The forest opens on `radio_built` once the `radio_fixed` scene has been queued (`G.seenScenes.radio_fixed`: Mara names the ranger station there), the docks on `marcus_3` or day 8, and the pass on `q_bus`.
   - `gateCheck()` runs hourly and from `storyCheck`. `openDistrict(id)` sets `open_<id>` and calls `Hooks.gateOpened(id)` if set.
-  - `districtOpen(biome)` tells you whether a biome is reachable. Ambient zombies never spawn in closed districts.
+  - `districtOpen(biome)` tells you whether a biome is reachable. Nothing spawns in a closed district: `findSpot` (ambient, reinforcements), `Moments.spotNear` (encounter enemies) and `waveSpawnPoint` all skip it; `biomes.js` checks it.
 - **Weather.** `G.weather` is clear, rain, fog or snow, persisting 4–10 h and weighted by season. `G.storm` marks the last-night snowstorm, and `G.snowCover` runs 0..1.
 - **Modifiers** (combat reads them): `hearMul` (rain ×0.6), `sightMul` (fog ×0.6), `zSpeedMul` (snow ×0.85), `moveMul`, `coldK` (outdoor snow without a `coat` or `nearFire`: stamina drains and regenerates slowly), `inBush` and `zMix` (zombie mix per biome).
 - **Season** (`seasonNow()`, `G.season`) follows the act: autumn → late (radio built) → winter (bus quest).
@@ -156,11 +169,15 @@ wrecks `siphonCar(tx,ty)` / `carSiphoned` (`G.siphoned`, once per car; `hose` it
 - `World3D.barricade` exposes the barricade ring geometry info for horde waves: `{x0,y0,x1,y1}` in tiles.
 - Also: `World3D.setObjective({x,y}|false|null)` (the beacon follows `objectiveInfo()` automatically; null = automatic), `World3D.marker(key, {x,y}|null, hex)` (extra ground beacon for moments),
   `World3D.highlight('point', {x,y})`, `barricade.level`, `heightAt(i)`, `cutBuilding`, `fires`.
+- Props: notes, bodies, pumps and beds are built into the merged chunks (no extra draw calls). `World3D.setBodySearched(b, on)` darkens a searched body.
+  Crows (one InstancedMesh, 18 birds) settle on outdoor bodies near the player by day and lift off when you come within ~5 tiles; `World3D.crowsNear(x,y,r)` lets Ambience caw from the real birds.
+- Snow footprints: one InstancedMesh ring of 160 decals laid behind the player (boots) and the dog (paw pairs) on outdoor snow while `G.snowCover > 0.3`.
+  The blend multiplies the ground, so they work by day and night; they fill in over 90 s and melt with `R.env.uSnow`.
 - How it is drawn: static geometry merged into 32 m chunks (frustum culled); trees, cars, lamps and grass are InstancedMeshes; a material patch does lamp/window glow,
   the roof cutaway for the building you are in (shader discard above a height) and a dithered see-through hole between the camera and the player.
 
 ### `Actors`: actors.js (procedural low-poly models + animation)
-- `Actors.make(kind, opts)`. kind: `player | survivor | raider | tollman | warden | walker | runner | bloater | screamer | brute | dog`. opts: `{tint}`.
+- `Actors.make(kind, opts)`. kind: `player | survivor | raider | tollman | warden | walker | runner | bloater | screamer | brute | dog`. opts: `{tint, scale, k}` (`k` overrides the kind's look: the act bosses).
   Returns `{ root:THREE.Group, anim(name), update(dt, speed), flash(), die(), setAware(v|null), setCarry(itemId|null), dispose() }`.
   anim names: `idle, walk, run, crouch, attack, lunge, shoot, hit, die, work, scream`. Each zombie type has a distinct silhouette.
   Also: `anim('attack', {wind})` stretches the wind-up; extra anims `roll` (dodge), `grab`, `held`; `actor.aiming`; `Actors.itemMesh(id)` (pickup model); `Actors.night` (eyes glow).
@@ -180,6 +197,9 @@ wrecks `siphonCar(tx,ty)` / `carSiphoned` (`G.siphoned`, once per car; `hose` it
 - `Combat.nearestDrop(x,y,r)` → `{uid,x,y,id,qty}|null`, `Combat.pickupDrop(drop)`, `Combat.enemiesNear(x,y,r)`, `Combat.inFight()` (true while any aware enemy is chasing within ~14 tiles, or a wave/fight group is alive), `Combat.clear()`.
 - `Combat.companion` `{kind,id,name,a,x,y,mode:'follow'|'stay'|'downed',target,sniff,sniffs,warned,bites,hits,pulls,downT}`: follows on the flow field (warps to you past 25 tiles, when stuck, or when you are home), fights what hunts you,
   pulls a grabber off you, takes hits from enemies next to it. Dog: bites (stun 0.8 s), every ~8 s marks the nearest unsearched container within 12 tiles (`World3D.marker('sniff')`), growls and marks zombies that turn aware within 10 tiles.
+  Fetch (`INPUT.fetchCmd`: R or the FETCH touch button): `C.companion.fetch = {k, g, f, phase:'go'|'dig'|'back', item}`; a BFS distance field to the container's open side, a short dig
+  (`dogFetch`), then home on the normal follow; handed over within 2.2 tiles via `found()` (or dropped at your feet if the pack is full).
+- Act bosses: `updateBoss` checks `bossHere()` every 0.5 s and spawns the boss at the far end of the lair building (aware), with `UI.banner(name, intro)` the first time.
   Helper: pistol at combat 4+, else melee; medic heals you after a fight; downed at 0 HP (20 s to revive: `Combat.reviveCompanion()`, main's hold E). `Combat.companionCommand()` / `INPUT.companionCmd` (H) toggles stay/follow.
 - Barricaded doors block movement in `hitR`; a chasing zombie at one claws it (`Combat.doorHits`, a world bar shows its HP). Hook: `World3D.setDoorBar(tx,ty,on)` if present.
 - UI-facing state: `Combat.grabbed`, `grabNeed/grabMash`, `dodging`, `barricadeHp/barricadeMax` (0/0 when no wave), `aware`, `threat` (0..1), `wave`.
@@ -260,8 +280,11 @@ It wires Hooks, runs the game loop, advances time (1 real second = 1 game minute
    prints page errors (there must be none) and saves screenshots (`--shots dir`) you can open and look at.
 4. `node tools/browser-check.js --scenario tools/scenarios/playthrough.js`: the end-to-end route (cold open, walk to the objective, hold-E search, melee and gun
    fights, build, screamer and rescue moments, a decision, sleep to day 2, a horde night, the Haven ending). Prints `STEP name: ok|FAIL` and exits 1 on any FAIL.
-   Other scenarios: `worlds.js` (saved worlds, keys only, with a reload), `companions.js` (dog, helper, talk, siphon, water, cook, door), `tools/scenarios/world.js` (city/lighting shots), `combat.js` (actor lineup, fights), `ui.js` (every panel, minigame and moment).
+   Other scenarios: `worlds.js` (saved worlds, keys only, with a reload), `companions.js` (dog incl. fetch, helper, talk, siphon, water, cook, door, props), `endings.js`, `keyboard.js`,
+   `biomes.js` (every biome/weather/season shot; also no spawns across closed gates and the busiest view under 180 draw calls), `cinematic.js`,
+   `balance.js` (not pass/fail: prints `BAL` lines for travel, zombie density per biome by day and night, winter cold with and without a coat, the bus quest and the final stand; `BAL_N=10`), `tools/scenarios/world.js` (city/lighting shots), `combat.js` (actor lineup, fights), `ui.js` (every panel, minigame and moment).
 - `tools/harness.js` is the in-page harness those scenarios use (never bundled). In any running page: `fetch('tools/harness.js').then(r=>r.text()).then(eval)`, then
   `sim(sec, ctl)` steps the game deterministically at 20 fps without drawing, `goto(x,y)` walks there by BFS, `fightBot(ids, gun)`, `searchNearest()`, `holdE(sec)`, `state()`.
   Use it in the Browser pane too: a hidden pane pauses requestAnimationFrame, so drive the loop with `sim()` instead of waiting.
 - Dev console: `__skipTo(2)` (radio built) and `__skipTo(3)` (last night) jump the story forward.
+- Scenario conventions: `G.encTimer = 1e9` turns random encounters off (field rolls and container searches). The lock/pry minigame is ticked from `UI.update`, so it runs under `sim()`.

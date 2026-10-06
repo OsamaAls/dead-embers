@@ -16,8 +16,8 @@ Status (✅ committed, ⏳ in progress, ☐ not started):
 - ✅ 1d. Playthrough flake: a guard for container-search encounters during scripted steps; let the `lock` minigame finish under `sim()`
 - ✅ 1e. (issue #2) `question` issue: real-phone FPS (needs internet)
 - ✅ 2a. Weapon wear · ✅ 2b. Act bosses · ✅ 2c. Night haul · ✅ 2d. Dog fetch (key R)
-- ⏳ 3. Docs: README, API.md, scheduled-task SKILL.md
-- ☐ 4. Full browser run + balance tuning
+- ✅ 3. Docs: README, API.md, scheduled-task SKILL.md
+- ⏳ 4. Full browser run + balance tuning
 - ☐ 5. Push, confirm Pages, final update of this file
 
 ---
