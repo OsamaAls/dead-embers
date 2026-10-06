@@ -13,7 +13,11 @@ vm.createContext(ctx);
 const src = ['data.js', 'content.js', 'encounters.js', 'arcs.js', 'engine.js'].map(f => fs.readFileSync(path.join(__dirname, 'src', f), 'utf8')).join('\n;\n');
 vm.runInContext(src + `
 ;window.__T = { get G() { return G; }, get WORLD() { return WORLD; }, Hooks, PENDING, newGame, dailyTick, allEncounters, advance, ITEMS, ENEMIES, LOCS, CONTAINERS, W, H, SOLID, genWorld,
-  searchContainer, containerState, objectiveInfo, finalOptions, chooseFinal, saveGame, loadGame, onKill, resolveHorde, weaponProfile, enemyHitsPlayer, give };`, ctx);
+  searchContainer, containerState, objectiveInfo, finalOptions, chooseFinal, saveGame, loadGame, onKill, resolveHorde, weaponProfile, enemyHitsPlayer, give,
+  BIOMES, GATE_OF, openGateTiles, gateCheck, weatherTick, seasonNow, hearMul, sightMul, zSpeedMul, moveMul, T_SHALLOW,
+  serialize, listWorlds, loadWorld, deleteWorld, forkWorld, markEnded, hasSave, lastWorldId, recruit, adoptDog, setCompanion, clearCompanion, companionInfo,
+  companionHurt, companionCarry, carryCap, hordeWaveSize, barDoor, unbarDoor, doorBlocked, hitDoorBar, siphonCar, fillBottle, cookAt, cookOption, radioBroadcast,
+  maybeRequest, requestOf, deliverRequest, chatSurvivor, giftSurvivor, survivorMood, setJob, jobChoices, T_DOOR, T_CAR };`, ctx);
 const T = ctx.__T;
 const queued = [];
 T.Hooks.queue = q => queued.push(q);
@@ -53,20 +57,48 @@ for (const e of encs) {
   });
 }
 
-/* ---- world: every door, container and the bus is reachable from the bunker, over many seeds ---- */
+/* ---- world: reachability from the bunker over many seeds, with the story gates closed and then all open ----
+   Closed: every POI, container and the bus outside the gated biomes (docks, forest, pass) is reachable, the act-1 targets are there,
+   and nothing inside a gated biome is (the seals hold). Open (openGateTiles on every gate): everything is reachable. */
 for (let seed = 1; seed <= 25; seed++) {
   try {
     const w = T.genWorld(seed * 7919), Wn = T.W, Hn = T.H;
-    const solid = (x, y) => x < 0 || y < 0 || x >= Wn || y >= Hn || T.SOLID.has(w.tiles[y * Wn + x]);
-    const seen = new Uint8Array(Wn * Hn), start = [w.hatch.x, w.hatch.y + 1], q = [start];
-    seen[start[1] * Wn + start[0]] = 1;
-    while (q.length) { const [x, y] = q.pop(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (!solid(nx, ny) && !seen[ny * Wn + nx]) { seen[ny * Wn + nx] = 1; q.push([nx, ny]); } } }
-    const reach = (x, y) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => { const nx = x + dx, ny = y + dy; return nx >= 0 && ny >= 0 && nx < Wn && ny < Hn && seen[ny * Wn + nx]; });
-    for (const k in w.pois) if (!reach(w.pois[k].x, w.pois[k].y)) fail('world seed ' + seed, 'unreachable poi ' + w.pois[k].label + ' ' + k);
-    for (const c of w.containers) if (!reach(c.x, c.y)) fail('world seed ' + seed, `unreachable container ${c.kind} ${c.x},${c.y} (${c.loc})`);
-    if (!w.bus || !reach(w.bus.x, w.bus.y)) fail('world seed ' + seed, 'bus unreachable');
+    const gated = (x, y) => !!T.GATE_OF[T.BIOMES[w.biome[y * Wn + x]]];
+    const flood = () => {
+      const solid = (x, y) => x < 0 || y < 0 || x >= Wn || y >= Hn || T.SOLID.has(w.tiles[y * Wn + x]);
+      const seen = new Uint8Array(Wn * Hn), start = [w.hatch.x, w.hatch.y + 1], q = [start];
+      seen[start[1] * Wn + start[0]] = 1;
+      while (q.length) { const [x, y] = q.pop(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (!solid(nx, ny) && !seen[ny * Wn + nx]) { seen[ny * Wn + nx] = 1; q.push([nx, ny]); } } }
+      return (x, y) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => { const nx = x + dx, ny = y + dy; return nx >= 0 && ny >= 0 && nx < Wn && ny < Hn && seen[ny * Wn + nx]; });
+    };
+    for (const phase of ['closed', 'open']) {
+      if (phase === 'open') for (const id in w.gates) T.openGateTiles(w, id);
+      const reach = flood(), tag = 'world seed ' + seed + ' (' + phase + ')';
+      for (const k in w.pois) { const p = w.pois[k], g = gated(p.x, p.y); if (phase === 'open' || !g) { if (!reach(p.x, p.y)) fail(tag, 'unreachable poi ' + p.label + ' ' + k); } else if (reach(p.x, p.y)) fail(tag, 'gated poi reachable early ' + p.label + ' ' + k); }
+      for (const c of w.containers) if ((phase === 'open' || !gated(c.x, c.y)) && !reach(c.x, c.y)) fail(tag, `unreachable container ${c.kind} ${c.x},${c.y} (${c.loc})`);
+      if (!w.bus || !reach(w.bus.x, w.bus.y)) fail(tag, 'bus unreachable');
+      if (phase === 'closed') for (const t of ['supermarket', 'apartments', 'electronics', 'radiotower', 'police', 'depot', 'gas', 'hospital', 'tollcamp']) if (!Object.values(w.pois).some(p => p.type === t && !gated(p.x, p.y) && reach(p.x, p.y))) fail(tag, 'no reachable act-1 ' + t);
+    }
+    for (const b of T.BIOMES) if (!w.biome.includes(T.BIOMES.indexOf(b))) fail('world seed ' + seed, 'missing biome ' + b);
   } catch (err) { fail('world', err); }
 }
+/* gates open on their story beats */
+try {
+  fresh(); const f = T.G.flags;
+  if (T.G.flags.open_forest || T.G.flags.open_docks || T.G.flags.open_pass) fail('gates', 'open at start');
+  f.radio_built = true; T.gateCheck(); if (!f.open_forest) fail('gates', 'forest did not open after the radio');
+  f.marcus_3 = true; T.gateCheck(); if (!f.open_docks) fail('gates', 'docks did not open after marcus_3');
+  f.q_bus = true; T.G.hordeDay = T.G.day + 12; T.gateCheck(); if (!f.open_pass) fail('gates', 'pass did not open with the bus quest');
+  if (T.SOLID.has(T.WORLD.tiles[T.WORLD.gates.pass.y0 * T.W + T.WORLD.gates.pass.x0])) fail('gates', 'pass gate tiles still solid');
+  for (let h = 0; h < 30; h++) T.weatherTick();
+  if (T.seasonNow() !== 'winter') fail('season', 'not winter with the bus quest');
+  T.G.day = T.G.hordeDay; T.weatherTick(); if (T.G.weather !== 'snow' || !T.G.storm) fail('weather', 'last night is not a snowstorm');
+  T.G.weather = 'rain'; if (T.hearMul(T.G.p.x, T.G.p.y) !== 0.6) fail('weather', 'rain hearing');
+  T.G.weather = 'fog'; if (T.sightMul(T.G.p.x, T.G.p.y) !== 0.6) fail('weather', 'fog sight');
+  T.G.weather = 'snow'; if (T.zSpeedMul(T.G.p.x, T.G.p.y) !== 0.85) fail('weather', 'snow speed');
+  const sh = Object.keys(T.WORLD.tiles).find(i => T.WORLD.tiles[i] === T.T_SHALLOW); if (sh == null || T.moveMul(sh % T.W + 0.5, Math.floor(sh / T.W) + 0.5) > 0.7) fail('tiles', 'shallow water does not slow');
+  if (T.ITEMS.coat.c !== 'gear') fail('items', 'coat');
+} catch (err) { fail('gates', err); }
 
 /* ---- containers, combat rules, objectives ---- */
 try {
@@ -85,9 +117,73 @@ try {
   if (T.G.day < 14) fail('time', 'day did not advance: ' + T.G.day);
   if (!T.G.unlocks.horde) fail('unlocks', 'horde never unlocked');
   T.resolveHorde({ held: true, kills: 5 }); T.resolveHorde({ held: false, kills: 1, breaches: 3 });
-  T.G.flags.warden_met = true; T.finalOptions(); T.chooseFinal('ally');
   if (!T.saveGame(true) || !T.loadGame()) fail('save', 'save/load failed');
+  T.G.flags.warden_met = true; T.finalOptions(); T.chooseFinal('ally');
+  if (T.loadGame() && T.G.flags.ended) fail('save', 'an ended world loaded as continuable');
 } catch (err) { fail('days', err); }
 
+/* ---- saved worlds: migration from the v2 save, two slots, fork, ended worlds, delete ---- */
+try {
+  for (const k in store) delete store[k];
+  fresh(); T.G.p.name = 'Mig'; delete T.G.worldName; T.G.day = 6; store.deadembers_save_v2 = T.serialize();
+  let ws = T.listWorlds();
+  if (ws.length !== 1 || ws[0].name !== 'Mig' || ws[0].day !== 6 || store.deadembers_save_v2) fail('slots', 'v2 save did not migrate: ' + JSON.stringify(ws));
+  if (!T.loadGame() || T.G.day !== 6 || T.G.slot !== ws[0].id) fail('slots', 'migrated world does not load');
+  const migId = ws[0].id, A4 = { str: 4, end: 4, per: 4, cha: 4, agi: 4, int: 4 };
+  T.newGame('Ann', 'soldier', A4, 'World A'); T.G.day = 3; T.G.p.x = 10.5; T.saveGame(true); const idA = T.G.slot;
+  T.newGame('Bo', 'medic', A4, 'World B'); T.G.day = 9; T.saveGame(true); const idB = T.G.slot;
+  ws = T.listWorlds();
+  if (ws.length !== 3 || !idA || !idB || idA === idB) fail('slots', 'expected 3 worlds, got ' + ws.length);
+  if (!T.loadWorld(idA) || T.G.day !== 3 || T.G.p.x !== 10.5 || T.G.worldName !== 'World A') fail('slots', 'world A did not load back');
+  if (!T.loadWorld(idB) || T.G.day !== 9 || T.G.p.name !== 'Bo') fail('slots', 'world B did not load back');
+  T.loadWorld(idA); const idF = T.forkWorld('World A2'); T.G.day = 4; T.saveGame(true);
+  if (!idF || idF === idA || T.listWorlds().length !== 4) fail('slots', 'fork did not make a new world');
+  if (!T.loadWorld(idA) || T.G.day !== 3) fail('slots', 'fork changed the original');
+  T.loadWorld(idB); T.G.p.hp = 0; T.markEnded('death');
+  const eb = T.listWorlds().find(w => w.id === idB);
+  if (!eb || !eb.ended || eb.endId !== 'death' || T.loadWorld(idB)) fail('slots', 'a dead world is still continuable');
+  if (!T.hasSave() || T.lastWorldId() === idB) fail('slots', 'continue should skip the memorial');
+  T.deleteWorld(idA);
+  if (T.listWorlds().some(w => w.id === idA) || store['deadembers_world_' + idA]) fail('slots', 'delete left the world behind');
+  for (const id of [migId, idF]) { T.loadWorld(id); T.chooseFinal('alone'); }
+  if (T.hasSave()) fail('slots', 'hasSave with only ended worlds');
+} catch (err) { fail('slots', err); }
+
+/* ---- companions, talk, interactions (engine side) ---- */
+try {
+  fresh(); T.G.p.hp = 100;
+  const cap0 = T.carryCap(), wave0 = T.hordeWaveSize();
+  T.adoptDog('Biscuit'); const c = T.companionInfo();
+  if (!c || c.kind !== 'dog' || c.name !== 'Biscuit' || !T.G.flags.dog_adopted) fail('dog', 'adoption');
+  if (T.carryCap() !== cap0) fail('dog', 'the dog should not carry');
+  if (T.hordeWaveSize() < wave0) fail('companion', 'horde should not shrink');
+  if (T.companionHurt(100) !== 'home' || T.companionInfo() || !(T.G.dog.restUntil > T.G.day)) fail('dog', 'badly hurt dog should go home and rest');
+  const s = T.recruit({ name: 'Ada', trait: 'medic' }); s.hp = 100;
+  if (!T.setCompanion('survivor', s.id) || T.carryCap() !== cap0 + 8) fail('helper', 'carry +8');
+  if (T.companionHurt(150) !== 'downed') fail('helper', 'downed at 0 HP');
+  T.clearCompanion(); s.hp = 100;
+  if (typeof T.survivorMood(s) !== 'string' || typeof T.chatSurvivor(s) !== 'string') fail('talk', 'lines');
+  T.give('cigs', 2); const m0 = s.morale; s.morale = 50; if (!T.giftSurvivor(s) || s.morale <= 50) fail('talk', 'gift ' + m0);
+  for (let i = 0; i < 60 && !T.requestOf(s); i++) { s.askDay = -1; T.maybeRequest(s); }
+  const rq = T.requestOf(s); if (!rq) fail('talk', 'no request'); else { T.give(rq.item, rq.qty); if (!T.deliverRequest(s) || T.requestOf(s)) fail('talk', 'deliver'); }
+  if (!T.setJob(s, 'guard') || s.job !== 'guard' || T.setJob(s, 'garden')) fail('talk', 'jobs');
+  /* a door: barricade, blocked, broken by about 6 s of hits */
+  const W_ = T.W; let door = null; for (let i = 0; i < T.WORLD.tiles.length && !door; i++) if (T.WORLD.tiles[i] === T.T_DOOR) door = [i % W_, Math.floor(i / W_)];
+  T.G.pack.wood = 4;
+  if (!T.barDoor(door[0], door[1]) || !T.doorBlocked(door[0] + 0.5, door[1] + 0.5)) fail('door', 'barricade');
+  let broke = false; for (let i = 0; i < 4; i++) broke = T.hitDoorBar(door[0], door[1], 1.2); if (broke) fail('door', 'broke too fast');
+  for (let i = 0; i < 2; i++) broke = T.hitDoorBar(door[0], door[1], 1.2); if (!broke || T.doorBlocked(door[0] + 0.5, door[1] + 0.5)) fail('door', 'did not break');
+  T.barDoor(door[0], door[1]); if (!T.unbarDoor(door[0], door[1]) || T.doorBlocked(door[0] + 0.5, door[1] + 0.5)) fail('door', 'unbar');
+  /* a wreck: once per car, a hose always works */
+  let car = null; for (let i = 0; i < T.WORLD.tiles.length && !car; i++) if (T.WORLD.tiles[i] === T.T_CAR) car = [i % W_, Math.floor(i / W_)];
+  T.G.pack.hose = 1; const f0 = T.G.pack.fuel || 0;
+  if (!T.siphonCar(car[0], car[1]).ok || (T.G.pack.fuel || 0) <= f0 || T.siphonCar(car[0], car[1]).ok) fail('siphon', 'hose siphon / once per car');
+  /* water and cooking */
+  T.G.pack.bottle = 1; delete T.G.pack.dirtywater; if (!T.fillBottle() || T.G.pack.bottle || T.G.pack.dirtywater !== 1) fail('water', 'fill');
+  if (!T.cookOption() || !T.cookAt() || T.G.pack.dirtywater || !T.G.pack.water) fail('cook', 'boil');
+  T.G.pack.rawmeat = 1; if (!/Meal/.test(T.cookAt())) fail('cook', 'meat');
+  const rb = T.radioBroadcast(); if (!rb.lines.length || rb.lines.some(l => typeof l !== 'string')) fail('radio', 'broadcast');
+} catch (err) { fail('companions', err); }
+
 if (errors.length) { console.log('FAIL (' + errors.length + ')\n' + errors.slice(0, 60).join('\n')); process.exit(1); }
-console.log(`OK: ${encs.length} encounters, ${T.WORLD.containers.length} containers, 25 seeds reachable, 14 days simulated.`);
+console.log(`OK: ${encs.length} encounters, ${T.WORLD.containers.length} containers, ${T.W}x${T.H} map, 25 seeds reachable (gates closed + open), 14 days simulated, saved worlds + companions ok.`);

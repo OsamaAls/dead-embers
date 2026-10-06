@@ -11,6 +11,7 @@ const Combat = (function () {
   const C = {
     player: null, enemies: [], drops: [], groups: [], survivors: [], aware: [], wave: null,
     grabbed: false, grabNeed: 0, grabMash: 0, dodging: false, barricadeHp: 0, barricadeMax: 0, threat: 0, uid: 1, target: null, lockManual: false,
+    companion: null, doorHits: 0,
   };
   const AUTO_CATS = { food: 1, water: 1, ammo: 1, mat: 1, med: 1, misc: 1 };
   const TELE = { walker: 0.45, runner: 0.3, bloater: 0.55, screamer: 0.4, brute: 0.62, zdog: 0.28 };
@@ -20,12 +21,13 @@ const Combat = (function () {
   const toast = (t, c) => { if (t && typeof UI !== 'undefined' && has(UI, 'toast')) UI.toast(t, c); };
   const sfx = n => { if (typeof SFX !== 'undefined' && has(SFX, 'play')) try { SFX.play(n); } catch (e) { } };
   const num = (x, y, t, c) => { if (typeof UI !== 'undefined' && has(UI, 'dmgNum')) try { UI.dmgNum(x, y, t, c); } catch (e) { } };
-  const shake = a => { if (typeof R !== 'undefined' && has(R, 'shake')) R.shake(a); };
+  const shake = a => { if (typeof UI !== 'undefined' && UI.reducedMotion) return; if (typeof R !== 'undefined' && has(R, 'shake')) R.shake(a); };
   const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
   const turn = (a, b, max) => { const d = angDiff(a, b); return a + Math.max(-max, Math.min(max, d)); };
   const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
   const rand = (a, b) => a + Math.random() * (b - a);
-  const hitR = (x, y, r) => solidAt(x - r, y - r) || solidAt(x + r, y - r) || solidAt(x - r, y + r) || solidAt(x + r, y + r);
+  const hitR = (x, y, r) => solidAt(x - r, y - r) || solidAt(x + r, y - r) || solidAt(x - r, y + r) || solidAt(x + r, y + r) ||
+    (barredAny() && (doorBlocked(x - r, y - r) || doorBlocked(x + r, y - r) || doorBlocked(x - r, y + r) || doorBlocked(x + r, y + r))); /* barricaded doors: closed both ways */
   function move(x, y, dx, dy, r, block) {
     const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 0.2)); dx /= steps; dy /= steps;
     for (let i = 0; i < steps; i++) {
@@ -225,7 +227,7 @@ const Combat = (function () {
       const sprint = INPUT.sprint && !INPUT.crouch && len > 0.1 && !PS.winded;
       mode = INPUT.crouch ? 'crouch' : (sprint ? 'sprint' : 'walk');
       if (len > 0.1) {
-        let sp = moveSpeed(mode) * len;
+        let sp = moveSpeed(mode) * len * moveMul(p.x, p.y);
         if (PS.swing) sp *= 0.45;
         const [nx, ny] = move(p.x, p.y, mx / len * sp * dt, my / len * sp * dt, 0.3);
         speed = dist(nx, ny, p.x, p.y) / Math.max(dt, 1e-4); p.x = nx; p.y = ny;
@@ -242,7 +244,7 @@ const Combat = (function () {
       const k = Math.exp(-7 * dt); PS.kx *= k; PS.ky *= k;
     }
     /* stamina regen */
-    if (PS.staDelay <= 0 && mode !== 'sprint' && !PS.swing) rest((speed > 0.2 ? 7 : 12) * dt);
+    if (PS.staDelay <= 0 && mode !== 'sprint' && !PS.swing) rest((speed > 0.2 ? 7 : 12) * dt * (1 - 0.45 * Math.min(1, coldK(p.x, p.y))));
     /* facing */
     if (!usingMouse()) updateLock(prof, dt); else { INPUT.cyclePressed = false; C.target = mouseTarget(prof); }
     if (INPUT.throwPressed) { INPUT.throwPressed = false; if (!PS.dodge && !C.grabbed) throwBottle(prof); }
@@ -433,9 +435,10 @@ const Combat = (function () {
   function canSee(e) {
     const p = G.p; if (p.hp <= 0) return false;
     const d = dist(e.x, e.y, p.x, p.y);
-    let range = (e.E.sense || 6) * (INPUT.crouch ? 0.5 : 1) * (G.isNight ? 0.78 : 1);
+    let range = (e.E.sense || 6) * (INPUT.crouch ? 0.5 : 1) * (G.isNight ? 0.78 : 1) * sightMul(e.x, e.y);
     if (e.state === 'chase' || e.state === 'search') range *= 1.9;
     if (d > range) return false;
+    if (INPUT.crouch && d > 2 && inBush(p.x, p.y)) return false; // crouched in a dense bush: hidden beyond 2 tiles
     const close = d < (INPUT.crouch ? 1.4 : 2.6);
     if (!close && e.state !== 'chase' && Math.abs(angDiff(e.face, Math.atan2(p.x - e.x, p.y - e.y))) > 1.15) return false;
     return los(e.x, e.y, p.x, p.y);
@@ -451,6 +454,7 @@ const Combat = (function () {
     if (L < 0.05 || spd <= 0) return 0;
     dx /= L; dy /= L;
     if (e.detour > 0) { e.detour -= dt; const px = -dy * e.side, py = dx * e.side; dx = dx * 0.3 + px; dy = dy * 0.3 + py; const l2 = Math.hypot(dx, dy); dx /= l2; dy /= l2; }
+    spd *= moveMul(e.x, e.y) * (e.E && e.E.z ? zSpeedMul(e.x, e.y) : 1);
     const step = Math.min(L, spd * dt);
     let [nx, ny] = move(e.x, e.y, dx * step, dy * step, e.r, block);
     let moved = dist(nx, ny, e.x, e.y);
@@ -486,13 +490,18 @@ const Combat = (function () {
     e.hp -= n; e.a.flash(); num(e.x, e.y, String(n), n >= 15 ? 'crit' : 'hit');
     if (o.kx || o.ky) { const m = e.id === 'brute' ? 0.3 : e.id === 'warden' ? 0.5 : 1; e.kx += (o.kx || 0) * m; e.ky += (o.ky || 0) * m; }
     if (e.hp <= 0) { kill(e); return; }
-    if (PS.grabBy !== e && (e.id !== 'brute' || n >= 12)) { e.stun = Math.max(e.stun, e.id === 'brute' ? 0.15 : 0.28); if (e.atk && e.atk.phase === 'tele') { e.atk = null; e.cd = 0.5; } e.a.anim('hit'); }
+    if (PS.grabBy !== e && (e.id !== 'brute' || n >= 12)) { e.stun = Math.max(e.stun, e.id === 'brute' ? 0.15 : 0.28); if (e.atk && e.atk.phase === 'tele') { e.atk = null; e.cd = 0.5; } e.a.anim('hit', { hard: n >= 15 }); }
     if (!o.guard) {
       if (e.state === 'scream') { /* keeps shrieking */ } else if (e.state !== 'siege' || dist(e.x, e.y, G.p.x, G.p.y) < 4) becomeAware(e, true);
     }
   }
+  let streakT = 0, streakN = 0;
   function kill(e) {
     if (e.dead) return;
+    /* quick double kills get a call-out */
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+    streakN = now - streakT < 1.6 ? streakN + 1 : 1; streakT = now;
+    if (streakN === 2) num(G.p.x, G.p.y, 'Double!', 'crit'); else if (streakN === 3) { num(G.p.x, G.p.y, 'Triple!', 'crit'); xp(4); }
     e.dead = true; e.state = 'dead'; e.atk = null; e.a.die(); e.deadAt = 0;
     if (PS.grabBy === e) release(false);
     if (e.E.z && Math.random() < 0.4) sfx('groan');
@@ -524,7 +533,7 @@ const Combat = (function () {
       if (e.sees) {
         const range = (E.sense || 6) * (INPUT.crouch ? 0.5 : 1);
         const sprinting = INPUT.sprint && Math.hypot(INPUT.mx, INPUT.my) > 0.1 && !INPUT.crouch;
-        e.aware += (0.55 + 2.4 * Math.max(0, 1 - d / Math.max(1, range))) * (sprinting ? 1.5 : 1) * (INPUT.crouch ? 0.6 : 1) * dt;
+        e.aware += (0.55 + 2.4 * Math.max(0, 1 - d / Math.max(1, range))) * (sprinting ? 1.5 : 1) * (INPUT.crouch ? 0.6 : 1) * (inBush(p.x, p.y) ? 0.5 : 1) * dt;
         e.ix = p.x; e.iy = p.y;
         if (e.aware > 0.3 && (e.state === 'wander' || e.state === 'idle')) { e.state = 'sus'; e.susT = 0; hintOnce('crouch', 'C to crouch. They hear sprinting.'); }
       } else e.aware = Math.max(0, e.aware - (e.state === 'sus' ? 0.07 : 0.15) * dt);
@@ -558,7 +567,11 @@ const Combat = (function () {
       if (e.wT <= 0) {
         e.wT = rand(3, 7);
         if (Math.random() < 0.55) for (let i = 0; i < 6; i++) { const a = Math.random() * 6.28, r = rand(1.5, 5), x = e.x + Math.sin(a) * r, y = e.y + Math.cos(a) * r; if (!hitR(x, y, e.r) && !inShelter(x, y) && los(e.x, e.y, x, y)) { e.wx = x; e.wy = y; break; } }
-        else { e.wx = e.x; e.wy = e.y; }
+        else {
+          e.wx = e.x; e.wy = e.y;
+          /* standing still: feed on a body if there's one at its feet, otherwise sway or shuffle */
+          if (e.a.mood && E.z) e.a.mood(C.enemies.some(o => o.dead && !o.gone && dist(o.x, o.y, e.x, e.y) < 1.6) ? 'feed' : pick(['sway', 'shuffle', null]));
+        }
       }
       if (dist(e.x, e.y, e.wx, e.wy) > 0.3) spd = walkTo(e, e.wx, e.wy, (E.spd || 1) * (E.shape === 'dog' ? 0.35 : 0.45), dt);
     }
@@ -587,6 +600,7 @@ const Combat = (function () {
       return 0;
     }
     if (d < e.r + 0.35) { e.faceT = toP; return 0; }
+    if (barredAny() && d < 14) { const b = barNear(e); if (b) return bashDoor(e, b); }
     const spd = (E.spd || 1) * (e.id === 'runner' ? 1 : 1);
     return chaseStep(e, spd, dt, waveBlock(e));
   }
@@ -684,6 +698,8 @@ const Combat = (function () {
       if (x < 1 || y < 1 || x > W - 1 || y > H - 1 || hitR(x, y, 0.32)) continue;
       if (!o.shelterOK && inShelter(x, y)) continue;
       if (o.outdoors && indoors(x, y)) continue;
+      /* nothing spawns inside a district the story hasn't opened yet (it could never reach you) */
+      if (typeof districtOpen === 'function' && !districtOpen(biomeAt(x, y))) continue;
       const f = flowAt(x, y);
       if (o.reach && (f < 0 || f > 30)) continue;
       let s = Math.random();
@@ -698,6 +714,8 @@ const Combat = (function () {
   /* ---------- fights ---------- */
   function finishGroup(gr, key) {
     if (gr.done) return; gr.done = true;
+    /* a fight won without a scratch earns a little extra */
+    if (key === 'onWin' && gr.list.length >= 2 && G.p.hp >= (gr.hp0 == null ? G.p.hp : gr.hp0)) { xp(5 + gr.list.length * 2); num(G.p.x, G.p.y, 'Clean sweep', 'crit'); }
     let s = ''; try { const f = gr.opts[key]; s = f ? f() : ''; } catch (err) { console.warn('fight callback', err); }
     if (s) toast(s);
   }
@@ -731,7 +749,8 @@ const Combat = (function () {
   function pickType(exclude) {
     const W_ = { walker: 6, runner: 2, zdog: 1.2, screamer: 0.9, bloater: 1, brute: G.isNight ? 0.7 : 0.35 };
     const list = ambientTypes().filter(t => !exclude || !exclude.includes(t));
-    return list.length ? wpick(list, t => W_[t] || 1) : 'walker';
+    const mix = zMix(G.p.x, G.p.y);
+    return list.length ? wpick(list, t => (W_[t] || 1) * (mix[t] || 1)) : 'walker';
   }
   function manageAmbient(dt) {
     ambT -= dt; ambCd -= dt;
@@ -926,7 +945,8 @@ const Combat = (function () {
     survT -= dt; if (survT > 0) return; survT = 0.5;
     const p = G.p, r = WORLD.shelterRect, cx = (r.x0 + r.x1 + 1) / 2, cy = (r.y0 + r.y1 + 1) / 2;
     const near = dist(p.x, p.y, cx, cy) < 25;
-    const list = near ? (G.survivors || []).filter(s => s.job !== 'scavenge' || G.isNight) : [];
+    const comp = G.companion && G.companion.kind === 'survivor' ? G.companion.id : null; /* the one out with you is drawn as the companion */
+    const list = near ? (G.survivors || []).filter(s => (s.job !== 'scavenge' || G.isNight) && s.id !== comp) : [];
     const key = list.map(s => s.id + ':' + s.job).join(',') + '|' + Object.keys(G.buildings || {}).map(k => k + bl(k)).join(',');
     if (key === survKey) return;
     survKey = key;
@@ -940,8 +960,13 @@ const Combat = (function () {
     }
     C.survivors = keep;
   }
+  let wasHome = false;
   function updateSurvivors(dt) {
     syncSurvivors(dt);
+    /* coming home: whoever's in the yard looks up and waves */
+    const home = inShelter(G.p.x, G.p.y);
+    if (home && !wasHome) for (const s of C.survivors) if (dist(s.x, s.y, G.p.x, G.p.y) < 9 && s.a.anim) s.a.anim('wave');
+    wasHome = home;
     const h = WORLD.hatch;
     C.survivors.forEach((s, i) => {
       const tg = survTarget(s, i);
@@ -963,7 +988,10 @@ const Combat = (function () {
       } else if (tg && tg.work) {
         s.a.anim('work'); s.face = turn(s.face, Math.PI, dt * 6);
       } else {
-        s.a.anim('idle');
+        /* idle neighbours talk to each other */
+        const mate = !tg && C.survivors.find(o => o !== s && dist(o.x, o.y, s.x, s.y) < 1.6);
+        s.a.anim(mate ? 'chat' : 'idle');
+        if (mate) s.face = turn(s.face, Math.atan2(mate.x - s.x, mate.y - s.y), dt * 4);
         if (tg) s.face = turn(s.face, s.job === 'guard' ? Math.atan2(s.x - (WORLD.shelterRect.x0 + WORLD.shelterRect.x1 + 1) / 2, s.y - (WORLD.shelterRect.y0 + WORLD.shelterRect.y1 + 1) / 2) : 0, dt * 4);
       }
       const carry = s.job === 'guard' || s.job === 'tower' ? 'pistol' : (tg && tg.work && d <= 0.25 ? (s.job === 'garden' ? 'shovel' : 'hammer') : null);
@@ -973,6 +1001,208 @@ const Combat = (function () {
       s.a.root.position.set(s.x * TILE, hgt, s.y * TILE); s.a.root.rotation.y = s.face;
       s.a.update(dt, spd);
     });
+  }
+
+  /* ---------- barricaded doors: zombies that reach one claw at it (engine hitDoorBar) until it breaks ---------- */
+  const doorBars = {};
+  function barNear(e) {
+    const fx = Math.floor(e.x), fy = Math.floor(e.y);
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+      const tx = fx + ox, ty = fy + oy;
+      if (doorBarred(tx, ty) && dist(e.x, e.y, tx + 0.5, ty + 0.5) < 0.95 + e.r) return { tx, ty };
+    }
+    return null;
+  }
+  function bashDoor(e, b) {
+    e.faceT = Math.atan2(b.tx + 0.5 - e.x, b.ty + 0.5 - e.y);
+    if (e.cd <= 0) {
+      e.cd = 1.2; e.a.anim('attack', { wind: 0.3 }); sfx('hit'); C.doorHits++;
+      const k = b.ty * W + b.tx; doorBars[k] = b;
+      if (hitDoorBar(b.tx, b.ty, 1.2)) {
+        toast('The barricade gives way!', 'bad'); shake(0.2);
+        if (typeof World3D !== 'undefined' && World3D.setDoorBar) try { World3D.setDoorBar(b.tx, b.ty, false); } catch (err) { }
+      }
+    }
+    return 0;
+  }
+  function updateDoorBars() {
+    for (const k in doorBars) {
+      const b = doorBars[k], hp = G.doorBars && G.doorBars[k];
+      if (!hp) { delete doorBars[k]; if (typeof UI !== 'undefined' && UI.worldBar) UI.worldBar('door' + k, null); continue; }
+      if (typeof UI !== 'undefined' && UI.worldBar) UI.worldBar('door' + k, b.tx + 0.5, b.ty + 0.5, hp / DOOR_BAR_HP, 'Barricade');
+    }
+  }
+
+  /* ---------- companion: a dog or a survivor helper who follows you (G.companion; rules in engine companion*) ----------
+     C.companion = {kind, id, name, a, x, y, mode:'follow'|'stay'|'downed', target, sniff (container), sniffs, warned, bites, hits, pulls, downT}.
+     Follows on the flow field, fights what is after you, pulls walkers off you, the dog sniffs out loot and growls at the aware.
+     H toggles stay/follow (INPUT.companionCmd). A downed helper is revived by holding E within 20 s (main.js → Combat.reviveCompanion). */
+  const DOG_TINT = 0x8a5a32;
+  let compKey = '', sniffT = 3, warnT = 0, lastFight = false, sniffLast = null, sniffHintT = 0;
+  const wbar = (k, x, y, f, l) => { if (typeof UI !== 'undefined' && UI.worldBar) try { UI.worldBar(k, x, y, f, l); } catch (err) { } };
+  const marker = (k, pt, col) => { if (typeof World3D !== 'undefined' && World3D.marker) try { World3D.marker(k, pt, col); } catch (err) { } };
+  function compSpot() {
+    const p = G.p, f = p.face || 0;
+    for (const [ox, oy] of [[-Math.sin(f) * 1.4, -Math.cos(f) * 1.4], [1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2], [1, 1], [-1, -1]]) { const x = p.x + ox, y = p.y + oy; if (!hitR(x, y, 0.3) && los(p.x, p.y, x, y)) return { x, y }; }
+    return { x: p.x, y: p.y };
+  }
+  function dropCompanion() {
+    const c = C.companion; if (!c) return;
+    c.a.dispose(); C.companion = null; wbar('comp', null); marker('sniff', null);
+  }
+  function syncCompanion() {
+    const info = companionInfo(), key = info ? info.kind + ':' + info.id : '';
+    if (key === compKey) return C.companion;
+    compKey = key; dropCompanion();
+    if (!info) return null;
+    const dog = info.kind === 'dog', sk = dog ? 0 : ((info.s.skills && info.s.skills.combat) || 1);
+    const a = dog ? Actors.make('dog', { friendly: true, tint: DOG_TINT }) : Actors.make('survivor', { tint: SURV_TINTS[info.id % SURV_TINTS.length] });
+    R.scene.add(a.root);
+    const sp = compSpot();
+    const c = C.companion = { kind: info.kind, id: info.id, name: info.name, a, x: sp.x, y: sp.y, face: G.p.face || 0, faceT: G.p.face || 0, r: 0.26, E: null,
+      side: 1, stuckT: 0, detour: 0, centerT: 0, mode: 'follow', stay: null, cd: 0.5, target: null, downT: 0, gun: !dog && sk >= 4, sk, spd: 0, lostT: 0,
+      sniff: null, sniffs: 0, warned: 0, bites: 0, hits: 0, pulls: 0, carry: null };
+    if (!dog) { c.carry = c.gun ? 'pistol' : 'pipe'; a.setCarry(c.carry); }
+    a.root.position.set(c.x * TILE, 0, c.y * TILE); a.update(0.016, 0);
+    return c;
+  }
+  /* what the companion should go for: whatever is grabbing you, else the nearest thing hunting you */
+  function compTarget(c) {
+    const p = G.p;
+    if (C.grabbed && PS.grabBy && !PS.grabBy.dead) return PS.grabBy;
+    let best = null, bd = c.mode === 'stay' ? 4 : 7;
+    for (const e of C.enemies) {
+      if (e.dead || e.gone) continue;
+      if (!(e.state === 'chase' || e.state === 'siege' || e.state === 'scream' || e.aware > 0.6)) continue;
+      if (e.wave && C.barricadeHp > 0 && !e.inside) continue; /* the barricade does that work */
+      const d = dist(c.x, c.y, e.x, e.y); if (d > bd || dist(p.x, p.y, e.x, e.y) > 10) continue;
+      bd = d; best = e;
+    }
+    return best;
+  }
+  function compAttack(c, e, d) {
+    const dog = c.kind === 'dog';
+    c.faceT = Math.atan2(e.x - c.x, e.y - c.y);
+    if (c.cd > 0) return;
+    const grabber = PS.grabBy === e;
+    if (c.gun && !grabber && d > 1.3) {
+      c.cd = 1.3 * rand(0.9, 1.2); c.a.anim('shoot');
+      const mx = c.x + Math.sin(c.faceT) * 0.4, my = c.y + Math.cos(c.faceT) * 0.4;
+      muzzle(mx, my, 1.35, false); sfx('shoot'); C.noise(c.x, c.y, 8);
+      if (Math.random() < 0.5 + c.sk * 0.06) { hurtEnemy(e, rnd(8, 13) + c.sk, { kx: Math.sin(c.faceT), ky: Math.cos(c.faceT) }); tracer(mx, my, 1.35, e.x, e.y, 1.1, false); c.hits++; }
+      else tracer(mx, my, 1.35, e.x + rand(-1, 1), e.y + rand(-1, 1), 0.4, false);
+      return;
+    }
+    c.cd = dog ? 1.1 : 1.0; c.a.anim('attack', { wind: 0.15 });
+    const n = dog ? rnd(3, 6) : rnd(3, 6) + c.sk * 2, kx = Math.sin(c.faceT) * 2, ky = Math.cos(c.faceT) * 2;
+    if (grabber) {
+      release(true); c.pulls++;
+      toast(`${c.name} ${dog ? 'drags it off you!' : 'pulls it off you!'}`, 'good');
+    }
+    hurtEnemy(e, n, { kx, ky });
+    if (!e.dead) { e.stun = Math.max(e.stun, dog ? 0.8 : 0.35); if (e.atk && e.atk.phase === 'tele') { e.atk = null; e.cd = 0.6; } }
+    if (dog) { c.bites++; sfx('bark'); } else { c.hits++; sfx('hit'); }
+  }
+  function compDowned(c, dt) {
+    c.downT -= dt; c.a.anim('crouch'); c.a.update(dt, 0);
+    wbar('comp', c.x, c.y, Math.max(0, c.downT / 20), `${INPUT.touch ? 'Hold USE' : 'Hold E'} · ${c.name}`);
+    if (c.downT <= 0) { const n = companionHome('downed'); toast(`${n} limps home. They'll be back on their feet tomorrow.`, 'warn'); dropCompanion(); compKey = ''; }
+  }
+  function compSense(c, dt) {
+    const p = G.p, dog = c.kind === 'dog';
+    /* warns: enemies that turn aware within 10 tiles get marked once (HP bar flash, "!") */
+    warnT -= dt;
+    for (const e of C.enemies) {
+      if (e.dead || e.warned || e.wave) continue;
+      if (!(e.state === 'chase' || e.state === 'scream' || e.aware > 0.6)) continue;
+      if (dist(e.x, e.y, p.x, p.y) > 10 && dist(e.x, e.y, c.x, c.y) > 10) continue;
+      e.warned = true; c.warned++;
+      num(e.x, e.y, '!', 'crit'); if (typeof UI !== 'undefined' && UI.enemyHit) try { UI.enemyHit(e); } catch (err) { }
+      if (warnT <= 0) {
+        warnT = 9; sfx(dog ? 'growl' : 'ui');
+        if (typeof UI !== 'undefined' && UI.hint) UI.hint(dog ? `${c.name} growls. They've seen you.` : `${c.name}: they've seen us.`);
+      }
+    }
+    /* the dog sniffs out the nearest unsearched container within 12 tiles, every ~8 s */
+    if (!dog) return;
+    if (c.sniff && (containerState(c.sniff) === 'empty' || dist(p.x, p.y, c.sniff.x + 0.5, c.sniff.y + 0.5) > 16)) { c.sniff = null; marker('sniff', null); }
+    sniffT -= dt; sniffHintT -= dt;
+    if (sniffT > 0 || C.inFight() || c.mode === 'stay') return;
+    sniffT = 8;
+    let best = null, bd = 12;
+    for (const k of WORLD.containers) {
+      if (containerState(k) === 'empty' || inShelter(k.x + 0.5, k.y + 0.5)) continue;
+      const d = dist(c.x, c.y, k.x + 0.5, k.y + 0.5); if (d < bd) { bd = d; best = k; }
+    }
+    if (!best) return;
+    c.sniff = best; c.sniffs++;
+    marker('sniff', { x: best.x + 0.5, y: best.y + 0.5 }, 0xffb067);
+    if (best !== sniffLast || sniffHintT <= 0) { sniffLast = best; sniffHintT = 30; if (typeof UI !== 'undefined' && UI.hint) UI.hint(`${c.name} found something.`); sfx('bark'); }
+  }
+  function updateCompanion(dt) {
+    const c = syncCompanion(); if (!c) { INPUT.companionCmd = false; return; }
+    const p = G.p, dog = c.kind === 'dog';
+    if (INPUT.companionCmd) {
+      INPUT.companionCmd = false;
+      if (c.mode !== 'downed') {
+        c.mode = c.mode === 'stay' ? 'follow' : 'stay'; c.stay = { x: c.x, y: c.y };
+        toast(`${c.name}: ${c.mode === 'stay' ? (dog ? 'sits and waits.' : 'holding here.') : (dog ? 'bounds back to you.' : 'right behind you.')}`, 'dim');
+        sfx(dog ? 'bark' : 'ui');
+      }
+    }
+    if (c.mode === 'downed') { compDowned(c, dt); return; }
+    c.cd -= dt;
+    let d = dist(c.x, c.y, p.x, p.y);
+    /* warp: far behind, stuck out of sight, or left outside when you went home */
+    if (c.mode === 'follow' && (d > 25 || (c.lostT > 4 && !onScreen(c.x, c.y)) || (G.atShelter && d > 8 && !onScreen(c.x, c.y)))) {
+      const s = compSpot(); c.x = s.x; c.y = s.y; c.lostT = 0; c.centerT = 0; c.detour = 0; d = dist(c.x, c.y, p.x, p.y);
+    }
+    compSense(c, dt);
+    /* enemies next to the companion (and closer to it than to you) bite it */
+    for (const e of C.enemies) {
+      if (e.dead || e.stun > 0 || !(e.state === 'chase' || e.state === 'siege')) continue;
+      const de = dist(e.x, e.y, c.x, c.y);
+      if (de > (e.E.reach || 0.9) + 0.35 || de > dist(e.x, e.y, p.x, p.y)) { e.cHit = Math.max(e.cHit || 0, 0.6); continue; }
+      e.cHit = (e.cHit == null ? 0.6 : e.cHit) - dt; if (e.cHit > 0) continue;
+      e.cHit = 1.4; e.a.anim('attack', { wind: 0.2 }); e.faceT = Math.atan2(c.x - e.x, c.y - e.y);
+      const n = Math.max(1, Math.round(rnd(e.E.dmg[0], e.E.dmg[1]) * 0.6));
+      num(c.x, c.y, String(n), 'hurt'); c.a.flash && c.a.flash();
+      const r = companionHurt(n);
+      if (r === 'home') { toast(`${c.name} yelps and bolts for home.`, 'warn'); sfx('whimper'); dropCompanion(); compKey = ''; return; }
+      if (r === 'downed') { c.mode = 'downed'; c.downT = 20; c.target = null; toast(`${c.name} is down! Hold E to help them up.`, 'bad'); hintOnce('revive', 'A downed helper can be revived: stand close and hold E.'); return; }
+    }
+    /* medic helpers patch you up after a fight */
+    const fighting = C.inFight();
+    if (lastFight && !fighting && !dog && c.id != null) { const s = companionSurvivor(); if (s && s.trait === 'medic' && p.hp < p.maxHp && p.hp > 0) { heal(8); num(p.x, p.y, '+8', 'heal'); toast(`${c.name} patches you up.`, 'good'); } }
+    lastFight = fighting;
+    /* fight or follow */
+    let spd = 0, tx = null, ty = null, fast = false;
+    const e = compTarget(c); c.target = e;
+    if (e) {
+      const de = dist(c.x, c.y, e.x, e.y), reach = (dog ? 0.75 : 0.95) + e.r;
+      if (c.gun && de < 7 && PS.grabBy !== e && los(c.x, c.y, e.x, e.y)) compAttack(c, e, de);
+      else if (de <= reach + 0.15) compAttack(c, e, de);
+      else { tx = e.x; ty = e.y; fast = true; }
+    } else if (c.mode === 'stay') { if (dist(c.x, c.y, c.stay.x, c.stay.y) > 0.4) { tx = c.stay.x; ty = c.stay.y; } else c.faceT = Math.atan2(p.x - c.x, p.y - c.y); }
+    else if (d > 2.1) {
+      const f = p.face || 0; let gx = p.x - Math.sin(f) * 1.3 + Math.cos(f) * 0.7 * c.side, gy = p.y - Math.cos(f) * 1.3 - Math.sin(f) * 0.7 * c.side;
+      if (hitR(gx, gy, 0.3)) { gx = p.x; gy = p.y; }
+      if (los(c.x, c.y, gx, gy)) { tx = gx; ty = gy; } else { const s = flowStep(c.x, c.y); if (s) { tx = s.x; ty = s.y; } else { tx = gx; ty = gy; } }
+      fast = d > 5;
+    } else c.faceT = Math.atan2(p.x - c.x, p.y - c.y);
+    if (tx != null) {
+      const base = dog ? (fast ? 6.0 : 3.8) : (fast ? 5.2 : 3.3);
+      spd = walkTo(c, tx, ty, base, dt);
+      c.lostT = spd < 0.2 ? c.lostT + dt : Math.max(0, c.lostT - dt * 2);
+    } else c.lostT = 0;
+    /* never stand in your way */
+    const dp = dist(c.x, c.y, p.x, p.y);
+    if (dp < 0.75 && dp > 1e-4) { [c.x, c.y] = move(c.x, c.y, (c.x - p.x) / dp * (0.75 - dp), (c.y - p.y) / dp * (0.75 - dp), c.r); }
+    c.face = turn(c.face, c.faceT, (dog ? 10 : 7) * dt); c.spd = spd;
+    if (c.cd <= 0.5 || spd > 0.1) c.a.anim(spd > 4.2 ? 'run' : spd > 0.15 ? 'walk' : 'idle');
+    c.a.aiming = !!(c.gun && e);
+    c.a.root.position.set(c.x * TILE, 0, c.y * TILE); c.a.root.rotation.y = c.face;
+    c.a.update(dt, spd);
   }
 
   /* ---------- drops ---------- */
@@ -1013,6 +1243,7 @@ const Combat = (function () {
       for (const e of this.enemies) e.a.dispose();
       for (const d of this.drops) d.mesh.parent && d.mesh.parent.remove(d.mesh);
       for (const s of this.survivors) s.a.dispose();
+      dropCompanion(); compKey = ''; for (const k in doorBars) { wbar('door' + k, null); delete doorBars[k]; }
       for (const f of fx) f.obj.parent && f.obj.parent.remove(f.obj); fx.length = 0;
       for (const g of gas) { g.m.parent && g.m.parent.remove(g.m); g.mat.dispose(); } gas.length = 0;
       this.enemies = []; this.drops = []; this.groups = []; this.survivors = []; this.aware = []; this.wave = null; survKey = '';
@@ -1062,6 +1293,8 @@ const Combat = (function () {
       updateWave(dt);
       manageAmbient(dt);
       updateSurvivors(dt);
+      updateCompanion(dt);
+      updateDoorBars();
       updateDrops(dt);
       updateFx(dt);
       this.aware = L.filter(e => !e.dead && (e.state === 'chase' || e.state === 'siege'));
@@ -1071,6 +1304,9 @@ const Combat = (function () {
     },
     spawnAt(id, x, y, o) { return spawnAt(id, x, y, o); },
     hurtEnemy, kill, despawn,
+    /* companion: revive a downed helper (main.js hold E), H = stay / follow */
+    reviveCompanion() { const c = this.companion; if (!c || c.mode !== 'downed' || !companionRevive()) return false; c.mode = 'follow'; c.downT = 0; wbar('comp', null); toast(c.name + ' is back on their feet.', 'good'); return true; },
+    companionCommand() { INPUT.companionCmd = true; },
     spawnFight(ids, opts) {
       opts = opts || {};
       if (!G || !WORLD || !R.scene) return;
@@ -1086,7 +1322,7 @@ const Combat = (function () {
         gr.list.push(e);
       });
       if (!gr.list.length) { finishGroup(gr, 'onWin'); return; }
-      this.groups.push(gr);
+      gr.hp0 = G.p.hp; this.groups.push(gr);
       hintOnce('combat', 'Click or J to attack. Space to dodge.');
     },
     /* opts: {bonus: extra barricade HP, final: last-night rules (everyone fights, 7 inside to overrun), surges: n (pauses between them)} */
@@ -1105,7 +1341,7 @@ const Combat = (function () {
     noise(x, y, radius, soft) {
       for (const e of this.enemies) {
         if (e.dead || e.wave) continue;
-        const d = dist(e.x, e.y, x, y); if (d > radius) continue;
+        const d = dist(e.x, e.y, x, y); if (d > radius * hearMul(x, y)) continue;
         if (e.state === 'chase') { if (!e.sees) { e.lastX = x; e.lastY = y; e.lostT = 0; } continue; }
         if (e.state === 'scream') continue;
         const k = 1 - d / radius;

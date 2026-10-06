@@ -433,11 +433,35 @@ window.ENCOUNTERS = [
     text: 'A shepherd dog lies across a body in a doorway. It growls, weak but steady. It hasn\'t eaten in days.',
     choices: [
       { label: 'Feed it', req: () => has('rawmeat') || has('canned'), reqText: 'Needs meat or canned food',
-        success: () => { if (!take('rawmeat', 1)) take('canned', 1); setFlag('dog_adopted', true); addMorale(8); xp(10); return 'It eats, noses the body one last time, then falls in at your heel.'; } },
+        success: () => { if (!take('rawmeat', 1)) take('canned', 1); const had = !!G.dog; adoptDog('Shep'); addMorale(8); xp(10); return 'It eats, noses the body one last time, then falls in at your heel.' + (had ? ' It trots off toward the bunker to meet the others.' : ' You call it Shep.'); } },
       { label: 'Ease the pack off the body', check: { attr: 'agi', diff: 5 },
         success: () => { addMorale(-3); return 'You slide it free while the dog watches. ' + list(give('ammo', 3), give('bandage', 1)) + '. It never stops watching.'; },
         fail: () => { sore(5, 'a dog bite'); return 'It\'s faster than it looks. You leave with a torn hand and nothing else.'; } },
       { label: 'Leave it on guard', success: () => { addMorale(1); return 'Some posts are worth keeping. You leave it to its watch.'; } },
+    ],
+  },
+  /* Stray at the Pump: feed the same stray on three different days, then it is yours and you name it */
+  {
+    id: 'stray_pump', title: 'Stray at the Pump', where: ['gas', 'street', 'suburbs', 'park', 'travel'], weight: 9, minDay: 2,
+    cond: () => !G.dog && (G.flags.stray_fed || 0) < 3 && G.flags.stray_day !== G.day,
+    text: () => (G.flags.stray_fed || 0) === 0 ? 'A thin brown dog watches you from under a dead fuel pump. It does not run. It does not come closer either.'
+      : (G.flags.stray_fed || 0) === 1 ? 'The brown stray again. It stands up when it sees you, tail low, waiting.' : 'The stray trots out to meet you this time. It sits. It has decided something.',
+    choices: [
+      { label: 'Share some food', req: () => has('canned') || has('snack') || has('rawmeat'), reqText: 'Needs food',
+        success: () => { if (!take('rawmeat', 1) && !take('snack', 1)) take('canned', 1); const n = (G.flags.stray_fed || 0) + 1; setFlag('stray_fed', n); setFlag('stray_day', G.day); addMorale(2);
+          return n >= 3 ? 'It eats, then walks beside you for a block before it stops. Tomorrow, maybe, it will not stop.' : n === 2 ? 'It eats from your hand this time. Its ribs are less sharp.' : 'You leave the food and back off. It waits until you are gone to eat.'; } },
+      { label: 'Leave it be', success: () => 'Not today. It watches you go.' },
+    ],
+  },
+  {
+    id: 'stray_name', title: 'The Stray Follows', where: ['any', 'travel'], weight: 40, once: true,
+    cond: () => !G.dog && (G.flags.stray_fed || 0) >= 3 && G.day > (G.flags.stray_day || 0),
+    text: 'Paws on the road behind you. The brown stray has followed your scent across the city. It sits at your feet and waits for a name.',
+    choices: [
+      { label: 'Call her Ember', success: () => { adoptDog('Ember'); xp(10); return 'Ember sneezes, which you decide means yes.'; } },
+      { label: 'Call him Rust', success: () => { adoptDog('Rust'); xp(10); return 'Rust leans his whole weight against your leg.'; } },
+      { label: 'Call it Patch', success: () => { adoptDog('Patch'); xp(10); return 'Patch wags so hard it nearly falls over.'; } },
+      { label: 'Send it away', success: () => { setFlag('stray_fed', 0); addMorale(-3); return 'You stamp and shout. It goes. You feel worse than it does.'; } },
     ],
   },
   {

@@ -77,6 +77,15 @@ body.lowhp #edge{opacity:1;animation:edgep 1.25s ease-in-out infinite}
 .chip.bad{color:#ff6a55}.chip.sick{color:var(--sick)}.chip.warn{color:var(--warn)}.chip.good{color:var(--good)}.chip.ember{color:var(--ember2);pointer-events:auto;cursor:pointer;animation:chipglow 1.6s ease-in-out infinite}
 @keyframes chipglow{50%{box-shadow:0 0 10px var(--emberglow)}}
 .srow{display:flex;align-items:center;gap:8px;margin-top:2px}
+/* companion chip: name, what it is doing, HP */
+.cmp{display:grid;grid-template-columns:1fr auto;gap:4px 8px;align-items:center;padding:5px 7px 6px;background:rgba(0,0,0,.5);border:1px solid var(--line);font:600 11px/1 var(--mono);letter-spacing:.05em;color:var(--bone);text-transform:uppercase}
+.cmp .nm{display:flex;align-items:center;gap:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmp .nm svg{width:12px;height:12px;flex:none;fill:none;stroke:var(--ember2);stroke-width:2;stroke-linejoin:round}
+.cmp .md{color:var(--dim);font-size:10px;letter-spacing:.08em}
+.cmp .tr{grid-column:1/-1;height:5px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.1);position:relative;overflow:hidden}
+.cmp .fl{position:absolute;inset:0;transform-origin:left;background:linear-gradient(90deg,#5d7a36,var(--good));transition:transform .25s}
+.cmp.low .fl{background:linear-gradient(90deg,#9d2a1f,var(--blood))}
+.cmp.down{border-color:var(--blood)}.cmp.down .md{color:#ff6a55;animation:blink 1s steps(2) infinite}
 .clock{display:flex;align-items:center;gap:6px;font:600 12px/1 var(--mono);color:var(--bone);letter-spacing:.05em;text-shadow:0 1px 2px #000;white-space:nowrap}
 .clock .sun{flex:none;width:9px;height:9px;border-radius:50%;background:var(--ember2);box-shadow:0 0 6px var(--ember)}
 .clock.night .sun{background:transparent;box-shadow:inset -3px 0 0 0 #b9c6d6;transform:rotate(-20deg)}
@@ -85,6 +94,11 @@ body.lowhp #edge{opacity:1;animation:edgep 1.25s ease-in-out infinite}
 .clock .ppl{display:inline-flex;align-items:center;gap:3px;margin-left:6px;padding-left:8px;border-left:1px solid var(--line2);color:var(--good)}
 .clock .ppl svg{width:12px;height:12px;fill:currentColor}
 .clock .ppl b{font-weight:600}
+/* weather + season, next to the clock */
+.srow{flex-wrap:wrap;row-gap:4px}
+.wx{display:inline-flex;align-items:center;gap:4px;font:600 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--dim);text-shadow:0 1px 2px #000;white-space:nowrap}
+.wx svg{width:13px;height:13px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.wx.rain{color:var(--water)}.wx.fog{color:#c2bcb0}.wx.snow{color:#dfe8f2}.wx.cold{color:#9fd0ff}.wx.storm{color:#ff8a6a;animation:blink 1.4s steps(2) infinite}
 
 .hud-tc{position:absolute;top:calc(var(--sat) + var(--gut));left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px;max-width:min(560px,calc(100vw - 440px))}
 #obj{display:flex;align-items:center;gap:9px;padding:6px 12px 6px 8px;background:rgba(14,12,10,.74);border:1px solid var(--line);font:500 14px/1.25 var(--body);white-space:nowrap;max-width:100%;backdrop-filter:blur(3px)}
@@ -204,6 +218,7 @@ body.blocked #touch,body.blocked #hud .hbtns{visibility:hidden}
 #t-tgt svg{width:18px;height:18px;fill:none;stroke:var(--ember2);stroke-width:2;stroke-linecap:round}
 #t-throw{width:48px;height:48px;right:calc(var(--sar) + 171px);bottom:calc(var(--sab) + 103px);font-size:9px;border-color:rgba(255,176,103,.5)}
 #touch.throw #t-pack{display:none}
+#t-comp{width:50px;height:50px;left:calc(var(--sal) + 18px);bottom:calc(var(--sab) + 196px);font-size:9px;border-color:rgba(255,176,103,.45)}
 body.touch .hud-br{bottom:calc(var(--sab) + 190px)}
 body.touch #prompt{bottom:calc(var(--sab) + 176px)}
 body.touch #barri{bottom:calc(var(--sab) + 226px)}
@@ -348,6 +363,9 @@ select{background:#241e18;color:var(--bone);border:1px solid var(--line2);paddin
 .help span:last-child{font:600 12px var(--mono);color:var(--ember2);text-align:right}
 .menu{display:flex;flex-direction:column;gap:6px}
 .menu .btn{justify-content:flex-start;min-height:46px;font-size:13px}
+.menu .vol{display:grid;grid-template-columns:auto 1fr 34px;align-items:center;gap:12px;min-height:46px;padding:0 16px;border:1px solid var(--line2);background:#241e18;font:600 13px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+.menu .vol input{width:100%;accent-color:var(--ember);cursor:pointer}
+.menu .vol b{text-align:right;font-weight:600;color:var(--dim)}
 .sum{display:flex;flex-direction:column;gap:6px}
 .sum div{--tc:var(--mute);display:flex;align-items:baseline;gap:10px;padding:7px 10px;border:1px solid rgba(62,53,44,.7);background:rgba(0,0,0,.2);font-size:14.5px}
 .sum div::before{content:'';flex:none;width:6px;height:6px;background:var(--tc);transform:translateY(-1px)}
@@ -411,6 +429,36 @@ select{background:#241e18;color:var(--bone);border:1px solid var(--line2);paddin
 body.kbd .bgc.kf{box-shadow:inset 0 0 0 1px var(--ember),0 0 0 5px rgba(232,116,44,.22)}
 .newg .go{display:flex;gap:8px;justify-content:center}
 .newg .go .btn{min-width:150px;min-height:48px}
+.newg .names{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#title .acts .btn small{font:500 11px/1 var(--mono);letter-spacing:.04em;text-transform:none;opacity:.75}
+#title .acts .btn.cont{flex-direction:column;gap:4px}
+/* saved worlds */
+.worlds{width:min(680px,100%);display:flex;flex-direction:column;gap:14px;position:relative;max-height:100%}
+.worlds h2{margin:0;font:800 30px/1 var(--display);letter-spacing:.1em;text-transform:uppercase;text-align:center}
+.wl{display:flex;flex-direction:column;gap:6px;overflow:auto;padding:6px;margin:-6px}
+.wrow{display:flex;align-items:center;gap:12px;padding:10px 12px;background:rgba(24,20,16,.85);border:1px solid var(--line);transition:background .15s,border-color .15s}
+.wrow:hover,.wrow:has(.kf){background:rgba(46,32,20,.92);border-color:var(--ember)}
+.wrow:not(.mem) .wi b::before{content:'';width:7px;height:7px;flex:none;background:var(--ember);box-shadow:0 0 6px var(--emberglow)}
+.wrow .wi{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.wrow .wi b{font:800 20px/1 var(--display);letter-spacing:.07em;text-transform:uppercase;display:flex;align-items:center;gap:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wrow .wi span{font:500 13px/1.3 var(--body);color:var(--dim)}
+.wrow .wi em{font:600 10.5px var(--mono);font-style:normal;color:var(--ember2);letter-spacing:.06em;text-transform:uppercase}
+.wrow .wa{display:flex;align-items:center;gap:6px;flex:none}
+.wrow.mem{background:rgba(16,14,12,.8);opacity:.86}
+.wrow.mem:hover,.wrow.mem:has(.kf){background:rgba(28,24,20,.9);border-color:var(--line2);opacity:1}
+.wrow.mem .wi b{color:var(--dim)}.wrow.mem .wi em{color:#c9a27a}
+.wrow .cross{width:10px;height:14px;flex:none;position:relative;display:inline-block}
+.wrow .cross::before,.wrow .cross::after{content:'';position:absolute;background:var(--mute)}
+.wrow .cross::before{left:4px;top:0;width:2px;height:14px}.wrow .cross::after{left:0;top:4px;width:10px;height:2px}
+.wrow .mtag{font:600 10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--mute);border:1px solid var(--line);padding:4px 7px}
+.wrow.conf,.wrow.conf:has(.kf){border-color:var(--blood);background:rgba(50,18,12,.9)}
+.wrow .q{font:600 11px var(--mono);letter-spacing:.06em;color:#ff7a62;text-transform:uppercase}
+.btn.danger{background:#7a2318;border-color:var(--blood);color:#fff}
+.btn.danger:hover:not(:disabled){background:var(--blood)}
+.worlds .go{display:flex;gap:8px;justify-content:center}
+.worlds .go .btn{min-width:150px;min-height:48px}
+.ctag{font:600 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ember2);border:1px solid rgba(255,176,103,.45);padding:1px 5px;margin-left:6px;vertical-align:2px}
+.row .want{color:var(--story)}
 
 /* end card */
 #end{position:absolute;inset:0;touch-action:pan-y;display:flex;align-items:center;justify-content:center;padding:calc(var(--sat) + 20px) 18px calc(var(--sab) + 20px);background:rgba(8,7,6,.9);overflow:auto;animation:fadein 1.2s}
@@ -449,6 +497,7 @@ body.kbd .bgc.kf{box-shadow:inset 0 0 0 1px var(--ember),0 0 0 5px rgba(232,116,
   .clock{font-size:13px;gap:5px}
   .clock .ppl{margin-left:4px;padding-left:7px}
   .chip{font-size:13px;letter-spacing:.02em;padding:2px 5px}
+  .wx{font-size:13px}
   #wmark .dl{font-size:13px}
   .ohp b{font-size:13px}
   .dn{font-size:16px}
@@ -472,6 +521,11 @@ body.kbd .bgc.kf{box-shadow:inset 0 0 0 1px var(--ember),0 0 0 5px rgba(232,116,
   .help{grid-template-columns:1fr}
   .bgs{grid-template-columns:1fr 1fr}
   .bgc{min-height:0;padding:8px 10px}
+  .wrow{flex-wrap:wrap;gap:8px;padding:9px 10px}
+  .wrow .wa{width:100%;justify-content:flex-end}
+  .wrow .wi b{font-size:18px}
+  .wrow .wi em,.cmp,.cmp .md,.ctag,.wrow .mtag,.wrow .q{font-size:13px}
+  .newg .names{gap:8px}
 
   .attr{grid-template-columns:36px 1fr auto 38px;gap:8px}
   #hint{top:auto;bottom:calc(var(--sab) + 236px);font-size:14px}
@@ -523,8 +577,10 @@ body.touch .hb .lb,body.touch .hb .hk{display:none}
     <div class="bar b-water" id="b-water" hidden><svg class="ic" viewBox="0 0 24 24" aria-label="Water"><path d="M12 2.5S5 10.1 5 15a7 7 0 0 0 14 0c0-4.9-7-12.5-7-12.5z"/></svg><div class="tr"><div class="fl"></div></div><span class="v"></span></div>
     <div class="srow">
       <div class="clock" id="clock"><i class="sun"></i><span class="d"></span><span class="sep">·</span><span class="tm"></span><span class="ppl" hidden title="Survivors at the bunker"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7.5 9a7.5 7.5 0 0 1 15 0z"/></svg><b></b></span></div>
+      <span class="wx" id="wx" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d=""/></svg><b></b></span>
     </div>
     <div class="chips" id="chips"></div>
+    <div class="cmp" id="cmp" hidden><span class="nm"></span><span class="md"></span><div class="tr"><div class="fl"></div></div></div>
   </div>
   <div class="hud-tc">
     <div id="obj"><span class="ar"><svg viewBox="0 0 16 16"><path d="M8 1 14 14 8 10.5 2 14Z"/></svg></span><span class="tx"></span><span class="ds"></span></div>
@@ -556,6 +612,7 @@ body.touch .hb .lb,body.touch .hb .hk{display:none}
   <button class="tb" id="t-pack">Pack</button>
   <button class="tb" id="t-tgt" aria-label="Next target"><svg viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/></svg><span>Target</span></button>
   <button class="tb" id="t-throw" hidden>Throw</button>
+  <button class="tb" id="t-comp" hidden aria-label="Companion: stay or follow">Stay</button>
 </div>
 <div id="dlg" class="dlg" hidden></div>
 <div id="pnl-wrap" hidden><div id="pnl"></div></div>

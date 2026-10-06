@@ -24,7 +24,7 @@
      INPUT.cyclePressed   F: next lock-on target.   INPUT.clearLock: Shift+F, drop the lock.   INPUT.throwPressed: G, throw a bottle.
    Keyboard: every panel, dialogue, title and end screen can be driven with arrows/WASD + E/Enter (+ X drop, 1-6, T trade, Esc).
    Dialogue `lines` may be strings or {who, line} beats. A choice is {label, note, disabled, onPick}. */
-const INPUT = { mx: 0, my: 0, sprint: false, crouch: false, attack: false, interact: false, attackPressed: false, dodgePressed: false, interactPressed: false, aimX: null, aimY: null, touch: false, mouseAim: false, cyclePressed: false, clearLock: false, throwPressed: false };
+const INPUT = { mx: 0, my: 0, sprint: false, crouch: false, attack: false, interact: false, attackPressed: false, dodgePressed: false, interactPressed: false, aimX: null, aimY: null, touch: false, mouseAim: false, cyclePressed: false, clearLock: false, throwPressed: false, companionCmd: false };
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -74,9 +74,13 @@ const SFX = (() => {
     ui: () => tone('sine', 1250, 1250, 0.035, 0.18),
     good: () => { tone('triangle', 520, 520, 0.08, 0.3); tone('triangle', 780, 780, 0.14, 0.3, 0.08); },
     bad: () => { tone('square', 180, 120, 0.22, 0.18, 0, 700); },
+    bark: () => { tone('sawtooth', 420, 260, 0.09, 0.3, 0, 1400); tone('sawtooth', 380, 240, 0.1, 0.26, 0.13, 1300); },
+    growl: () => { const o = tone('sawtooth', 110, 90, 0.7, 0.28, 0, 380); vib(o, 22, 9, 0.7); },
+    whimper: () => { tone('sine', 900, 1300, 0.22, 0.2); tone('sine', 1200, 700, 0.3, 0.18, 0.24); },
   };
   return {
     get on() { return on; },
+    get ctx() { return ctx; }, // shared with Ambience once created
     unlock,
     play(name) {
       if (!ctx || !on || !defs[name]) return;
@@ -192,6 +196,7 @@ const UI = (() => {
     if (c === 'Space') INPUT.dodgePressed = true;
     if (c === 'KeyF') { if (e.shiftKey) INPUT.clearLock = true; else INPUT.cyclePressed = true; }
     if (c === 'KeyG') INPUT.throwPressed = true;
+    if (c === 'KeyH') INPUT.companionCmd = true;
     syncMove();
     const open = { KeyI: 'pack', Tab: 'journal', KeyB: 'char', KeyM: 'map', Escape: 'menu' }[c];
     if (open) { delete K[c]; U.open(open); }
@@ -202,7 +207,7 @@ const UI = (() => {
   /* ---------- dom refs + init ---------- */
   const D = {};
   function init() {
-    for (const id of ['hud', 'vig', 'flash', 'dmg', 'obj', 'timer', 'banner', 'mm', 'toasts', 'wpn', 'barri', 'prompt', 'hint', 'wmark', 'ohps', 'chips', 'clock', 'lvl', 'joy', 'dlg', 'pnl-wrap', 'pnl', 'mg', 'end', 'title', 'lock'])
+    for (const id of ['hud', 'vig', 'flash', 'dmg', 'obj', 'timer', 'banner', 'mm', 'toasts', 'wpn', 'barri', 'prompt', 'hint', 'wmark', 'ohps', 'chips', 'clock', 'lvl', 'joy', 'dlg', 'pnl-wrap', 'pnl', 'mg', 'end', 'title', 'lock', 'cmp'])
       D[id.replace('-', '')] = el(id);
     D.bars = { hp: el('b-hp'), sta: el('b-sta'), food: el('b-food'), water: el('b-water') };
     // damage-number pool
@@ -302,6 +307,7 @@ const UI = (() => {
     hold('t-pack', () => U.open('pack'));
     hold('t-tgt', () => { INPUT.cyclePressed = true; });
     hold('t-throw', () => { INPUT.throwPressed = true; });
+    hold('t-comp', () => { INPUT.companionCmd = true; });
   }
 
   /* ---------- HUD ---------- */
@@ -336,8 +342,10 @@ const UI = (() => {
     const ppl = D.clock.querySelector('.ppl');
     if (safe(() => isUnlocked('people'), false)) { ppl.hidden = false; setText(ppl.querySelector('b'), 'ppl', String(G.survivors.length)); } else ppl.hidden = true;
     chips(p);
+    companionChip();
     objective();
     weaponChip();
+    weatherChip();
     barricade();
     U.vignette();
     if (S.timer) {
@@ -429,6 +437,31 @@ const UI = (() => {
     const h = D.obj && !D.obj.hidden ? D.obj.offsetHeight : 0, v = (h || 30) + 'px';
     if (S.c.objh !== v) { S.c.objh = v; D.hud.style.setProperty('--objh', v); }
   }
+  /* weather and season next to the clock: an icon and a word (cold and the last-night storm called out) */
+  const WX_IC = {
+    clear: 'M12 4v2M12 18v2M4 12h2M18 12h2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z',
+    rain: 'M7 14a4 4 0 0 1 .5-8A5 5 0 0 1 17 7a3.5 3.5 0 0 1 0 7zM8 17l-1 3M12 17l-1 3M16 17l-1 3', fog: 'M4 9h16M6 13h12M4 17h16', snow: 'M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9',
+  };
+  const SEASON_N = { autumn: 'Autumn', late: 'Late autumn', winter: 'Winter' };
+  function weatherChip() {
+    const box = el('wx'); if (!box || !G) return;
+    const p = G.p, w = safe(() => weatherAt(p.x, p.y), G.weather || 'clear') || 'clear', cold = safe(() => coldK(p.x, p.y), 0) > 0, storm = !!G.storm && w === 'snow';
+    const word = storm ? 'Snowstorm' : w === 'clear' ? (SEASON_N[G.season] || 'Clear') : w === 'rain' ? 'Rain' : w === 'fog' ? 'Fog' : 'Snow';
+    const txt = word + (cold ? (storm ? ' · freezing' : ' · cold') : ''), cls = 'wx ' + (storm ? 'storm' : cold ? 'cold' : w);
+    const key = txt + cls; if (S.c.wx === key) return; S.c.wx = key;
+    box.hidden = false; box.className = cls; box.querySelector('b').textContent = txt; box.querySelector('path').setAttribute('d', WX_IC[w] || WX_IC.clear);
+    box.title = (SEASON_N[G.season] || '') + (w === 'rain' ? ': rain dulls their hearing' : w === 'fog' ? ': fog cuts how far they see' : w === 'snow' ? ': snow slows the dead; cold drains stamina' : '');
+  }
+  /* the radio's guess at tomorrow's weather (seeded per day, so it reads the same every time) */
+  function forecast() {
+    const f = G.flags || {};
+    if (f.q_bus && G.hordeDay && G.hordeDay - G.day <= 1) return 'Forecast: a blizzard coming down off the pass. Whiteout by nightfall.';
+    const t = (typeof WEATHER_W !== 'undefined' && WEATHER_W[safe(() => seasonNow(), 'autumn')]) || { clear: 1 }, keys = Object.keys(t);
+    let r = ((((G.seed || 1) % 9973) * 9301 + G.day * 49297) % 233280) / 233280 * keys.reduce((a, k) => a + t[k], 0), pw = keys[0];
+    for (const k of keys) { r -= t[k]; if (r <= 0) { pw = k; break; } }
+    return { clear: 'Forecast: dry and clear tomorrow. A good day for a long run.', rain: 'Forecast: rain tomorrow. It drowns out footsteps, yours and theirs.',
+      fog: 'Forecast: fog off the river tomorrow. They will not see you coming. You will not see them.', snow: 'Forecast: snow tomorrow. Dress warm; the cold bites.' }[pw] || '';
+  }
   function weaponChip() {
     const w = safe(() => weaponOf(), null), it = w && ITEMS[w];
     const name = it ? it.n : 'Fists';
@@ -501,12 +534,15 @@ const UI = (() => {
     const p = {}; const s = (t, c) => { if (typeof t === 'number') p[t] = c; };
     s(T_GRASS, '#2a2d21'); s(T_ROAD, '#4b4741'); s(T_WALL, '#8d816e'); s(T_DOOR, '#c86a2c'); s(T_TREE, '#1b2618'); s(T_WATER, '#223747');
     s(T_BRIDGE, '#635b50'); s(T_RUBBLE, '#3b342c'); s(T_CAR, '#6a3a26'); s(T_YARD, '#544631'); s(T_FIELD, '#38431f'); s(T_ROOF, '#6f6556'); s(T_FLOOR, '#3d352c'); s(T_PROP, '#5c4d3a');
+    s(T_SHALLOW, '#2c3a36'); s(T_BUSH, '#24331f'); s(T_GATE, '#7a3a22'); s(T_DECO, '#5a5650'); s(T_ROCK, '#4a4844'); s(T_PATH, '#5a4a36'); s(T_FENCE, '#6a5e4e'); s(T_PLANK, '#6a5238');
     return (MAPC.pal = p);
   }
   function mapCanvas() {
     if (!WORLD || !G || !G._fog) return null;
-    if (MAPC.world !== WORLD || !MAPC.can) {
-      MAPC.world = WORLD; MAPC.can = MAPC.can || document.createElement('canvas');
+    /* districts the story has not opened yet are drawn greyed out; everything redraws when one opens */
+    const openKey = WORLD.gates ? Object.keys(WORLD.gates).map(k => (WORLD.gates[k].open || G.flags['open_' + k]) ? 1 : 0).join('') : '';
+    if (MAPC.world !== WORLD || !MAPC.can || MAPC.openKey !== openKey) {
+      MAPC.world = WORLD; MAPC.openKey = openKey; MAPC.can = MAPC.can || document.createElement('canvas');
       MAPC.can.width = W * 4; MAPC.can.height = H * 4; MAPC.fog = new Uint8Array(W * H);
       const x = MAPC.can.getContext('2d'); x.clearRect(0, 0, W * 4, H * 4); MAPC.dirty = true;
     }
@@ -515,12 +551,39 @@ const UI = (() => {
       const f = G._fog, x = MAPC.can.getContext('2d'), pal = tileColors();
       for (let i = 0; i < W * H; i++) if (f[i] && !MAPC.fog[i]) {
         MAPC.fog[i] = 1; const tx = i % W, ty = (i / W) | 0;
-        x.fillStyle = pal[WORLD.tiles[i]] || '#333'; x.fillRect(tx * 4, ty * 4, 4, 4);
+        const col = pal[WORLD.tiles[i]] || '#333', sealed = !safe(() => districtOpen(biomeAt(tx + 0.5, ty + 0.5)), true);
+        x.fillStyle = sealed ? greyOut(col) : col; x.fillRect(tx * 4, ty * 4, 4, 4);
       }
     }
     return MAPC.can;
   }
+  const GREY = {};
+  function greyOut(hex) {
+    if (GREY[hex]) return GREY[hex];
+    const n = parseInt(hex.slice(1), 16), l = (((n >> 16) * 0.3 + ((n >> 8) & 255) * 0.59 + (n & 255) * 0.11) * 0.55 + 10) | 0;
+    return (GREY[hex] = `rgb(${l},${l},${l + 3})`);
+  }
+  /* sealed story gates: a red hatched block (SEALED on the full map) so they read as closed */
+  function drawGates(x, s, ox, oy, full) {
+    if (!WORLD.gates || !G._fog) return;
+    for (const id in WORLD.gates) {
+      const gt = WORLD.gates[id]; if (gt.open || G.flags['open_' + id]) continue;
+      if (!gt.tiles.some(([tx, ty]) => G._fog[ty * W + tx])) continue;
+      const x0 = ox + gt.x0 * s, y0 = oy + gt.y0 * s, w = (gt.x1 - gt.x0 + 1) * s, h = (gt.y1 - gt.y0 + 1) * s;
+      x.save(); x.fillStyle = 'rgba(160,48,28,.55)'; x.fillRect(x0, y0, w, h);
+      x.beginPath(); x.rect(x0, y0, w, h); x.clip(); x.strokeStyle = 'rgba(255,140,110,.6)'; x.lineWidth = 1; x.beginPath();
+      for (let k = -h; k < w; k += full ? 8 : 5) { x.moveTo(x0 + k, y0 + h); x.lineTo(x0 + k + h, y0); }
+      x.stroke(); x.restore();
+      x.strokeStyle = '#e05a46'; x.lineWidth = full ? 2 : 1; x.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, h - 1);
+      if (full) {
+        x.font = '600 11px "IBM Plex Mono", monospace'; x.textAlign = 'center';
+        const lb = 'SEALED', tw = x.measureText(lb).width + 8, cx = x0 + w / 2, cy = y0 + h / 2;
+        x.fillStyle = 'rgba(0,0,0,.75)'; x.fillRect(cx - tw / 2, cy - 8, tw, 15); x.fillStyle = '#ff8a6a'; x.fillText(lb, cx, cy + 3);
+      }
+    }
+  }
   function drawIcons(x, s, ox, oy, size, full) {
+    drawGates(x, s, ox, oy, full);
     const p = G.p, tp = (tx, ty) => [ox + tx * s, oy + ty * s];
     // shelter
     const h = WORLD.hatch; if (h) { const [hx, hy] = tp(h.x + 0.5, h.y + 0.5); x.strokeStyle = '#ebe1ce'; x.lineWidth = full ? 2 : 1.5; x.strokeRect(hx - 4, hy - 4, 8, 8); x.fillStyle = 'rgba(232,116,44,.6)'; x.fillRect(hx - 2, hy - 2, 4, 4); }
@@ -839,7 +902,7 @@ const UI = (() => {
     openPanel('summary', {
       title: 'Dawn', sub: 'Day ' + (item.day || G.day), narrow: true,
       body: () => `<div class="sum">${lines.length ? lines.map(l => `<div class="${esc(l.cls || '')}">${esc(l.msg)}</div>`).join('') : '<div>A quiet night.</div>'}
-        ${more > 0 ? `<div class="muted">+${more} more in the journal</div>` : ''}${item.radio ? `<div class="radio">RADIO · ${esc(firstSentence(fmt(item.radio), 160))}</div>` : ''}</div>`,
+        ${more > 0 ? `<div class="muted">+${more} more in the journal</div>` : ''}${item.radio ? `<div class="radio">RADIO · ${esc(firstSentence(fmt(item.radio), 160))}</div>` : ''}${G.flags && G.flags.radio_built ? `<div class="radio">${esc(forecast())}</div>` : ''}</div>`,
       foot: () => `<button class="btn pri" data-a="close">Begin the day <span class="kc k-hide">E</span></button>`,
       onClose: () => done(''),
     });
@@ -856,7 +919,7 @@ const UI = (() => {
           // 'wait' = not yet; a run kind ('wave', 'cure', 'storm', ...) is started by main's Game.finalRun; anything else is an ending id
           if (r === 'wait' || !r) done('');
           else if (typeof Game !== 'undefined' && Game.finalRun && Game.finalRun(r)) done('');
-          else end(r);
+          else U.end(r); // the public end: main.js wraps it to play the ending cutscene first
         },
       })),
     });
@@ -869,6 +932,7 @@ const UI = (() => {
     if (typeof Moments !== 'undefined' && Moments.abort) safe(() => Moments.abort());
     closeDlg(); closePanel(true); closeMg();
     S.end = true; syncBlock();
+    if (G) safe(() => markEnded(id)); // death or an ending: the world becomes a memorial on the title screen
     const st = G ? G.stats || {} : {};
     const ey = id === 'death' ? `Day ${G ? G.day : 1} · ${G && G.deathCause ? 'Killed by ' + G.deathCause : 'The city took you'}` : 'Ending';
     D.end.className = dead ? 'dead' : '';
@@ -881,7 +945,6 @@ const UI = (() => {
     D.end.hidden = false; showHud(false); S.esel = 1; S.endT = now();
     D.end.querySelectorAll('[data-e]').forEach(b => b.onclick = () => {
       SFX.play('ui');
-      try { localStorage.removeItem(SAVE_KEY); } catch (e) { }
       if (typeof Game !== 'undefined') { Game.running = false; Game.dead = false; Game.deathShown = false; }
       if (typeof Combat !== 'undefined' && Combat.clear) safe(() => Combat.clear());
       D.end.hidden = true; S.end = false;
@@ -1088,6 +1151,8 @@ const UI = (() => {
   function useItem(id) {
     const p = G.p, b = { hp: p.hp, hunger: p.hunger, thirst: p.thirst, sta: p.sta, inf: p.inf };
     eat(id);
+    const kind = ITEMS[id].c === 'water' ? 'drink' : ITEMS[id].c === 'med' ? 'bandage' : 'eat';
+    safe(() => typeof Combat !== 'undefined' && Combat.player && Combat.player.anim && Combat.player.anim(kind));
     const o = [];
     const d = (k, n) => { const v = Math.round(p[k] - b[k]); if (v) o.push((v > 0 ? '+' : '') + v + ' ' + n); };
     d('hp', 'HP'); d('hunger', 'food'); d('thirst', 'water'); d('sta', 'stamina'); d('inf', 'infection');
@@ -1223,7 +1288,7 @@ const UI = (() => {
       tabs: () => {
         const t = [['rest', 'Rest'], ['store', 'Storage']];
         if (safe(() => isUnlocked('craft'), false)) t.push(['craft', 'Craft']);
-        if (safe(() => isUnlocked('people'), false)) t.push(['people', `People ${G.survivors.length}`]);
+        if (safe(() => isUnlocked('people'), false) || G.dog) t.push(['people', `People ${G.survivors.length}`]);
         if (safe(() => isUnlocked('build'), false)) t.push(['build', 'Build']);
         return t;
       },
@@ -1242,13 +1307,14 @@ const UI = (() => {
           }).join('') : emptyState('tool', 'Nothing to craft yet.', 'Build a workbench in the yard to unlock recipes.'));
         }
         if (tab === 'people') {
-          if (!G.survivors.length) return emptyState('people', 'Nobody else lives here yet.', 'Survivors in the city can be talked into joining.');
-          let h = `<p class="hintline">Beds ${G.survivors.length}/${safe(() => shelterCap(), 2)}. Give everyone a job; production arrives each morning.</p>`;
+          if (!G.survivors.length && !G.dog) return emptyState('people', 'Nobody else lives here yet.', 'Survivors in the city can be talked into joining.');
+          let h = `<p class="hintline">Beds ${G.survivors.length}/${safe(() => shelterCap(), 2)}. Give everyone a job; production arrives each morning. One companion can come on runs.</p>`;
+          h += dogRow();
           for (const s of G.survivors) {
             const best = Object.keys(s.skills).sort((a, b) => s.skills[b] - s.skills[a])[0];
             const opts = [['idle', 'Resting'], ['guard', 'Guard'], ['scavenge', 'Scavenge runs']];
             for (const k in BUILDINGS) if (BUILDINGS[k].workers && bl(k)) opts.push([k, `${BUILDINGS[k].n} ${safe(() => workerCount(k), 0)}/${bl(k)}`]);
-            h += `<div class="row" data-row="s:${s.id}" data-lr="1"><span class="grow"><span class="t1">${esc(s.name)}</span><br><span class="t2">${esc((TRAITS[s.trait] || {}).n || '')} · best at ${esc(best)} · HP ${Math.round(s.hp)} · morale ${Math.round(s.morale)}</span></span>
+            h += `<div class="row" data-row="s:${s.id}" data-lr="1"><span class="grow"><span class="t1">${esc(s.name)}</span>${compTag('survivor', s.id)}<br><span class="t2">${esc((TRAITS[s.trait] || {}).n || '')} · best at ${esc(best)} · HP ${Math.round(s.hp)} · morale ${Math.round(s.morale)}${reqNote(s)}</span></span>${compBtn('survivor', s.id)}
               <select data-s="${s.id}" aria-label="Job for ${esc(s.name)}">${opts.map(([k, n]) => `<option value="${k}" ${s.job === k ? 'selected' : ''} ${k !== s.job && BUILDINGS[k] && safe(() => workerCount(k), 0) >= bl(k) ? 'disabled' : ''}>${esc(n)}</option>`).join('')}</select></div>`;
           }
           return h;
@@ -1271,7 +1337,7 @@ const UI = (() => {
         return h;
       },
       keys: tab => tab === 'store' ? kh(['↑↓', 'select'], ['←→', 'pack / storage'], ['E', 'move one'], ['Esc', 'close'])
-        : tab === 'people' ? kh(['↑↓', 'select'], ['←→', 'change job'], ['⇧←→', 'tabs'], ['Esc', 'close'])
+        : tab === 'people' ? kh(['↑↓', 'select'], ['←→', 'change job'], ['E', 'take on runs'], ['⇧←→', 'tabs'], ['Esc', 'close'])
         : tab === 'craft' ? kh(['←→', 'tabs'], ['↑↓', 'select'], ['E', 'craft'], ['Esc', 'close'])
         : tab === 'build' ? kh(['←→', 'tabs'], ['↑↓', 'select'], ['Esc', 'close'])
         : kh(['←→', 'tabs'], ['↑↓', 'select'], ['E', 'sleep / eat'], ['Esc', 'close']),
@@ -1285,6 +1351,7 @@ const UI = (() => {
         }
         if (a === 'eat') useItem(arg);
         if (a === 'craft') craft(+arg);
+        if (a === 'comp') toggleCompanion(arg === 'dog' ? 'dog' : 'survivor', arg === 'dog' ? 'dog' : +arg);
         if (a === 'mv') {
           const [dir, id] = arg.split(':'), from = dir === 'in' ? G.pack : G.store, to = dir === 'in' ? G.store : G.pack;
           if (!from[id]) return;
@@ -1301,6 +1368,75 @@ const UI = (() => {
       },
     };
   }
+  /* ---------- companions (People tab, talk, HUD chip) ---------- */
+  const isComp = (kind, id) => !!(G.companion && G.companion.kind === kind && (kind === 'dog' || G.companion.id === id));
+  function compTag(kind, id) { return isComp(kind, id) ? ' <span class="ctag">On runs</span>' : ''; }
+  function compBtn(kind, id) {
+    const on = isComp(kind, id), rd = safe(() => companionReady(kind, id), { ok: false, why: '' });
+    return `<button class="btn sm ${on ? '' : 'pri'}" data-a="comp:${kind === 'dog' ? 'dog' : id}" ${!on && !rd.ok ? `disabled title="${esc(rd.why)}"` : ''}>${on ? 'Leave at home' : 'Take on runs'}</button>`;
+  }
+  function reqNote(s) { const r = safe(() => requestOf(s), null); return r ? ` · <span class="want">wants ${r.qty} ${esc(iname(r.item))}</span>` : (s.restUntil > G.day ? ' · resting' : ''); }
+  function dogRow() {
+    const d = G.dog; if (!d) return '';
+    const rest = d.restUntil > G.day;
+    return `<div class="row" data-row="dog"><span class="grow"><span class="t1">${esc(d.name)}</span>${compTag('dog')}<br><span class="t2">Dog · HP ${Math.round(d.hp)}/${typeof DOG_MAX_HP !== 'undefined' ? DOG_MAX_HP : 60} · ${rest ? 'resting until tomorrow' : 'sniffs out loot, growls at the dead, bites'}</span></span>${compBtn('dog', 'dog')}</div>`;
+  }
+  function toggleCompanion(kind, id) {
+    if (isComp(kind, id)) { const n = G.companion.name; safe(() => clearCompanion()); toast(`${n} stays at the bunker.`, 'dim'); SFX.play('ui'); return; }
+    if (safe(() => setCompanion(kind, id), false)) { toast(`${G.companion.name} comes on runs with you.`, 'good'); SFX.play(kind === 'dog' ? 'bark' : 'good'); }
+    else SFX.play('bad');
+  }
+  const TLK = () => (CONTENT_().survivorTalk || {});
+  const tpick = (bank, s) => { const b = bank || {}; const l = Array.isArray(b) ? b : (b[s.trait] || b.default || ['...']); return fmt(l[Math.floor(Math.random() * l.length)] || '...'); };
+  function say(s, line, tag) { dialogue({ who: s.name, lines: [line || '...'], tag: tag ? { ok: true, text: tag } : null, doneLabel: 'Continue' }); }
+  /* E on a survivor at the bunker (or the helper out with you): mood, chat, a job, a gift, runs, and sometimes a request */
+  function talk(s) {
+    if (!G || !s || blocking()) return;
+    const TL = TLK(), req = safe(() => requestOf(s), null), gift = safe(() => giftItem(), null);
+    const comp = isComp('survivor', s.id), rd = safe(() => companionReady('survivor', s.id), { ok: false, why: '' });
+    const ch = [
+      { label: 'How are you holding up?', onPick: () => { const m = s.morale; say(s, safe(() => chatSurvivor(s), '...'), s.morale > m ? 'Morale up' : null); } },
+      { label: 'I need you on…', note: jobName(s.job), onPick: () => jobsTalk(s) },
+      { label: 'Take a gift', note: gift ? iname(gift) : 'Needs cigarettes or food', disabled: !gift, onPick: () => { const l = safe(() => giftSurvivor(s), ''); SFX.play('good'); say(s, l, 'Morale up'); } },
+      comp ? { label: 'Stay home from now on', onPick: () => { safe(() => clearCompanion()); say(s, tpick(TL.stay, s)); } }
+        : { label: 'Come with me on runs', note: rd.ok ? (G.companion ? `instead of ${G.companion.name}` : '+8 kg carried') : rd.why, disabled: !rd.ok, onPick: () => { if (safe(() => setCompanion('survivor', s.id), false)) { SFX.play('good'); say(s, tpick(TL.follow, s), 'On runs with you'); } } },
+    ];
+    if (req) ch.push({ label: `Here's your ${iname(req.item).toLowerCase()}`, note: `${safe(() => count(req.item), 0)}/${req.qty}`, disabled: !safe(() => canDeliver(s), false),
+      onPick: () => { const l = safe(() => deliverRequest(s), ''); SFX.play('levelup'); say(s, `${tpick(TL.thanks, s)} ${l}`, 'Request done'); } });
+    else ch.push({ label: 'Anything you need?', onPick: () => { const r = safe(() => maybeRequest(s), null); say(s, r ? tpick(TL.ask, s).replace(/\{item\}/g, iname(r.item).toLowerCase()).replace(/\{qty\}/g, r.qty) : 'Not today. Ask me tomorrow.', r ? `Find ${r.qty} ${iname(r.item)}` : null); } });
+    ch.push({ label: 'Leave', onPick: () => { } });
+    dialogue({ who: s.name, lines: [safe(() => survivorMood(s), '...')], choices: ch });
+  }
+  function jobsTalk(s) {
+    const js = safe(() => jobChoices(s), []);
+    dialogue({ who: s.name, lines: ['Where do you want me?'], choices: js.map(([k, n, ok]) => ({ label: n, note: s.job === k ? 'now' : (ok ? '' : 'full'), disabled: !ok,
+      onPick: () => { if (safe(() => setJob(s, k), false)) { SFX.play('ui'); say(s, tpick(TLK().jobs, s), `${jobName(k)}`); } } })).concat([{ label: 'Never mind', onPick: () => { } }]) });
+  }
+  /* E at the bunker radio: a broadcast, a hint and the caravan's schedule; on caravan day you can call them to trade */
+  function radio() {
+    if (!G || blocking()) return;
+    const b = safe(() => radioBroadcast(), { lines: ['Static.'], trader: false });
+    SFX.play('ui');
+    dialogue({ who: 'Shortwave radio', lines: b.lines, doneLabel: 'Switch it off',
+      choices: b.trader ? [{ label: 'Call the caravan', onPick: () => barter(null, () => { }) }, { label: 'Switch it off', onPick: () => { } }] : [] });
+  }
+  const COMP_IC = { dog: 'M4 13l2-5 3 2h5l3-4 1 3h2v3l-3 2v5h-2l-1-3H9l-1 3H6v-5z', survivor: 'M12 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM5 21a7 7 0 0 1 14 0' };
+  function companionChip() {
+    const box = D.cmp, tb = el('t-comp'), c = typeof Combat !== 'undefined' ? Combat.companion : null;
+    if (!box) return;
+    if (!c) { if (!box.hidden) { box.hidden = true; S.c.cmp = null; } if (tb && !tb.hidden) tb.hidden = true; return; }
+    const info = safe(() => companionInfo(), null), f = info ? cl(info.hp / info.maxHp, 0, 1) : 0;
+    const mode = c.mode === 'downed' ? 'Down' : c.mode === 'stay' ? 'Staying' : 'Following';
+    if (tb) { if (tb.hidden) tb.hidden = false; const lb = c.mode === 'stay' ? 'Follow' : 'Stay'; if (tb.textContent !== lb) tb.textContent = lb; }
+    const key = c.kind + c.name + mode + Math.round(f * 60);
+    if (S.c.cmp === key) return; S.c.cmp = key;
+    box.hidden = false;
+    box.querySelector('.nm').innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${COMP_IC[c.kind] || COMP_IC.survivor}"/></svg>${esc(c.name)}`;
+    box.querySelector('.md').textContent = mode + (INPUT.touch ? '' : ' · H');
+    box.querySelector('.fl').style.transform = `scaleX(${f})`;
+    box.classList.toggle('low', f < 0.35); box.classList.toggle('down', c.mode === 'downed');
+  }
+
   /* map */
   function mapPanel() {
     return {
@@ -1314,28 +1450,38 @@ const UI = (() => {
   function menuPanel() {
     let help = false;
     return {
-      title: 'Paused', sub: () => G ? `Day ${G.day} · ${G.p.name}` : '', narrow: true,
+      title: 'Paused', sub: () => G ? `${G.worldName || 'Ardent Vale'} · Day ${G.day} · ${G.p.name}` : '', narrow: true,
       body: () => {
         if (help) return helpCard();
-        return `<div class="menu"><button class="btn pri" data-a="close" data-row="resume">Resume</button><button class="btn" data-a="save" data-row="save">Save game</button><button class="btn" data-a="help" data-row="help">Controls</button>
-          <button class="btn" data-a="sound" data-row="sound">Sound: ${SFX.on ? 'On' : 'Off'}</button><button class="btn ghost" data-a="quit" data-row="quit">Quit to title</button></div>`;
+        return `<div class="menu"><button class="btn pri" data-a="close" data-row="resume">Resume</button><button class="btn" data-a="save" data-row="save">Save now</button><button class="btn" data-a="fork" data-row="fork">Save as new world</button><button class="btn" data-a="help" data-row="help">Controls</button>
+          <button class="btn" data-a="sound" data-row="sound">Sound: ${SFX.on ? 'On' : 'Off'}</button>${hasAmb() ? `<label class="vol" data-row="amb"><span>Ambience</span><input type="range" min="0" max="100" step="5" value="${Math.round(Ambience.volume * 100)}" data-amb aria-label="Ambience volume"><b>${Math.round(Ambience.volume * 100)}</b></label>` : ''}${hasCine() ? '<button class="btn" data-a="intro" data-row="intro">Watch the intro</button>' : ''}<button class="btn ghost" data-a="quit" data-row="quit">Quit to title</button></div>`;
       },
       foot: () => help ? `<button class="btn" data-a="back">Back</button>` : '',
-      keys: () => help ? kh(['Esc', 'back']) : kh(['↑↓', 'select'], ['E', 'choose'], ['Esc', 'resume']),
+      keys: () => help ? kh(['Esc', 'back']) : kh(['↑↓', 'select'], ['E', 'choose'], ['←→', 'ambience'], ['Esc', 'resume']),
+      key: e => {
+        const cur = D.pnl.querySelector('.kf'); if (!cur || cur.dataset.row !== 'amb' || !/^(ArrowLeft|ArrowRight|KeyA|KeyD)$/.test(e.code)) return false;
+        e.preventDefault(); setAmb(Ambience.volume + (/Right|KeyD/.test(e.code) ? 0.05 : -0.05)); renderPanel(); return true;
+      },
+      change: e => { const r = e.target.closest('[data-amb]'); if (r) setAmb(+r.value / 100); },
       back: () => { if (!help) return false; help = false; S.nav['menu:'] = { id: 'help', col: '', idx: 2 }; return true; },
       act: a => {
-        if (a === 'save') { const ok = safe(() => saveGame(true), false); toast(ok ? 'Game saved.' : 'Could not save in this browser.', ok ? 'good' : 'warn'); }
+        if (a === 'save') { const ok = safe(() => saveGame(true), false); toast(ok ? `Saved: ${G.worldName || 'this world'}.` : 'Could not save in this browser.', ok ? 'good' : 'warn'); }
+        if (a === 'fork') { const base = String(G.worldName || G.p.name).replace(/ · day \d+$/, ''), id = safe(() => forkWorld(`${base.slice(0, 15)} · day ${G.day}`), null); toast(id ? `Saved as a new world: ${G.worldName}. You play on in it.` : 'Could not save in this browser.', id ? 'good' : 'warn'); }
         if (a === 'help') { help = true; S.nav['menu:'] = { id: 'help', col: '', idx: 2 }; }
         if (a === 'back') { help = false; S.nav['menu:'] = { id: 'help', col: '', idx: 2 }; }
         if (a === 'sound') { SFX.toggle(); SFX.unlock(); SFX.play('ui'); }
+        if (a === 'intro') { closePanel(true); safe(() => Cine.intro(() => { })); }
         if (a === 'quit') { closePanel(true); if (typeof Game !== 'undefined' && Game.quit) Game.quit(); }
       },
     };
   }
+  const hasAmb = () => typeof Ambience !== 'undefined' && !!Ambience.setVolume;
+  const hasCine = () => typeof Cine !== 'undefined' && !!Cine.intro;
+  function setAmb(v) { safe(() => Ambience.setVolume(Math.round(cl(v, 0, 1) * 20) / 20)); SFX.play('ui'); }
   function helpCard() {
     const rows = INPUT.touch
-      ? [['Move', 'Drag left side'], ['Sprint', 'Push the stick far'], ['Attack', 'ATTACK (hold)'], ['Next target', 'TARGET'], ['Throw a bottle', 'THROW'], ['Dodge roll', 'DODGE'], ['Search / use', 'USE (hold)'], ['Sneak', 'CROUCH'], ['Zoom', 'Pinch'], ['Map', 'Tap the minimap'], ['Swap weapon', 'Tap weapon']]
-      : [['Move', 'WASD / arrows'], ['Sprint', 'Shift'], ['Crouch', 'C'], ['Dodge roll', 'Space'], ['Attack', 'J / click'], ['Next target', 'F'], ['Clear target', 'Shift+F'], ['Throw a bottle', 'G'], ['Aim (optional)', 'Mouse'], ['Search / use', 'Hold E'], ['Swap weapon', 'Q'], ['Pack', 'I'], ['Character', 'B'], ['Journal', 'Tab'], ['Map', 'M'], ['Zoom', 'Wheel'], ['Menu', 'Esc']];
+      ? [['Move', 'Drag left side'], ['Sprint', 'Push the stick far'], ['Attack', 'ATTACK (hold)'], ['Next target', 'TARGET'], ['Throw a bottle', 'THROW'], ['Dodge roll', 'DODGE'], ['Search / use', 'USE (hold)'], ['Sneak', 'CROUCH'], ['Zoom', 'Pinch'], ['Map', 'Tap the minimap'], ['Swap weapon', 'Tap weapon'], ['Companion: stay / follow', 'STAY / FOLLOW']]
+      : [['Move', 'WASD / arrows'], ['Sprint', 'Shift'], ['Crouch', 'C'], ['Dodge roll', 'Space'], ['Attack', 'J / click'], ['Next target', 'F'], ['Clear target', 'Shift+F'], ['Throw a bottle', 'G'], ['Aim (optional)', 'Mouse'], ['Search / use', 'Hold E'], ['Swap weapon', 'Q'], ['Companion: stay / follow', 'H'], ['Pack', 'I'], ['Character', 'B'], ['Journal', 'Tab'], ['Map', 'M'], ['Zoom', 'Wheel'], ['Menu', 'Esc']];
     return `<div class="help">${rows.map(r => `<div><span>${r[0]}</span><span>${r[1]}</span></div>`).join('')}</div>
       ${INPUT.touch ? '' : `<p class="hintline" style="margin-top:12px">The whole game plays on the keyboard. Without the mouse, attacks lock on to the nearest enemy and F picks the next one; move the mouse to aim more precisely. In menus: arrows select, E or Enter acts, X drops, Esc closes.</p>`}
       <p class="hintline">Crouch to stay unseen. Sprinting and gunfire draw the dead. Bring loot home to build. Be in the bunker on horde nights.</p>`;
@@ -1492,79 +1638,123 @@ const UI = (() => {
   /* ---------- title / new game ---------- */
   function closeTitle() { if (!S.title) return; S.title = false; D.title.hidden = true; D.title.innerHTML = ''; syncBlock(); }
   function embers() { let h = '<div class="embers">'; for (let i = 0; i < 16; i++) h += `<i style="left:${(i * 37 + 11) % 100}%;animation-duration:${7 + (i * 13) % 9}s;animation-delay:${-(i * 1.7) % 9}s;--dx:${((i * 29) % 80) - 40}px"></i>`; return h + '</div>'; }
+  /* title: Continue (the last world you played), Worlds (every saved world, memorials included), New world */
+  const WORLD_NAMES = ['Ardent Vale', 'Cinder Road', 'Ashfall', 'The Long Dark', 'Last Light', 'Grey Harbour', 'Ember Line', 'Hollow Week', 'Smoke Season', 'The Quiet'];
+  const timeAgo = t => { const s = Math.max(0, (Date.now() - (t || 0)) / 1000); return s < 90 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago' : s < 86400 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' d ago'; };
+  const endTitle = w => { if (!w.ended) return ''; if (!w.endId || w.endId === 'death') return `Fell on day ${w.day}`; const sc = CONTENT_().story[w.endId]; return sc && sc.title ? sc.title : 'The End'; };
+  const bgName = k => (BACKGROUNDS[k] || {}).n || '';
+  function titleWire(map) {
+    D.title.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { SFX.unlock(); SFX.play('ui'); const f = map[b.dataset.t]; if (f) f(b); });
+  }
   function title(step) {
     if (typeof Moments !== 'undefined' && Moments.abort) safe(() => Moments.abort());
     closeDlg(); closePanel(true); closeMg(); S.end = false; D.end.hidden = true;
     S.title = true; syncBlock(); showHud(false); timer(null);
-    D.title.hidden = false;
+    D.title.hidden = false; S.titleBack = null; S.titleStart = null;
     if (step === 'new') return newGameStep();
-    const cont = safe(() => hasSave(), false);
+    if (step === 'worlds') return worldsStep();
+    const worlds = safe(() => listWorlds(), []), last = worlds.find(w => !w.ended);
     D.title.innerHTML = `${embers()}<div class="logo">Dead<span>Embers</span></div><div class="tag">Ardent Vale · fourteen months after the Grey Fever</div>
-      <div class="acts">${cont ? '<button class="btn pri" data-t="cont" data-nav>Continue</button>' : ''}<button class="btn ${cont ? '' : 'pri'}" data-t="new" data-nav>New game</button></div>
+      <div class="acts">${last ? `<button class="btn pri cont" data-t="cont" data-nav>Continue<small>${esc(last.name)} · Day ${last.day}</small></button>` : ''}
+      ${worlds.length ? `<button class="btn" data-t="worlds" data-nav>Worlds<small>${worlds.length}</small></button>` : ''}
+      <button class="btn ${last ? '' : 'pri'}" data-t="new" data-nav>New world</button>${hasCine() ? '<button class="btn ghost" data-t="intro" data-nav>Watch the intro</button>' : ''}</div>
       <div class="kh tkh"><b>↑↓</b> choose<i>·</i><b>Enter</b> select</div><div class="ver">BUILD 3D</div>`;
     S.tfocus = D.title.querySelector('[data-nav]'); titleRing();
-    D.title.querySelectorAll('[data-t]').forEach(b => b.onclick = () => {
-      SFX.unlock(); SFX.play('ui');
-      if (b.dataset.t === 'new') return newGameStep();
-      if (typeof Game !== 'undefined' && Game.continueGame && Game.continueGame()) closeTitle();
-      else toast('That save could not be loaded.', 'warn');
+    titleWire({
+      new: () => newGameStep(),
+      worlds: () => worldsStep(),
+      intro: () => { closeTitle(); safe(() => Cine.intro(() => title())); },
+      cont: () => { if (typeof Game !== 'undefined' && Game.continueGame && Game.continueGame()) closeTitle(); else toast('That world could not be loaded.', 'warn'); },
     });
+  }
+  /* every saved world: load it, or delete it (with a confirm step). Ended worlds are memorials: their ending, or the day they fell. */
+  function worldsStep(confirmId, focusId) {
+    const ws = safe(() => listWorlds(), []);
+    if (!ws.length) return title();
+    S.titleStart = null;
+    D.title.innerHTML = `${embers()}<div class="worlds"><h2>Worlds</h2><div class="wl">${ws.map(w => {
+      const conf = confirmId === w.id;
+      return `<div class="wrow ${w.ended ? 'mem' : ''} ${conf ? 'conf' : ''}" data-w="${esc(w.id)}">
+        <div class="wi"><b>${w.ended ? '<i class="cross" aria-hidden="true"></i>' : ''}${esc(w.name)}</b>
+          <span>${esc([w.pname, bgName(w.bg), 'Day ' + w.day, 'Level ' + w.level].filter(Boolean).join(' · '))}</span>
+          <em>${w.ended ? esc(endTitle(w)) : 'Last played ' + esc(timeAgo(w.lastPlayed))}</em></div>
+        <div class="wa">${conf ? `<span class="q">Delete forever?</span><button class="btn sm danger" data-t="del-yes" data-nav>Delete</button><button class="btn sm" data-t="del-no" data-nav>Keep</button>`
+          : `${w.ended ? '<span class="mtag">Memorial</span>' : '<button class="btn sm pri" data-t="load" data-nav>Load</button>'}<button class="btn sm ghost" data-t="del" data-nav aria-label="Delete ${esc(w.name)}">Delete</button>`}</div></div>`;
+    }).join('')}</div>
+      <div class="go"><button class="btn ghost" data-t="back" data-nav>Back</button><button class="btn" data-t="new" data-nav>New world</button></div>
+      <div class="kh tkh"><b>↑↓←→</b> choose<i>·</i><b>Enter</b> select<i>·</i><b>Esc</b> back</div></div>`;
+    const idOf = b => { const r = b.closest('.wrow'); return r ? r.dataset.w : null; };
+    titleWire({
+      back: () => title(),
+      new: () => newGameStep(),
+      load: b => { if (typeof Game !== 'undefined' && Game.loadWorld && Game.loadWorld(idOf(b))) closeTitle(); else toast('That world could not be loaded.', 'warn'); },
+      del: b => worldsStep(idOf(b)),
+      'del-no': b => worldsStep(null, idOf(b)),
+      'del-yes': b => { const id = idOf(b), w = ws.find(x => x.id === id); safe(() => deleteWorld(id)); toast(`${w ? w.name : 'World'} deleted.`, 'dim'); SFX.play('bad'); worldsStep(); },
+    });
+    const row = id => id ? [...D.title.querySelectorAll('.wrow')].find(r => r.dataset.w === id) : null;
+    S.tfocus = confirmId ? row(confirmId).querySelector('[data-t=del-no]') : focusId && row(focusId) ? row(focusId).querySelector('[data-t=del]') : (D.title.querySelector('[data-t=load]') || D.title.querySelector('[data-nav]'));
+    titleRing();
+    S.titleBack = () => { SFX.play('ui'); if (confirmId) worldsStep(null, confirmId); else title(); };
   }
   function newGameStep() {
     const bgs = Object.keys(BACKGROUNDS);
     let sel = bgs.includes('scavenger') ? 'scavenger' : bgs[0];
+    const used = safe(() => listWorlds().map(w => w.name), []), defName = WORLD_NAMES.find(n => !used.includes(n)) || `World ${used.length + 1}`;
     const bonus = b => Object.keys(b.bonus || {}).map(k => `${k.toUpperCase()} +${b.bonus[k]}`).join('  ');
-    D.title.innerHTML = `${embers()}<div class="newg"><h2>Who were you?</h2>
-      <label>Name<input id="ng-name" maxlength="18" value="Survivor" autocomplete="off" spellcheck="false" data-nav></label>
+    D.title.innerHTML = `${embers()}<div class="newg"><h2>A new world</h2>
+      <div class="names"><label>World<input id="ng-world" maxlength="24" value="${esc(defName)}" autocomplete="off" spellcheck="false" data-nav></label>
+      <label>Your name<input id="ng-name" maxlength="18" value="Survivor" autocomplete="off" spellcheck="false" data-nav></label></div>
       <div class="bgs">${bgs.map(k => `<button class="bgc ${k === sel ? 'on' : ''}" data-bg="${k}" data-nav aria-pressed="${k === sel}"><b>${esc(BACKGROUNDS[k].n)}</b><span>${esc(firstSentence(BACKGROUNDS[k].desc, 70))}</span><em>${esc(bonus(BACKGROUNDS[k]))}</em></button>`).join('')}</div>
       <div class="go"><button class="btn ghost" data-t="back" data-nav>Back</button><button class="btn pri" data-t="start" data-nav>Start</button></div>
       <div class="kh tkh"><b>←↑↓→</b> background<i>·</i><b>type</b> to rename<i>·</i><b>Enter</b> start<i>·</i><b>Esc</b> back</div></div>`;
     const pickBg = b => { sel = b.dataset.bg; D.title.querySelectorAll('.bgc').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', x === b); }); };
     D.title.querySelectorAll('.bgc').forEach(b => b.onclick = () => { pickBg(b); SFX.play('ui'); S.tfocus = b; titleRing(); });
     D.title.querySelector('[data-t=back]').onclick = () => { SFX.play('ui'); title(); };
-    D.title.querySelector('[data-t=start]').onclick = () => startNew(sel);
-    S.titleStart = () => startNew(sel);
+    D.title.querySelector('[data-t=start]').onclick = () => startNew(sel, defName);
+    S.titleStart = () => startNew(sel, defName);
+    S.titleBack = () => { SFX.play('ui'); title(); };
     S.pickBg = pickBg;
     S.tfocus = D.title.querySelector('.bgc.on'); titleRing();
   }
-  /* title keyboard focus: S.tfocus is the [data-nav] element with the ring (the name field takes real focus so typing works) */
+  /* title keyboard focus: S.tfocus is the [data-nav] element with the ring (a name field takes real focus so typing works) */
   function titleRing() {
     D.title.querySelectorAll('.kf').forEach(x => x.classList.remove('kf'));
     const f = S.tfocus; if (!f || !f.isConnected) return;
     if (f.tagName === 'INPUT') { if (document.activeElement !== f) { f.focus(); try { f.select(); } catch (e) { } } }
     else { if (document.activeElement && document.activeElement.tagName === 'INPUT') document.activeElement.blur(); f.classList.add('kf'); scrollNear(f); }
   }
-  function startNew(bg) {
-    const inp = el('ng-name'), name = (inp && inp.value.trim()) || 'Survivor';
+  function startNew(bg, defName) {
+    const inp = el('ng-name'), wi = el('ng-world'), name = (inp && inp.value.trim()) || 'Survivor', world = (wi && wi.value.trim()) || defName || 'Ardent Vale';
     SFX.unlock(); SFX.play('levelup');
     if (typeof Moments !== 'undefined' && Moments.abort) safe(() => Moments.abort());
     closeTitle();
     S.objText = ''; S.c = {}; S.hudShown = false;
-    if (typeof Game !== 'undefined' && Game.newGame) Game.newGame(name.slice(0, 18), bg);
+    if (typeof Game !== 'undefined' && Game.newGame) Game.newGame(name.slice(0, 18), bg, undefined, world.slice(0, 24));
   }
   function titleKey(e) {
-    const c = e.code, inp = el('ng-name'), inField = document.activeElement === inp && !!inp;
+    const c = e.code, inp = el('ng-name'), act = document.activeElement, inField = !!(act && act.tagName === 'INPUT' && D.title.contains(act));
     const items = [...D.title.querySelectorAll('[data-nav]')];
-    if (!items.includes(S.tfocus)) S.tfocus = inField ? inp : (D.title.querySelector('.bgc.on') || items[0]);
+    if (!items.includes(S.tfocus)) S.tfocus = inField ? act : (D.title.querySelector('.bgc.on') || items[0]);
     if (c === 'Enter' || c === 'NumpadEnter') {
       e.preventDefault(); if (e.repeat) return;
       const f = S.tfocus;
-      if (inp && (!f || f === inp || f.classList.contains('bgc'))) { S.titleStart && S.titleStart(); return; }
+      if (S.titleStart && (!f || f.tagName === 'INPUT' || f.classList.contains('bgc'))) { S.titleStart(); return; }
       if (f) f.click();
       return;
     }
-    if (c === 'Escape') { if (inp) title(); return; }
+    if (c === 'Escape') { if (S.titleBack) S.titleBack(); return; }
     const dir = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[c];
     if (dir) {
-      if (inField && dir[0]) return; // left/right move the caret in the name
+      if (inField && dir[0]) return; // left/right move the caret in a name
       e.preventDefault();
       let n = S.tfocus ? spatial(items, S.tfocus, dir[0], dir[1]) : items[0];
-      if (!n && !inp && dir[1]) n = items[(items.indexOf(S.tfocus) + dir[1] + items.length) % items.length]; // title: wrap
+      if (!n && !inp && dir[1]) n = items[(items.indexOf(S.tfocus) + dir[1] + items.length) % items.length]; // title and worlds: wrap
       if (!n) return;
       S.tfocus = n; if (n.classList.contains('bgc') && S.pickBg) S.pickBg(n);
       SFX.play('ui'); titleRing(); return;
     }
-    // typing anywhere on the new-game screen edits the name
+    // typing anywhere on the new-world screen edits your name (unless a name field already has the caret)
     if (inp && !inField && e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { inp.focus(); try { inp.select(); } catch (er) { } S.tfocus = inp; titleRing(); }
   }
   function endKey(e) {
@@ -1582,7 +1772,7 @@ const UI = (() => {
     prompt(t, p) { S.pr.t = t || null; S.pr.p = p == null ? null : p; },
     momentPrompt(t, p) { S.mpr = t ? { t, p: p == null ? null : p } : null; },
     dialogue, encounter, scene, summary, final, end,
-    open, close() { closeMg(); closeDlg(); closePanel(); }, tollcamp, barter, lockpick, title,
+    open, close() { closeMg(); closeDlg(); closePanel(); }, tollcamp, barter, lockpick, title, talk, radio,
     swapWeapon() {
       if (!G || blocking()) return;
       const owned = sortIds(Object.keys(G.pack).filter(k => ITEMS[k] && ITEMS[k].c === 'weapon'));

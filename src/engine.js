@@ -11,36 +11,76 @@ let G = null;
 const Hooks = { log: () => {}, refresh: () => {}, queue: () => {}, onDeath: () => {} };
 
 /* ---------- World generation (deterministic from seed) ---------- */
-/* Logical grid: W x H tiles. In 3D, tile (x,y) maps to world (x*TILE, 0, y*TILE); +x east, +y (world +z) south. */
-const W = 64, H = 48, TILE = 2;
-const T_GRASS = 0, T_ROAD = 1, T_WALL = 3, T_DOOR = 4, T_TREE = 5, T_WATER = 6, T_BRIDGE = 7, T_RUBBLE = 8, T_CAR = 9, T_YARD = 10, T_FIELD = 11, T_ROOF = 12, T_FLOOR = 13, T_PROP = 14;
-const SOLID = new Set([T_WALL, T_TREE, T_WATER, T_CAR, T_ROOF, T_PROP]);
-const ROADS_Y = [4, 14, 24, 34, 44], ROADS_X = [4, 16, 28, 40, 52];
-const BLOCKS_X = [[6, 15], [18, 27], [30, 39], [42, 48], [54, 63]], BLOCKS_Y = [[6, 13], [16, 23], [26, 33], [36, 43]];
+/* Logical grid: W x H tiles. In 3D, tile (x,y) maps to world (x*TILE, 0, y*TILE); +x east, +y (world +z) south.
+   One connected seeded world of seven biomes (WORLD.biome per tile, index into BIOMES):
+     oldtown  the city core (x 22..84, y 18..59): bunker, Tollmen camp, every act-1 target, the bus depot.
+     docks    east of the river (x >= 88): cranes, shipping containers, warehouses, the harbour. Gated: collapsed bridge (y 38).
+     suburbs  west (x < 22, y >= 28): houses with fenced yards and garages.
+     forest   north-west (Kessler Woods + hills): ranger station, hunting stand, old campsite. Gated: rockfall on the forest road (x 34).
+     farm     south (x 22..61, y >= 60): Teodor's farm, silos, hedged fields.
+     flooded  south-east (x 62..84, y >= 60): shallow water streets (T_SHALLOW slows you), sunken houses, stilt walkways.
+     pass     north (x 44..84, y < 17): the road to Haven climbing into snow, Checkpoint Echo. Gated: Tollmen toll barrier (x 58).
+   Gated biomes stay sealed (stone wall, cliffs, the river) until openDistrict(id) swaps WORLD.gates[id].tiles back. */
+const W = 112, H = 84, TILE = 2;
+const T_GRASS = 0, T_ROAD = 1, T_WALL = 3, T_DOOR = 4, T_TREE = 5, T_WATER = 6, T_BRIDGE = 7, T_RUBBLE = 8, T_CAR = 9, T_YARD = 10, T_FIELD = 11, T_ROOF = 12, T_FLOOR = 13, T_PROP = 14,
+  T_SHALLOW = 15, T_BUSH = 16, T_GATE = 17, T_DECO = 18, T_ROCK = 19, T_PATH = 20, T_FENCE = 21, T_PLANK = 22;
+/* T_SHALLOW: knee-deep water, walkable at moveMul 0.6. T_BUSH: dense bush, walkable, hides a crouching player (inBush).
+   T_GATE: story blocker (WORLD.gates). T_DECO: solid outdoor prop listed in WORLD.decos (containers, silos, cranes legs, logs...).
+   T_ROCK: boulder / cliff / old stone wall (WORLD.flora says which). T_PATH: dirt trail. T_FENCE: garden fence. T_PLANK: boardwalk / pier. */
+const SOLID = new Set([T_WALL, T_TREE, T_WATER, T_CAR, T_ROOF, T_PROP, T_GATE, T_DECO, T_ROCK, T_FENCE]);
+/* WORLD.flora per tile: why a plant (or rock) is there, read by World3D. Non-solid entries are decoration only. */
+const FLORA = { SAPLING: 1, YOUNG: 2, OLD: 3, WILLOW: 4, REED: 5, HEDGE: 6, FLOWERS: 7, FERN: 8, BIRCH: 9, DEAD: 10, CROP: 11, SUNKROAD: 12, STONEWALL: 13, CLIFF: 14, SNOWPINE: 15 };
+/* Old Town grid (2-tile roads). */
+const ROADS_Y = [18, 28, 38, 48, 58], ROADS_X = [22, 34, 46, 58, 70, 82];
+const BLOCKS_X = [[24, 33], [36, 45], [48, 57], [60, 69], [72, 81]], BLOCKS_Y = [[20, 27], [30, 37], [40, 47], [50, 57]];
 const BLOCK_PLAN = {
-  '0,0': 'radiotower', '1,0': 'hospital', '2,0': 'street', '3,0': 'police', '4,0': 'military',
-  '0,1': 'apartments', '1,1': 'supermarket', '2,1': 'shelter', '3,1': 'apartments', '4,1': 'forest',
-  '0,2': 'factory', '1,2': 'gas', '2,2': 'farm', '3,2': 'electronics', '4,2': 'forest',
-  '0,3': 'depot', '1,3': 'street', '2,3': 'supermarket', '3,3': 'gas', '4,3': 'tollcamp',
+  '0,0': 'radiotower', '1,0': 'hospital', '2,0': 'street', '3,0': 'police', '4,0': 'park',
+  '0,1': 'apartments', '1,1': 'supermarket', '2,1': 'shelter', '3,1': 'apartments', '4,1': 'street',
+  '0,2': 'park', '1,2': 'gas', '2,2': 'street', '3,2': 'electronics', '4,2': 'factory',
+  '0,3': 'depot', '1,3': 'street', '2,3': 'supermarket', '3,3': 'tollcamp', '4,3': 'gas',
 };
-const RIVER_X = [50, 51];
-/* WORLD = {tiles, pois:{"x,y":{x,y,type,label,outdoor?}}, roofs:[{x,y,w,h,type,poi,closed?}] (building footprints incl. walls),
-   containers:[{id,x,y,kind,loc,poi}], shelterRect, bunker:{x,y,w,h}, hatch:{x,y}, bus:{x,y}, gate:{x,y}} */
+const RIVER_X = [85, 86, 87];
+const BIOMES = ['oldtown', 'docks', 'suburbs', 'forest', 'farm', 'flooded', 'pass'];
+/* LOCS type used for encounters / danger outside the Old Town blocks */
+const BIOME_LOC = { oldtown: 'street', docks: 'docks', suburbs: 'suburbs', forest: 'forest', farm: 'farm', flooded: 'flooded', pass: 'pass' };
+/* biome -> gate id that must be open before it can be entered (flag G.flags['open_' + id]) */
+const GATE_OF = { forest: 'forest', docks: 'docks', pass: 'pass' };
+function biomeOf(x, y) {
+  if (x >= 88) return 'docks';
+  if (x >= 85) return y < 18 ? 'pass' : y >= 60 ? 'flooded' : 'oldtown';
+  if (y < 18) return x >= 44 ? 'pass' : 'forest';
+  if (x < 22) return y < 28 ? 'forest' : 'suburbs';
+  if (y >= 60) return x >= 62 ? 'flooded' : 'farm';
+  return 'oldtown';
+}
+/* WORLD = {tiles, biome, flora, pois:{"x,y":{x,y,type,label,outdoor?}}, roofs:[{x,y,w,h,type,poi,closed?}] (building footprints incl. walls),
+   containers:[{id,x,y,kind,loc,poi}], decos:[{x,y,w,h,kind,...}], fires:[{x,y,kind}], gates:{id:{kind,x0,y0,x1,y1,tiles:[[x,y,under]]}},
+   shelterRect, bunker:{x,y,w,h}, hatch:{x,y}, bus:{x,y}, gate:{x,y} (Tollmen camp gate), camp:{x0,y0,x1,y1}} */
 let WORLD = null;
 
 function seeded(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
 function genWorld(seed) {
   const R = seeded(seed), ri = (a, b) => Math.floor(R() * (b - a + 1)) + a;
-  const tiles = new Uint8Array(W * H).fill(T_GRASS);
-  const set = (x, y, t) => { if (x >= 0 && y >= 0 && x < W && y < H) tiles[y * W + x] = t; };
-  const get = (x, y) => (x < 0 || y < 0 || x >= W || y >= H) ? T_WALL : tiles[y * W + x];
-  for (const y of ROADS_Y) for (let x = 0; x < W; x++) { set(x, y, T_ROAD); set(x, y + 1, T_ROAD); }
-  for (const x of ROADS_X) for (let y = 0; y < H; y++) { set(x, y, T_ROAD); set(x + 1, y, T_ROAD); }
-  const pois = {}, roofs = [], containers = [];
-  let cid = 0, shelterRect = null, bunker = null, hatch = null, bus = null, gate = null;
-  const addPoi = (x, y, type, label, outdoor) => { const k = x + ',' + y; pois[k] = { x, y, type, label: label || LOCS[type].n }; if (outdoor) pois[k].outdoor = true; else set(x, y, T_DOOR); return k; };
+  const N = W * H, tiles = new Uint8Array(N).fill(T_GRASS), biome = new Uint8Array(N), flora = new Uint8Array(N);
+  const inb = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+  const set = (x, y, t) => { if (inb(x, y)) tiles[y * W + x] = t; };
+  const get = (x, y) => inb(x, y) ? tiles[y * W + x] : T_WALL;
+  const fl = (x, y, v) => { if (inb(x, y)) flora[y * W + x] = v; };
+  const bio = (x, y) => inb(x, y) ? BIOMES[biome[y * W + x]] : null;
+  const fill = (x0, y0, x1, y1, t) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, t); };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) biome[y * W + x] = BIOMES.indexOf(biomeOf(x, y));
+  const pois = {}, roofs = [], containers = [], decos = [], fires = [], gates = {}, noPath = new Set(), keep = new Uint8Array(N);
+  let cid = 0, shelterRect = null, bunker = null, hatch = null, bus = null, gate = null, camp = null;
+  const addPoi = (x, y, type, label, outdoor, np) => { const k = x + ',' + y; pois[k] = { x, y, type, label: label || LOCS[type].n }; if (outdoor) pois[k].outdoor = true; else set(x, y, T_DOOR); if (np) noPath.add(k); return k; };
   const addCont = (x, y, kind, loc, poi) => { set(x, y, T_PROP); containers.push({ id: 'c' + (cid++), x, y, kind, loc, poi }); };
+  const addDeco = (x, y, w, h, kind, o) => {
+    const d = Object.assign({ x, y, w, h, kind }, o || {});
+    if (d.legs) for (const [a, b] of [[x, y], [x + w - 1, y], [x, y + h - 1], [x + w - 1, y + h - 1]]) set(a, b, T_DECO); else fill(x, y, x + w - 1, y + h - 1, T_DECO);
+    decos.push(d); return d;
+  };
+  const isFree = (x0, y0, x1, y1, t) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (get(x, y) !== (t == null ? T_GRASS : t) || keep[y * W + x]) return false; return true; };
+  const reserve = (x0, y0, x1, y1) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (inb(x, y)) keep[y * W + x] = 1; };
   /* A walled building with a walkable floor, one door on the south wall, optional partition, wall-side containers. */
   const addBuilding = (x0, y0, x1, y1, type, label, nCont) => {
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, (x === x0 || x === x1 || y === y0 || y === y1) ? T_WALL : T_FLOOR);
@@ -66,7 +106,7 @@ function genWorld(seed) {
     /* every floor tile and every container must stay reachable from inside the door */
     const interiorOK = () => {
       const seen = new Set([dx + ',' + (y1 - 1)]), q = [[dx, y1 - 1]];
-      while (q.length) { const [x, y] = q.pop(); for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + a, ny = y + b, k = nx + ',' + ny; if (!seen.has(k) && get(nx, ny) === T_FLOOR) { seen.add(k); q.push([nx, ny]); } } }
+      while (q.length) { const [x, y] = q.pop(); for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + a, ny = y + b, k = nx + ',' + ny; if (!seen.has(k) && (get(nx, ny) === T_FLOOR || get(nx, ny) === T_SHALLOW)) { seen.add(k); q.push([nx, ny]); } } }
       for (let y = y0 + 1; y < y1; y++) for (let x = x0 + 1; x < x1; x++) {
         const t = get(x, y);
         if (t === T_FLOOR && !seen.has(x + ',' + y)) return false;
@@ -81,8 +121,92 @@ function genWorld(seed) {
       if (!interiorOK()) { set(x, y, T_FLOOR); continue; }
       set(x, y, T_FLOOR); addCont(x, y, kinds[placed % kinds.length], type, key); placed++;
     }
+    reserve(x0, y0, x1, y1);
     return key;
   };
+  /* closed outbuilding (no interior): garages */
+  const addShed = (x0, y0, x1, y1, type) => { fill(x0, y0, x1, y1, T_ROOF); roofs.push({ x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1, type, closed: true }); reserve(x0, y0, x1, y1); };
+  /* a wiggly 4-connected trail */
+  const trail = (ax, ay, bx, by, t) => {
+    let x = ax, y = ay, n = 0; set(x, y, t); keep[y * W + x] = 1;
+    while ((x !== bx || y !== by) && n++ < 500) {
+      const dx = bx - x, dy = by - y;
+      if (dx && (!dy || R() < Math.abs(dx) / (Math.abs(dx) + Math.abs(dy)))) x += Math.sign(dx); else y += Math.sign(dy);
+      if (get(x, y) === T_GRASS || get(x, y) === T_SHALLOW) set(x, y, t); keep[y * W + x] = 1;
+    }
+  };
+  const clearing = (cx, cy, r) => { for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) if (inb(x, y) && (x - cx) ** 2 + (y - cy) ** 2 <= r * r + 1) keep[y * W + x] = 1; };
+  /* a free grass neighbour of (x,y) (for stashes beside outdoor POIs) */
+  const sideTile = (x, y) => [[-1, 0], [1, 0], [0, -1], [-1, -1], [1, -1]].map(([a, b]) => [x + a, y + b]).find(([a, b]) => get(a, b) === T_GRASS);
+  /* ---- city park: crossing paths, tree clumps round them, a pond in the low corner, hedges on the edge ---- */
+  const park = (x0, y0, x1, y1) => {
+    const cx = x0 + ((x1 - x0) >> 1), cy = y0 + ((y1 - y0) >> 1);
+    for (let x = x0; x <= x1; x++) set(x, cy, T_PATH);
+    for (let y = y0; y <= y1; y++) set(cx, y, T_PATH);
+    const quads = [[x0, y0, cx - 1, cy - 1], [cx + 1, y0, x1, cy - 1], [x0, cy + 1, cx - 1, y1], [cx + 1, cy + 1, x1, y1]], pq = ri(0, 3);
+    quads.forEach(([a0, b0, a1, b1], i) => {
+      if (i === pq) {
+        const pw = Math.max(1, Math.min(3, a1 - a0 - 1)), ph = Math.max(1, Math.min(2, b1 - b0 - 1)), px = a0 + 1, py = b0 + 1;
+        fill(px, py, px + pw - 1, py + ph - 1, T_WATER);
+        for (let y = py - 1; y <= py + ph; y++) for (let x = px - 1; x <= px + pw; x++) if (get(x, y) === T_GRASS && R() < 0.7) fl(x, y, FLORA.REED);
+      } else {
+        const mx = (a0 + a1) / 2 + (R() - 0.5), my = (b0 + b1) / 2 + (R() - 0.5);
+        for (let y = b0; y <= b1; y++) for (let x = a0; x <= a1; x++) {
+          if (get(x, y) !== T_GRASS) continue;
+          const d = Math.hypot(x - mx, y - my);
+          if (d < 1.3 && R() < 0.85) { set(x, y, T_TREE); fl(x, y, R() < 0.3 ? FLORA.BIRCH : FLORA.OLD); }
+          else if (d < 2.4 && R() < 0.35) set(x, y, T_BUSH);
+          else if (R() < 0.2) fl(x, y, FLORA.FLOWERS);
+        }
+      }
+    });
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if ((x === x0 || x === x1 || y === y0 || y === y1) && get(x, y) === T_GRASS && R() < 0.5) { set(x, y, T_BUSH); fl(x, y, FLORA.HEDGE); }
+    reserve(x0, y0, x1, y1);
+  };
+  /* a collapsed house: broken brick walls, the front fallen in, rubble floor with saplings pushing through */
+  const ruin = (a0, b0, a1, b1) => {
+    for (let y = b0; y <= b1; y++) for (let x = a0; x <= a1; x++) {
+      const edge = x === a0 || x === a1 || y === b0 || y === b1, corner = (x === a0 || x === a1) && (y === b0 || y === b1);
+      if (!edge) { set(x, y, T_RUBBLE); if (R() < 0.6) fl(x, y, FLORA.SAPLING); continue; }
+      if (corner || (y !== b1 && R() < 0.72)) set(x, y, T_WALL); else { set(x, y, T_RUBBLE); if (R() < 0.3) fl(x, y, FLORA.SAPLING); }
+    }
+    if (R() < 0.55) { const x = ri(a0 + 1, a1 - 1), y = b0 + 1; set(x, y, T_TREE); fl(x, y, FLORA.YOUNG); }
+  };
+  /* a field with a hedgerow round it; gaps in the middle of each side let the tracks in */
+  const field = (x0, y0, x1, y1) => {
+    const mx = (x0 + x1) >> 1, my = (y0 + y1) >> 1;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      if (get(x, y) !== T_GRASS) continue;
+      const edge = x === x0 || x === x1 || y === y0 || y === y1, gap = Math.abs(x - mx) <= 1 && (y === y0 || y === y1) || Math.abs(y - my) <= 0 && (x === x0 || x === x1);
+      if (edge) { if (!gap && R() < 0.88) { set(x, y, T_BUSH); fl(x, y, FLORA.HEDGE); } }
+      else { set(x, y, T_FIELD); if (R() < 0.6) fl(x, y, FLORA.CROP); }
+    }
+    reserve(x0, y0, x1, y1);
+  };
+  /* stacked shipping containers (3x1) in rows with aisles */
+  const containerYard = (x0, y0, x1, y1, loc, key, ground) => {
+    for (let y = y0 + 1; y <= y1 - 1; y += 2) for (let x = x0 + 1; x + 2 <= x1 - 1; x += 4) {
+      if (R() < 0.82 && isFree(x, y, x + 2, y, ground)) addDeco(x, y, 3, 1, 'container', { stack: ri(1, 3), c: ri(0, 5) });
+      else if (R() < 0.5 && get(x + 1, y) === (ground == null ? T_GRASS : ground)) addCont(x + 1, y, 'crate', loc, key);
+    }
+  };
+  const R2 = (x0, y0, x1, y1, t) => fill(x0, y0, x1, y1, t == null ? T_ROAD : t);
+
+  /* ================= roads ================= */
+  R2(24, 72, 61, 73, T_PATH);                                   // field track
+  for (const y of ROADS_Y) R2(22, y, 84, y + 1);
+  for (const x of ROADS_X) R2(x, 18, x + 1, 59);
+  R2(22, 60, 23, 83); R2(34, 60, 35, 83); R2(46, 60, 47, 71, T_PATH); R2(46, 74, 47, 83, T_PATH);
+  R2(70, 60, 71, 83); R2(82, 60, 83, 83);                       // into the Flooded Quarter (flooded below)
+  for (const y of [28, 38, 48, 58, 68, 78]) R2(0, y, 23, y + 1);  // Elm Row
+  R2(10, 28, 11, 83);
+  R2(88, 0, 89, 83); R2(100, 0, 101, 59);                       // docks quay + yard road
+  for (const y of [10, 28, 38, 48, 58]) R2(88, y, 111, y + 1);
+  R2(58, 10, 59, 17); R2(58, 10, 75, 11); R2(74, 0, 75, 11);    // the pass road, up to the top edge (Haven)
+  R2(34, 4, 35, 17, T_PATH);                                    // the forest road
+  for (let y = 0; y < H; y++) for (const x of RIVER_X) set(x, y, (y === 38 || y === 39) ? T_BRIDGE : T_WATER);
+
+  /* ================= Old Town ================= */
   for (let by = 0; by < 4; by++) for (let bx = 0; bx < 5; bx++) {
     const [x0, x1] = BLOCKS_X[bx], [y0, y1] = BLOCKS_Y[by];
     const type = BLOCK_PLAN[bx + ',' + by];
@@ -95,33 +219,27 @@ function genWorld(seed) {
       for (let y = y0; y < y0 + 2; y++) for (let x = x0 + 3; x < x0 + 6; x++) set(x, y, T_WALL);
       hatch = { x: x0 + 4, y: y0 + 2 };
       addPoi(hatch.x, hatch.y, 'shelter');
-    } else if (type === 'forest') {
-      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (R() < 0.42) set(x, y, T_TREE);
-      const px = ri(x0 + 2, x1 - 2), py = ri(y0 + 2, y1 - 2);
-      for (let y = py - 1; y <= py + 1; y++) for (let x = px - 1; x <= px + 1; x++) set(x, y, T_GRASS);
-      for (let x = px; x <= x1 + 1; x++) if (get(x, py) === T_TREE) set(x, py, T_GRASS);
-      const key = addPoi(px, py, 'forest', 'Hunting Stand', true);
-      addCont(px, py - 1, 'stash', 'forest', key);
-    } else if (type === 'farm') {
-      for (let y = y0 + 1; y <= y1 - 1; y++) for (let x = x0 + 1; x <= x0 + 4; x++) set(x, y, T_FIELD);
-      addBuilding(x1 - 4, y0 + 1, x1, y0 + 5, 'farm', 'Barn', 4);
-      scatter(4, T_TREE);
-    } else if (type === 'tollcamp') {
+      reserve(x0, y0, x1, y1);
+    } else if (type === 'park') park(x0, y0, x1, y1);
+    else if (type === 'tollcamp') {
       for (let x = x0 + 1; x <= x1 - 1; x++) { set(x, y0 + 1, T_WALL); set(x, y1 - 1, T_WALL); }
       for (let y = y0 + 1; y <= y1 - 1; y++) { set(x0 + 1, y, T_WALL); set(x1 - 1, y, T_WALL); }
       for (let y = y0 + 2; y <= y1 - 2; y++) for (let x = x0 + 2; x <= x1 - 2; x++) set(x, y, T_YARD);
       for (let y = y0 + 2; y <= y0 + 4; y++) for (let x = x0 + 3; x <= x1 - 3; x++) set(x, y, T_ROOF);
       roofs.push({ x: x0 + 3, y: y0 + 2, w: bw - 6, h: 3, type: 'tollcamp', closed: true });
       gate = { x: x0 + Math.floor(bw / 2), y: y1 - 1 };
+      camp = { x0, y0, x1, y1 };
       addPoi(gate.x, gate.y, 'tollcamp');
+      reserve(x0, y0, x1, y1);
     } else if (type === 'street') {
-      scatter(10, T_RUBBLE); scatter(4, T_TREE);
+      scatter(8, T_RUBBLE);
       addBuilding(x0 + 1, y0 + 1, x0 + 5, y0 + 4, 'street', 'Wrecked Shop', 3);
+      ruin(x0 + 6, y0 + 1, x1, y0 + 4);
       const rx = x0 + ri(2, bw - 3), ry = y1 - 1;
       const key = addPoi(rx, ry + 1, 'street', 'Rubble Pile', true);
       addCont(rx, ry, 'rubble', 'street', key);
       if ([T_GRASS, T_RUBBLE].includes(get(rx + 2, ry - 1))) addCont(rx + 2, ry - 1, 'rubble', 'street', key);
-      for (let i = 0; i < 4; i++) { const x = ri(x0 + 7, x1), y = ri(y0, y1 - 2); if ([T_GRASS, T_RUBBLE].includes(get(x, y))) addCont(x, y, 'crate', 'street', key); }
+      for (let i = 0; i < 3; i++) { const x = ri(x0 + 6, x1), y = y0 + 5; if ([T_GRASS, T_RUBBLE].includes(get(x, y)) && [T_GRASS, T_RUBBLE].includes(get(x, y + 1)) && get(x - 1, y) !== T_PROP && get(x + 1, y) !== T_PROP) addCont(x, y, 'crate', 'street', key); }
     } else {
       const mx = type === 'radiotower' ? 3 : 1;
       const n = (LOCS[type].searches || 4) + 1;
@@ -130,40 +248,334 @@ function genWorld(seed) {
       scatter(3, T_RUBBLE);
     }
   }
-  for (let y = 0; y < H; y++) for (const x of RIVER_X) { const t = get(x, y); if (t === T_ROAD) set(x, y, T_BRIDGE); else set(x, y, T_WATER); }
-  for (const [y, label] of [[30, 'River Dock'], [10, 'Fishing Pier']]) { set(49, y, T_GRASS); const key = addPoi(49, y, 'river', label, true); addCont(49, y - 1, 'nets', 'river', key); }
-  for (let i = 0; i < 26; i++) {
-    const x = ri(0, W - 1), y = ri(0, H - 1);
-    if (get(x, y) !== T_ROAD || (x >= 26 && x <= 42 && y >= 12 && y <= 26)) continue;
+  /* weeds and saplings take the rubble */
+  for (let y = 18; y < 60; y++) for (let x = 22; x < 85; x++) if (get(x, y) === T_RUBBLE && !flora[y * W + x] && R() < 0.3) fl(x, y, FLORA.SAPLING);
+
+  /* ================= Elm Row (suburbs) ================= */
+  const SUB_X = [[0, 9], [12, 21]], SUB_Y = [[30, 37], [40, 47], [50, 57], [60, 67], [70, 77]];
+  const HOUSE_NAMES = ['Blue House', 'Corner House', 'The Hendersons\'', 'Yellow House', 'No. 14', 'No. 22', 'Brick House', 'The Okoyes\'', 'Grey House', 'No. 9'];
+  const parkAt = ri(0, SUB_Y.length - 1) * 2 + ri(0, 1);
+  SUB_Y.forEach(([y0, y1], j) => SUB_X.forEach(([x0, x1], i) => {
+    if (j * 2 + i === parkAt) { park(x0, y0, x1, y1); return; }
+    /* house with a fenced front yard, detached garage on the side */
+    const key = addBuilding(x0 + 1, y0 + 1, x0 + 6, y0 + 5, 'house', HOUSE_NAMES[(j * 2 + i) % HOUSE_NAMES.length], 3), dx = x0 + 3;
+    addShed(x0 + 7, y0 + 2, x1, y0 + 5, 'garage');
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const edge = x === x0 || x === x1 || y === y0 || y === y1;
+      if (!edge || get(x, y) !== T_GRASS) continue;
+      if (y === y1 && (x === dx || x === x0 + 8)) continue;          // front gate + driveway
+      set(x, y, T_FENCE);
+    }
+    addCont(x0 + 8, y0 + 6, 'toolbox', 'garage', key);
+    if (R() < 0.6) { set(x0 + 1, y0 + 6, T_TREE); fl(x0 + 1, y0 + 6, R() < 0.5 ? FLORA.BIRCH : FLORA.YOUNG); }
+    if (R() < 0.7) for (const x of [x0 + 5, x0 + 6]) if (get(x, y0 + 6) === T_GRASS) { set(x, y0 + 6, T_BUSH); fl(x, y0 + 6, FLORA.HEDGE); }
+    if (R() < 0.4) fl(x0 + 2, y0 + 6, FLORA.FLOWERS);
+  }));
+  /* allotments at the bottom of Elm Row */
+  for (const [x0, x1] of SUB_X) {
+    for (let x = x0; x <= x1; x++) if (get(x, 83) === T_GRASS) { set(x, 83, T_BUSH); fl(x, 83, FLORA.HEDGE); }
+    for (let x = x0 + 1; x + 2 <= x1 - 1; x += 4) for (let y = 80; y <= 81; y++) for (let k = 0; k < 3; k++) { set(x + k, y, T_FIELD); fl(x + k, y, FLORA.CROP); }
+  }
+
+  /* ================= Farmland ================= */
+  field(24, 60, 33, 71); field(36, 60, 45, 71); field(24, 74, 33, 83); field(36, 74, 45, 83); field(48, 74, 61, 83);
+  fill(48, 60, 61, 71, T_YARD);
+  addBuilding(53, 61, 60, 66, 'farm', 'Teodor\'s Farm', 4);
+  addBuilding(48, 62, 52, 66, 'house', 'Farmhouse', 2);
+  addDeco(57, 68, 2, 2, 'silo'); addDeco(59, 68, 2, 2, 'silo');
+  for (const [x, y] of [[49, 68], [49, 69], [52, 70], [54, 68]]) if (get(x, y) === T_YARD) addDeco(x, y, 1, 1, 'hay');
+  reserve(48, 60, 61, 71);
+
+  /* ================= Flooded Quarter ================= */
+  for (let y = 60; y < H; y++) for (let x = 62; x <= 84; x++) { const t = get(x, y); if (t === T_GRASS || t === T_ROAD) { if (t === T_ROAD) fl(x, y, FLORA.SUNKROAD); set(x, y, T_SHALLOW); } }
+  for (const [a, b, c, d] of [[63, 61, 68, 65], [73, 61, 80, 65], [63, 72, 68, 76], [73, 72, 79, 76]]) addBuilding(a, b, c, d, 'flooded', 'Sunken House', 3);
+  for (let x = 62; x <= 84; x++) if (get(x, 68) === T_SHALLOW) set(x, 68, T_PLANK);             // stilt walkway
+  for (let y = 66; y <= 80; y++) if (get(66, y) === T_SHALLOW) set(66, y, T_PLANK);
+  for (let y = 77; y <= 83; y++) if (get(76, y) === T_SHALLOW) set(76, y, T_PLANK);
+  for (const [x, y] of [[64, 80], [79, 80], [72, 66]]) if (isFree(x, y, x + 1, y + 1, T_SHALLOW)) fill(x, y, x + 1, y + 1, T_WATER);
+  addDeco(70, 79, 2, 1, 'boat');
+  for (let y = 60; y < H; y++) for (let x = 62; x <= 84; x++) if (get(x, y) === T_SHALLOW && !flora[y * W + x]) {
+    const nearDry = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => get(x + a, y + b) === T_WALL);
+    if (R() < (nearDry ? 0.35 : 0.05)) fl(x, y, FLORA.REED); else if (R() < 0.02) { set(x, y, T_TREE); fl(x, y, FLORA.DEAD); }
+  }
+
+  /* ================= Docks ================= */
+  {
+    const yardKey = addPoi(95, 27, 'docks', 'Container Yard', true);
+    addDeco(91, 13, 4, 6, 'crane', { legs: true });
+    containerYard(90, 12, 99, 26, 'docks', yardKey);
+    addBuilding(103, 13, 110, 25, 'warehouse', 'Flooded Warehouse', 5);
+    for (let y = 14; y <= 18; y++) for (let x = 104; x <= 109; x++) if (get(x, y) === T_FLOOR) set(x, y, T_SHALLOW);
+    addBuilding(91, 31, 98, 36, 'docks', 'Harbour Office', 4);
+    containerYard(102, 30, 111, 37, 'docks', yardKey);
+    addBuilding(91, 41, 98, 46, 'warehouse', 'Cold Store', 4);
+    const fuelKey = addPoi(106, 47, 'docks', 'Fuel Jetty', true);
+    addDeco(103, 41, 3, 3, 'tank'); addDeco(107, 41, 3, 3, 'tank');
+    addCont(110, 46, 'crate', 'docks', fuelKey);
+    addBuilding(91, 51, 97, 56, 'docks', 'Net Loft', 3);
+    addDeco(103, 51, 4, 6, 'crane', { legs: true });
+    containerYard(102, 50, 111, 57, 'docks', fuelKey);
+    containerYard(90, 0, 99, 9, 'docks', yardKey);
+    addDeco(103, 2, 3, 3, 'tank'); addDeco(107, 5, 3, 3, 'tank');
+    /* harbour: apron, basin, piers, moored boats */
+    fill(90, 60, 99, 83, T_YARD);
+    fill(102, 60, 111, 83, T_WATER);
+    for (const y of [66, 67]) for (let x = 100; x <= 109; x++) set(x, y, T_PLANK);
+    for (const y of [76, 77]) for (let x = 100; x <= 109; x++) set(x, y, T_PLANK);
+    const pier = addPoi(108, 67, 'docks', 'Pier 3', true, true); addCont(109, 66, 'nets', 'docks', pier);
+    addDeco(104, 70, 3, 1, 'boat'); addDeco(103, 80, 4, 1, 'boat'); addDeco(106, 63, 2, 1, 'boat');
+    addDeco(93, 76, 4, 6, 'crane', { legs: true });
+    containerYard(90, 61, 99, 74, 'docks', pier, T_YARD);
+    reserve(88, 0, 111, 83);
+  }
+
+  /* ================= Kessler Woods (forest + hills) ================= */
+  const forestT = (x, y) => bio(x, y) === 'forest';
+  addBuilding(8, 4, 15, 9, 'ranger', 'Ranger Station', 4); clearing(11, 7, 6);
+  trail(11, 10, 33, 12, T_PATH);
+  trail(11, 11, 6, 23, T_PATH); clearing(6, 23, 2);
+  const hs = addPoi(6, 23, 'forest', 'Hunting Stand', true, true);
+  { const s = sideTile(6, 23) || [7, 22]; addCont(s[0], s[1], 'stash', 'forest', hs); }
+  if (get(7, 24) === T_GRASS) addDeco(7, 24, 1, 1, 'stand');
+  trail(35, 6, 40, 5, T_PATH); clearing(40, 5, 2);
+  const oc = addPoi(40, 5, 'forest', 'Old Campsite', true, true);
+  { const s = sideTile(40, 5) || [41, 4]; addCont(s[0], s[1], 'stash', 'forest', oc); }
+  fires.push({ x: 39.5, y: 6.5, kind: 'camp' }, { x: 13.5, y: 11.5, kind: 'camp' });
+  if (isFree(23, 6, 25, 7)) { fill(23, 6, 25, 7, T_WATER); for (let y = 5; y <= 8; y++) for (let x = 22; x <= 26; x++) if (get(x, y) === T_GRASS && R() < 0.6) fl(x, y, FLORA.REED); clearing(24, 6, 2); }
+  /* distance from anything open (trails, clearings, the forest edge): the woods thicken from saplings to old trees */
+  {
+    const D = new Uint8Array(N).fill(255), q = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (!forestT(x, y)) continue;
+      const open = get(x, y) !== T_GRASS || keep[y * W + x] || [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => inb(x + a, y + b) && !forestT(x + a, y + b));
+      if (open) { D[y * W + x] = 0; q.push(y * W + x); }
+    }
+    for (let h = 0; h < q.length; h++) {
+      const i = q[h], x = i % W, y = (i / W) | 0;
+      for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + a, ny = y + b, j = ny * W + nx; if (inb(nx, ny) && forestT(nx, ny) && D[j] > D[i] + 1) { D[j] = D[i] + 1; q.push(j); } }
+    }
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (!forestT(x, y) || get(x, y) !== T_GRASS || keep[y * W + x]) continue;
+      const d = D[y * W + x], r = R(), hill = y < 9 || x < 5;
+      if (d <= 1) { if (r < 0.22) set(x, y, T_BUSH); else if (r < 0.5) fl(x, y, FLORA.FERN); else if (r < 0.6) fl(x, y, FLORA.FLOWERS); }
+      else if (d === 2) { if (r < 0.22) { set(x, y, T_TREE); fl(x, y, FLORA.YOUNG); } else if (r < 0.55) fl(x, y, FLORA.SAPLING); else if (r < 0.7) fl(x, y, FLORA.FERN); }
+      else if (d === 3) { if (r < 0.42) { set(x, y, T_TREE); fl(x, y, R() < 0.5 ? FLORA.YOUNG : FLORA.OLD); } else if (r < 0.6) fl(x, y, FLORA.FERN); else if (r < 0.66) set(x, y, T_BUSH); }
+      else {
+        if (hill && r < 0.07) { set(x, y, T_ROCK); for (const [a, b] of [[1, 0], [0, 1]]) if (R() < 0.5 && get(x + a, y + b) === T_GRASS && !keep[(y + b) * W + x + a]) set(x + a, y + b, T_ROCK); }
+        else if (r < 0.6) { set(x, y, T_TREE); fl(x, y, vnoiseCell(x, y, seed) > 0.72 ? FLORA.BIRCH : FLORA.OLD); }
+        else if (r < 0.63 && get(x + 1, y) === T_GRASS && !keep[y * W + x + 1]) addDeco(x, y, 2, 1, 'log');
+        else if (r < 0.8) fl(x, y, FLORA.FERN);
+      }
+    }
+  }
+
+  /* ================= Northern Pass ================= */
+  addBuilding(61, 2, 70, 8, 'military', null, LOCS.military.searches + 1);
+  addBuilding(47, 3, 53, 7, 'pass', 'Avalanche Hut', 3);
+  trail(50, 8, 57, 10, T_PATH);
+  const cv = addPoi(66, 12, 'pass', 'Wrecked Convoy', true, true);
+  { const s = [67, 12]; if (get(s[0], s[1]) === T_GRASS) addCont(s[0], s[1], 'crate', 'pass', cv); }
+  reserve(64, 12, 69, 13);
+  for (const x of [61, 64, 69, 72]) { const y = R() < 0.5 ? 10 : 11; if (get(x, y) === T_ROAD) { set(x, y, T_CAR); if (R() < 0.6) containers.push({ id: 'c' + (cid++), x, y, kind: 'trunk', loc: 'pass', poi: cv }); } }
+  {
+    const nearOpen = (x, y, r) => { for (let b = -r; b <= r; b++) for (let a = -r; a <= r; a++) { const t = get(x + a, y + b); if (t === T_ROAD || t === T_PATH || t === T_WALL || t === T_DOOR || t === T_CAR || keep[(y + b) * W + x + a] && inb(x + a, y + b)) return true; } return false; };
+    for (let y = 0; y < 17; y++) for (let x = 44; x <= 84; x++) {
+      if (get(x, y) !== T_GRASS || keep[y * W + x]) continue;
+      if (nearOpen(x, y, 1)) { if (R() < 0.08) { set(x, y, T_ROCK); fl(x, y, FLORA.CLIFF); } continue; }
+      const r = R();
+      if (r < 0.3) { set(x, y, T_ROCK); fl(x, y, FLORA.CLIFF); } else if (r < 0.44) { set(x, y, T_TREE); fl(x, y, FLORA.SNOWPINE); }
+    }
+  }
+
+  /* ================= the river banks ================= */
+  for (const [y, label] of [[24, 'Fishing Pier'], [44, 'River Dock'], [74, 'Ferry Landing']]) { set(84, y, y >= 60 ? T_PLANK : T_GRASS); const key = addPoi(84, y, 'river', label, true); addCont(84, y - 1, 'nets', 'river', key); }
+  for (let y = 18; y < H; y++) {
+    const t = get(84, y), pierNear = [24, 44, 74].some(p => Math.abs(p - y) <= 2) || ROADS_Y.some(r => y >= r - 1 && y <= r + 2);
+    if (t === T_GRASS && !pierNear && y % 5 === 2 && R() < 0.85) { set(84, y, T_TREE); fl(84, y, FLORA.WILLOW); }
+    else if ((t === T_GRASS || t === T_SHALLOW) && !flora[y * W + 84] && R() < 0.65) fl(84, y, FLORA.REED);
+  }
+
+  /* ================= boulevard trees: planted every 4 tiles on the kerbs of the main avenue (y 38) and Market Street (x 46) ================= */
+  {
+    const plant = (x, y) => {
+      if (get(x, y) !== T_GRASS || keep[y * W + x] || bio(x, y) !== 'oldtown') return;
+      for (const [a, b] of [[0, 1], [0, -1], [1, 0], [-1, 0], [0, 2], [0, -2]]) { const t = get(x + a, y + b); if (t === T_DOOR || t === T_PROP) return; }
+      if (Object.values(pois).some(p => p.x === x && Math.abs(p.y - y) <= 3)) return;
+      set(x, y, T_TREE); fl(x, y, FLORA.STREET);
+    };
+    for (let x = 24; x <= 81; x += 4) { plant(x, 37); plant(x + 2, 40); }
+    for (let y = 20; y <= 57; y += 4) { plant(45, y); plant(48, y + 2); }
+  }
+
+  /* ================= cars ================= */
+  const nearGate = (x, y) => Math.abs(x - 34.5) + Math.abs(y - 16.5) < 4 || Math.abs(x - 58.5) + Math.abs(y - 16.5) < 4 || Math.abs(x - 86) + Math.abs(y - 38.5) < 6;
+  for (let i = 0; i < 150; i++) {
+    const x = ri(0, W - 1), y = ri(0, H - 1), b = bio(x, y);
+    if (get(x, y) !== T_ROAD || b === 'pass' || b === 'forest' || nearGate(x, y) || (x >= 44 && x <= 62 && y >= 26 && y <= 42)) continue;
+    let crowd = false; for (let oy = -1; oy <= 1 && !crowd; oy++) for (let ox = -1; ox <= 1; ox++) if (get(x + ox, y + oy) === T_CAR) { crowd = true; break; }
+    if (crowd) continue;
     set(x, y, T_CAR);
-    if (R() < 0.45) containers.push({ id: 'c' + (cid++), x, y, kind: 'trunk', loc: 'street', poi: null });
+    if (R() < 0.45) containers.push({ id: 'c' + (cid++), x, y, kind: 'trunk', loc: b === 'docks' ? 'docks' : b === 'suburbs' ? 'suburbs' : 'street', poi: null });
   }
   const clearCar = (x, y) => { if (get(x, y) === T_CAR) { set(x, y, T_ROAD); const ci = containers.findIndex(c => c.x === x && c.y === y); if (ci >= 0) containers.splice(ci, 1); } };
   for (const k in pois) { const p = pois[k]; for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) clearCar(p.x + dx, p.y + dy); }
-  /* a clear path from every south-facing door (and outdoor POI) down to the next road */
+  /* a clear path from every south-facing door (and outdoor POI) down to the next road, never across a district border */
+  const walkway = t => t === T_ROAD || t === T_BRIDGE || t === T_PATH || t === T_PLANK || t === T_SHALLOW || t === T_YARD;
   for (const k in pois) {
-    const p = pois[k]; if (p.type === 'shelter') continue;
-    for (let y = p.y + 1; y < H; y++) { const t = get(p.x, y); if (t === T_ROAD || t === T_BRIDGE) break; if (t === T_CAR) clearCar(p.x, y); else if (SOLID.has(t)) set(p.x, y, T_GRASS); }
+    const p = pois[k]; if (p.type === 'shelter' || noPath.has(k)) continue;
+    const pb = bio(p.x, p.y);
+    for (let y = p.y + 1; y < H; y++) { const t = get(p.x, y); if (walkway(t) || bio(p.x, y) !== pb) break; if (t === T_CAR) clearCar(p.x, y); else if (SOLID.has(t)) { set(p.x, y, T_GRASS); fl(p.x, y, 0); } }
   }
   if (bus) for (let x = bus.x - 1; x <= bus.x + 1; x++) { clearCar(x, bus.y); clearCar(x, bus.y + 1); }
-  return { tiles, pois, roofs, containers, shelterRect, bunker, hatch, bus, gate };
+
+  /* ================= story gates + the seals round the gated districts ================= */
+  const addGate = (id, kind, x0, y0, x1, y1) => { const g = gates[id] = { id, kind, x0, y0, x1, y1, tiles: [] }; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { g.tiles.push([x, y, get(x, y)]); set(x, y, T_GATE); fl(x, y, 0); } };
+  addGate('forest', 'rubble', 34, 16, 35, 17);
+  addGate('pass', 'toll', 58, 16, 59, 17);
+  addGate('docks', 'bridge', 85, 38, 87, 39);
+  const seal = (x0, y0, x1, y1, f) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (get(x, y) !== T_GATE) { if (get(x, y) === T_PROP) continue; set(x, y, T_ROCK); fl(x, y, f); } };
+  seal(22, 17, 43, 17, FLORA.STONEWALL); seal(21, 17, 21, 27, FLORA.STONEWALL); seal(0, 27, 20, 27, FLORA.STONEWALL);
+  seal(43, 0, 43, 16, FLORA.CLIFF); seal(44, 17, 84, 17, FLORA.CLIFF);
+
+  /* ================= fires: barrels where people warmed their hands, camp fires in the woods ================= */
+  {
+    const spots = [];
+    for (let by = 0; by < 4; by++) for (let bx = 0; bx < 5; bx++) {
+      if (!['street', 'depot', 'factory', 'gas'].includes(BLOCK_PLAN[bx + ',' + by])) continue;
+      const [x0, x1] = BLOCKS_X[bx], [y0, y1] = BLOCKS_Y[by];
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (get(x, y) === T_GRASS && get(x, y + 1) === T_ROAD) spots.push([x, y]);
+    }
+    for (let i = 0; i < 5 && spots.length; i++) { const [x, y] = spots.splice(Math.floor(R() * spots.length), 1)[0]; fires.push({ x: x + 0.5, y: y + 0.35, kind: 'barrel' }); }
+    const more = (x0, y0, x1, y1, n, ok) => { const s = []; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (ok(get(x, y)) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => get(x + a, y + b) === T_ROAD)) s.push([x, y]); for (let i = 0; i < n && s.length; i++) { const [x, y] = s.splice(Math.floor(R() * s.length), 1)[0]; fires.push({ x: x + 0.5, y: y + 0.5, kind: 'barrel' }); } };
+    more(90, 0, 111, 59, 2, t => t === T_GRASS || t === T_YARD);
+    more(60, 12, 72, 13, 1, t => t === T_GRASS);
+    more(48, 60, 61, 71, 1, t => t === T_YARD);
+  }
+
+  return { tiles, biome, flora, pois, roofs, containers, decos, fires, gates, shelterRect, bunker, hatch, bus, gate, camp };
 }
+/* smooth per-cell noise for generation (birch groves, etc.) */
+function vnoiseCell(x, y, seed) { const h = (a, b) => { let t = (Math.imul(a, 374761393) + Math.imul(b, 668265263) + (seed | 0)) | 0; t = Math.imul(t ^ (t >>> 13), 1274126177); return ((t ^ (t >>> 16)) >>> 0) / 4294967296; }; const fx = x / 5, fy = y / 5, ix = Math.floor(fx), iy = Math.floor(fy), u = fx - ix, v = fy - iy; return h(ix, iy) * (1 - u) * (1 - v) + h(ix + 1, iy) * u * (1 - v) + h(ix, iy + 1) * (1 - u) * v + h(ix + 1, iy + 1) * u * v; }
 function tileAt(x, y) { if (x < 0 || y < 0 || x >= W || y >= H) return T_WALL; return WORLD.tiles[y * W + x]; }
 function solidAt(x, y) { return SOLID.has(tileAt(Math.floor(x), Math.floor(y))); }
 function inShelter(x, y) { const r = WORLD.shelterRect; return x >= r.x0 && x <= r.x1 + 1 && y >= r.y0 && y <= r.y1 + 1; }
+/* Biome id at a tile point ('oldtown' | 'docks' | 'suburbs' | 'forest' | 'farm' | 'flooded' | 'pass'). */
+function biomeAt(x, y) { const fx = Math.floor(x), fy = Math.floor(y); if (!WORLD || !WORLD.biome || fx < 0 || fy < 0 || fx >= W || fy >= H) return biomeOf(clamp(fx, 0, W - 1), clamp(fy, 0, H - 1)); return BIOMES[WORLD.biome[fy * W + fx]]; }
+/* LOCS type for encounters and ambient danger: the Old Town block type, else the biome's type. */
 function districtAt(x, y) {
-  let bx = BLOCKS_X.findIndex(([a, b]) => x >= a - 2 && x <= b + 1), by = BLOCKS_Y.findIndex(([a, b]) => y >= a - 2 && y <= b + 1);
-  if (bx < 0) bx = clamp(Math.round(x / 12), 0, 4); if (by < 0) by = clamp(Math.round(y / 11), 0, 3);
+  const b = biomeAt(x, y);
+  if (b !== 'oldtown') return BIOME_LOC[b] || 'street';
+  let bx = BLOCKS_X.findIndex(([a, c]) => x >= a - 2 && x <= c + 1), by = BLOCKS_Y.findIndex(([a, c]) => y >= a - 2 && y <= c + 1);
+  if (bx < 0) bx = clamp(Math.round((x - 28.5) / 12), 0, 4); if (by < 0) by = clamp(Math.round((y - 24) / 10), 0, 3);
   return BLOCK_PLAN[bx + ',' + by] || 'street';
 }
+/* Is a biome (or the biome under a POI) open to walk into? Gated ones need G.flags['open_' + gate]. */
+function districtOpen(b) { const g = GATE_OF[b]; return !g || !!(G && G.flags && G.flags['open_' + g]); }
+function poiOpen(p) { return districtOpen(biomeAt(p.x + 0.5, p.y + 0.5)); }
 /* Index into WORLD.roofs of the building whose footprint contains (x,y), or -1. */
 function buildingAt(x, y) { const fx = Math.floor(x), fy = Math.floor(y); return WORLD.roofs.findIndex(r => fx >= r.x && fx < r.x + r.w && fy >= r.y && fy < r.y + r.h); }
-function indoors(x, y) { const t = tileAt(Math.floor(x), Math.floor(y)); return t === T_FLOOR || t === T_DOOR && buildingAt(x, y) >= 0; }
+function indoors(x, y) { const t = tileAt(Math.floor(x), Math.floor(y)); return t === T_FLOOR || (t === T_DOOR || t === T_SHALLOW) && buildingAt(x, y) >= 0; }
 function poiNear(x, y, r) { let best = null, bd = r * r; for (const k in WORLD.pois) { const p = WORLD.pois[k], d = (p.x + 0.5 - x) ** 2 + (p.y + 0.5 - y) ** 2; if (d <= bd) { bd = d; best = Object.assign({ key: k }, p); } } return best; }
-function nearestPoi(type, x, y) { let best = null, bd = Infinity; for (const k in WORLD.pois) { const p = WORLD.pois[k]; if (p.type !== type) continue; const d = (p.x - x) ** 2 + (p.y - y) ** 2; if (d < bd) { bd = d; best = p; } } return best; }
+/* Nearest POI of a type. Prefers ones you can walk to now (open districts); falls back to any. */
+function nearestPoi(type, x, y) {
+  let best = null, bd = Infinity, alt = null, ad = Infinity;
+  for (const k in WORLD.pois) { const p = WORLD.pois[k]; if (p.type !== type) continue; const d = (p.x - x) ** 2 + (p.y - y) ** 2; if (poiOpen(p)) { if (d < bd) { bd = d; best = p; } } else if (d < ad) { ad = d; alt = p; } }
+  return best || alt;
+}
+
+/* ---------- Story gates (districts that open with the story) ---------- */
+const GATE_INFO = {
+  forest: { title: 'Kessler Woods', toast: 'The forest road is clear. Kessler Woods is open.', text: 'The voice on the radio named the ranger station in Kessler Woods. Someone has dragged the rockfall off the forest road. The woods are open north of the old wall.' },
+  docks: { title: 'The Docks', toast: 'Planks across the broken bridge. The Docks are open.', text: 'The fallen span of the river bridge has been bridged with scaffold planks. The Docks lie open across the water: cranes, containers, and whatever nests in the warehouses.' },
+  pass: { title: 'The Northern Pass', toast: 'The Tollmen barrier is down. The Pass is open.', text: 'The Tollmen pulled their barrier off the north road. The way into the Northern Pass and Checkpoint Echo is open, and the snow is coming.' },
+};
+/* Restore a gate's original tiles in a world object (no flags, no messages). Used by openDistrict, load and tests. */
+function openGateTiles(world, id) { const g = world && world.gates && world.gates[id]; if (!g) return false; for (const [x, y, t] of g.tiles) world.tiles[y * W + x] = t; g.open = true; return true; }
+/* Open a story-gated district: removes the blocking tiles, sets G.flags['open_' + id], journals it and toasts. World3D rebuilds the props. */
+function openDistrict(id) {
+  if (!G || !WORLD || !WORLD.gates || !WORLD.gates[id] || G.flags['open_' + id]) return false;
+  openGateTiles(WORLD, id); G.flags['open_' + id] = true;
+  const I = GATE_INFO[id];
+  if (I) { journal(I.title, I.text); Hooks.toast && Hooks.toast(I.toast, 'story'); }
+  Hooks.gateOpened && Hooks.gateOpened(id);
+  return true;
+}
+function applyGates() { if (WORLD && WORLD.gates && G) for (const id in WORLD.gates) if (G.flags['open_' + id]) openGateTiles(WORLD, id); }
+/* Story triggers: woods after the radio, docks after Marcus's route (or day 8), the pass with the bus quest. */
+function gateCheck() {
+  if (!G || !WORLD) return;
+  const f = G.flags;
+  if (f.radio_built) openDistrict('forest');
+  if (f.marcus_3 || G.day >= 8) openDistrict('docks');
+  if (f.q_bus) openDistrict('pass');
+}
+/* The closed gate within r tiles of (x,y), for "the way is blocked" hints: {id, kind, x, y} | null */
+function gateNear(x, y, r) {
+  if (!WORLD || !WORLD.gates) return null;
+  for (const id in WORLD.gates) { const g = WORLD.gates[id]; if (g.open || (G && G.flags['open_' + id])) continue; const cx = (g.x0 + g.x1 + 1) / 2, cy = (g.y0 + g.y1 + 1) / 2; if (Math.hypot(cx - x, cy - y) <= r) return { id, kind: g.kind, x: cx, y: cy }; }
+  return null;
+}
+
+/* ---------- Weather + seasons (seasons follow the story acts) ---------- */
+/* G.weather 'clear'|'rain'|'fog'|'snow' (G.weatherH hours left), G.season 'autumn' (act 1) | 'late' (act 2) | 'winter' (act 3),
+   G.snowCover 0..1 (rises toward the last night), G.storm (the last night's snowstorm). */
+const WEATHER_W = { autumn: { clear: 6, rain: 3, fog: 1 }, late: { clear: 4, rain: 2.5, fog: 3.5 }, winter: { clear: 3, snow: 5, fog: 1.5 } };
+function seasonNow() { const f = (G && G.flags) || {}; return f.q_bus ? 'winter' : f.radio_built ? 'late' : 'autumn'; }
+function weatherInit() { if (!G.weather) { G.weather = 'clear'; G.weatherH = rnd(5, 9); } if (G.snowCover == null) G.snowCover = 0; if (!G.season) G.season = seasonNow(); }
+function weatherTick() {
+  weatherInit();
+  const s = seasonNow();
+  if (s !== G.season) { G.season = s; G.weatherH = Math.min(G.weatherH, s === 'winter' ? 1 : 3); }
+  if (G.flags.q_bus && G.hordeDay && G.hordeDay - G.day <= 0) { G.weather = 'snow'; G.storm = true; G.weatherH = 12; }
+  else {
+    G.storm = false;
+    if (--G.weatherH <= 0 || (s !== 'winter' && G.weather === 'snow')) { const t = WEATHER_W[s]; G.weather = wpick(Object.keys(t), k => t[k]); G.weatherH = rnd(4, 10); }
+  }
+  if (s === 'winter') {
+    const start = (G.hordeDay || G.day + 12) - 12, prog = clamp((G.day - start + G.hour / 24) / 12, 0, 1), base = 0.12 + 0.68 * prog;
+    G.snowCover = G.weather === 'snow' ? Math.min(1, Math.max(G.snowCover, base) + (G.storm ? 0.06 : 0.03)) : Math.max(base, G.snowCover - 0.01);
+  } else G.snowCover = Math.max(0, (G.snowCover || 0) - 0.06);
+  if (s === 'late' && !G.flags.seen_frost && G.hour >= 5 && G.hour <= 9) {
+    G.flags.seen_frost = true;
+    journal('First frost', 'White frost on the cars this morning, and your breath hangs in the air. Late autumn now. The nights will bite.');
+    Hooks.toast && Hooks.toast('First frost. The nights are getting colder.', 'story');
+  }
+  if (G.weather === 'snow' && !G.flags.seen_snow) {
+    G.flags.seen_snow = true;
+    journal('First snow', 'Snow, falling soft and grey over the dead city. The radio says the pass will close soon. Whatever you do, do it before the road north is gone.');
+    Hooks.toast && Hooks.toast('The first snow falls.', 'story');
+  }
+  if (coldK(G.p.x, G.p.y) > 0 && !G.atShelter) { tire(4); hintOnce('cold', 'The cold drains your stamina. Stand by a fire, go indoors, or find a Winter Coat.'); }
+}
+/* Weather where the player (or a noise) is: the pass is always snowing unless it's foggy. */
+function weatherAt(x, y) { const w = (G && G.weather) || 'clear'; if (x != null && biomeAt(x, y) === 'pass' && w !== 'fog') return 'snow'; return w; }
+/* Modifiers read by combat.js */
+function hearMul(x, y) { return weatherAt(x, y) === 'rain' ? 0.6 : 1; }                         // enemy hearing radius
+function sightMul(x, y) { const w = weatherAt(x, y); return w === 'fog' ? 0.6 : (w === 'snow' && G && G.storm) ? 0.75 : 1; } // enemy sight range
+function zSpeedMul(x, y) { return weatherAt(x, y) === 'snow' ? 0.85 : 1; }                       // zombie move speed
+/* Movement multiplier on a tile (player and enemies): knee-deep water slows ~40%, deep snow a little. */
+function moveMul(x, y) {
+  const t = tileAt(Math.floor(x), Math.floor(y));
+  if (t === T_SHALLOW) return 0.6;
+  if (G && G.snowCover > 0.7 && (t === T_GRASS || t === T_FIELD || t === T_BUSH) && !indoors(x, y)) return 0.92;
+  return 1;
+}
+function inBush(x, y) { return tileAt(Math.floor(x), Math.floor(y)) === T_BUSH; }
+function nearFire(x, y, r) { r = r || 3; for (const f of (WORLD && WORLD.fires) || []) if ((f.x - x) ** 2 + (f.y - y) ** 2 <= r * r) return true; return false; }
+/* 0 = warm, 1 = cold (snow outside, no coat, no fire nearby), 1.5 in the storm. Combat slows stamina regen by it. */
+function coldK(x, y) {
+  if (!G || weatherAt(x, y) !== 'snow' || G.pack.coat || indoors(x, y) || inShelter(x, y) || nearFire(x, y, 3.2)) return 0;
+  return G.storm ? 1.5 : 1;
+}
+/* Ambient zombie mix per biome: weight multipliers for zombieTypes() (docks: bloaters, suburbs: dogs ...). */
+const ZMIX = {
+  docks: { bloater: 4, walker: 1.2, runner: 0.6 }, suburbs: { zdog: 4, runner: 1.2 }, forest: { zdog: 2, runner: 1.4, walker: 0.7 },
+  farm: { zdog: 1.6, walker: 1.2 }, flooded: { bloater: 2.6, walker: 1.4, runner: 0.4 }, pass: { brute: 2.4, runner: 1.6, walker: 0.8 }, oldtown: {},
+};
+function zMix(x, y) { return ZMIX[biomeAt(x, y)] || {}; }
 
 /* ---------- New game ---------- */
-function newGame(name, bgId, attrs) {
+function newGame(name, bgId, attrs, worldName) {
   const bg = BACKGROUNDS[bgId];
   const a = Object.assign({}, attrs);
   for (const k in bg.bonus) a[k] = (a[k] || 0) + bg.bonus[k];
@@ -175,6 +587,7 @@ function newGame(name, bgId, attrs) {
     survivors: [], buildings: {}, flags: {}, seenEnc: {}, seenScenes: {}, journal: [], loreRead: [], log: [],
     locs: {}, cont: {}, unlocks: {}, hints: {}, fog: '', noise: 0, encTimer: rnd(70, 110), nextId: 1, hordeDay: 0, hordeNight: false, hordeResult: null,
     stats: { kills: 0, searches: 0, encounters: 0, recruited: 0 },
+    mapV: 2, weather: 'clear', weatherH: rnd(5, 9), season: 'autumn', snowCover: 0, storm: false,
   };
   WORLD = genWorld(seed);
   G.p.x = WORLD.hatch.x + 0.5; G.p.y = WORLD.hatch.y + 1.5;
@@ -185,6 +598,7 @@ function newGame(name, bgId, attrs) {
   initFog();
   recalc(); G.p.sta = G.p.maxSta;
   const intro = CONTENT_().story.intro; if (intro) journal(intro.title, storyText(intro));
+  G.worldName = String(worldName || name || 'Ardent Vale').slice(0, 24); G.slot = null; extrasInit();
   return G;
 }
 /* Long-form text of a scene for the journal (scenes may have beats[] and/or paras[]). */
@@ -201,7 +615,7 @@ function revealAround(cx, cy, r) {
 
 /* ---------- Derived stats ---------- */
 function A(k) { return G.p.attr[k] || 1; }
-function carryCap() { return 18 + A('str') * 3 + (G.pack.backpack ? 15 : 0); }
+function carryCap() { return 18 + A('str') * 3 + (G.pack.backpack ? 15 : 0) + companionCarry(); }
 function packWeight() { let w = 0; for (const k in G.pack) w += (ITEMS[k] ? ITEMS[k].w : 0) * G.pack[k]; return Math.round(w * 10) / 10; }
 function recalc() {
   const p = G.p;
@@ -332,6 +746,7 @@ function tickHour(opts) {
   recalc();
   checkUnlocks();
   if (G.hour === 20) storyCheck();
+  weatherTick(); gateCheck();
   if (G.hour === 22 && G.atShelter && G.day > 1 && !G.hordeNight && chance(0.35)) { const ev = pickEncounter('shelter'); if (ev) Hooks.queue({ type: 'enc', enc: ev }); }
   if (G.hour === 21 && G.hordeNight && !G.hordeResult && !opts.sleep) { if (G.atShelter && Hooks.hordeStart) Hooks.hordeStart(hordeStrength()); }
   if (G.hour === 6) dailyTick();
@@ -394,7 +809,8 @@ function defense() {
 }
 function hordeStrength() { return 10 + G.day * 3; }
 /* Zombies in a real-time horde wave: about strength/4, scaled down by barricades. */
-function hordeWaveSize() { return clamp(Math.round(hordeStrength() / 4) + 2, 5, 40); }
+/* a companion who fights beside you draws ~15% more of them that night */
+function hordeWaveSize() { return clamp(Math.round((Math.round(hordeStrength() / 4) + 2) * (companionFights() ? 1.15 : 1)), 5, 46); }
 function hordeDamage(P, gap, present) {
   P(`Horde night: they broke through.`, 'bad');
   const b1 = damageBuilding(); if (b1) P(`${b1} was wrecked.`, 'bad');
@@ -493,6 +909,7 @@ function dailyTick() {
   if (G.flags.radio_built && C.radio.length) radio = C.radio[(G.day - 1) % C.radio.length];
   Hooks.queue({ type: 'summary', lines: R, radio, day: G.day });
   if (saveAt && G.day > 1 && C.shelterEvents.length && chance(0.45)) { const ev = pickEncounter('shelter'); if (ev) Hooks.queue({ type: 'enc', enc: ev }); }
+  companionDaily(P);
   storyCheck();
   if (G.p.morale <= 0) { G.endScene = 'abandoned'; Hooks.queue({ type: 'end', id: 'abandoned' }); }
   saveGame(true);
@@ -584,7 +1001,7 @@ function encEligible(e, type, ignoreWhere) {
   if (!ignoreWhere) {
     const w = e.where || ['any'];
     if (type === 'shelter') { if (!w.includes('shelter')) return false; }
-    else if (!(w.includes(type) || w.includes('any') || (type === 'travel-any' && w.includes('travel')))) return false;
+    else if (!(w.includes(type) || w.includes('any') || (type === 'travel-any' && w.includes('travel')) || (LOCS[type] && LOCS[type].alias && w.includes(LOCS[type].alias)))) return false;
   }
   if (e.minDay && G.day < e.minDay) return false;
   if (e.night === true && !G.isNight) return false;
@@ -661,7 +1078,7 @@ function pickup(id, qty) { return give(id, qty); }
 
 /* ---------- Trader ---------- */
 function makeTrader() {
-  const pool = ['canned', 'water', 'meal', 'bandage', 'medkit', 'antibiotics', 'painkillers', 'ammo', 'shells', 'bolts', 'parts', 'chem', 'fuel', 'cloth', 'scrap', 'machete', 'axe', 'crossbow', 'pistol', 'backpack', 'boots', 'vest', 'batteries'];
+  const pool = ['canned', 'water', 'meal', 'bandage', 'medkit', 'antibiotics', 'painkillers', 'ammo', 'shells', 'bolts', 'parts', 'chem', 'fuel', 'cloth', 'scrap', 'machete', 'axe', 'crossbow', 'pistol', 'backpack', 'boots', 'vest', 'batteries', 'coat'];
   const stock = {}; for (let i = 0; i < 8; i++) { const id = pick(pool); stock[id] = (stock[id] || 0) + (ITEMS[id].c === 'weapon' || ITEMS[id].c === 'gear' ? 1 : rnd(1, 4)); }
   return { stock, credit: 0 };
 }
@@ -681,6 +1098,7 @@ function storyCheck() {
   }
   if (f.q_bus && G.hordeDay - G.day <= 4 && !G.seenScenes.horde_warning) queueScene('horde_warning');
   if (f.q_bus && G.day >= G.hordeDay && !f.final) { f.final = true; Hooks.queue({ type: 'final' }); }
+  gateCheck();
 }
 const P_ = p => p ? { x: p.x + 0.5, y: p.y + 0.5 } : null;
 /* Current goal: {text, target:{x,y}|null} in tile coords. One short line; the UI draws a marker + compass arrow. */
@@ -729,7 +1147,7 @@ function buildGoal(k, text) {
 }
 function nearestUnvisited() {
   const me = G.p; let best = null, bd = Infinity;
-  for (const k in WORLD.pois) { const q = WORLD.pois[k]; if (q.type === 'shelter' || q.outdoor || !G.locs[k] || G.locs[k].visited) continue; const d = (q.x - me.x) ** 2 + (q.y - me.y) ** 2; if (d < bd) { bd = d; best = q; } }
+  for (const k in WORLD.pois) { const q = WORLD.pois[k]; if (q.type === 'shelter' || q.outdoor || !G.locs[k] || G.locs[k].visited || !poiOpen(q)) continue; const d = (q.x - me.x) ** 2 + (q.y - me.y) ** 2; if (d < bd) { bd = d; best = q; } }
   return P_(best);
 }
 /* centre of a shelter build slot in tile coords (walls: the yard gate) */
@@ -805,11 +1223,254 @@ function finishCure(ok) { if (ok) take('antibiotics', 3); return endGame(ok ? 'e
 function finishStorm(ok) { return ok ? endGame('end_usurp') : null; }
 function endGame(id) { G.endScene = id; G.flags.ended = id; saveGame(true); return id; }
 
-/* ---------- Save / load ---------- */
-const SAVE_KEY = 'deadembers_save_v2', OLD_SAVE_KEY = 'deadembers_save_v1';
+/* ---------- Companions: one at a time follows you outside (combat.js moves it and fights with it) ----------
+   G.companion = {kind:'dog'|'survivor', id, name} | null. G.dog = {name, hp, restUntil, since} once a dog is adopted.
+   A hurt dog or a downed helper goes home and rests until the next day (restUntil); only story choices kill them. */
+const DOG_MAX_HP = 60;
+function extrasInit() {
+  if (!G) return;
+  G.requests = G.requests || []; G.doorBars = G.doorBars || {}; G.siphoned = G.siphoned || {}; G.radioN = G.radioN || 0;
+  if (G.companion === undefined) G.companion = null;
+  recountBars(); companionCheck();
+}
+function companionSurvivor() { const c = G && G.companion; return c && c.kind === 'survivor' ? (G.survivors.find(s => s.id === c.id) || null) : null; }
+function companionCheck() { const c = G && G.companion; if (!c) return; if ((c.kind === 'dog' && !G.dog) || (c.kind === 'survivor' && !companionSurvivor())) G.companion = null; }
+/* can this one come along right now? → {ok, why} */
+function companionReady(kind, id) {
+  if (kind === 'dog') { if (!G.dog) return { ok: false, why: 'No dog' }; if (G.dog.restUntil > G.day) return { ok: false, why: `${G.dog.name} is resting` }; return { ok: true }; }
+  const s = G.survivors.find(x => x.id === id); if (!s) return { ok: false, why: 'Gone' };
+  if (s.restUntil > G.day) return { ok: false, why: 'Resting after an injury' };
+  if (s.hp < 30) return { ok: false, why: 'Too hurt' };
+  return { ok: true };
+}
+function setCompanion(kind, id) {
+  const r = companionReady(kind, id); if (!r.ok) return false;
+  if (kind === 'dog') G.companion = { kind: 'dog', id: 'dog', name: G.dog.name };
+  else { const s = G.survivors.find(x => x.id === id); G.companion = { kind: 'survivor', id: s.id, name: s.name }; }
+  hintOnce('companion', `${G.companion.name} comes on runs now. H: stay / follow.`);
+  return true;
+}
+function clearCompanion() { if (G) G.companion = null; return true; }
+/* {kind, id, name, hp, maxHp, s?} for the companion out with you, or null */
+function companionInfo() {
+  companionCheck(); const c = G && G.companion; if (!c) return null;
+  if (c.kind === 'dog') return { kind: 'dog', id: 'dog', name: G.dog.name, hp: G.dog.hp, maxHp: DOG_MAX_HP };
+  const s = companionSurvivor(); return { kind: 'survivor', id: s.id, name: s.name, hp: s.hp, maxHp: 100, s };
+}
+function companionFights() { return !!companionInfo(); }
+/* a helper carries 8 kg of your loot (the dog carries nothing) */
+function companionCarry() { return G && G.companion && G.companion.kind === 'survivor' && companionSurvivor() ? 8 : 0; }
+/* damage to the companion. → 'ok' | 'home' (dog whimpers off) | 'downed' (helper at 0 HP: revive within 20 s or they limp home) */
+function companionHurt(n) {
+  const c = companionInfo(); if (!c) return 'ok';
+  if (c.kind === 'dog') { G.dog.hp = Math.max(0, G.dog.hp - n); if (G.dog.hp <= 12) { companionHome('hurt'); return 'home'; } return 'ok'; }
+  c.s.hp = Math.max(0, c.s.hp - n); return c.s.hp <= 0 ? 'downed' : 'ok';
+}
+function companionRevive() { const s = companionSurvivor(); if (!s) return false; s.hp = Math.max(s.hp, 30); xp(6); return true; }
+/* the companion leaves for the bunker: rests until tomorrow */
+function companionHome(why) {
+  const c = companionInfo(); if (!c) return '';
+  if (c.kind === 'dog') { G.dog.restUntil = G.day + 1; G.dog.hp = Math.max(G.dog.hp, 20); log(`${c.name} whimpers and limps home to rest.`, 'warn'); }
+  else { c.s.hp = Math.max(c.s.hp, 25); if (why !== 'leave') { c.s.restUntil = G.day + 1; log(`${c.name} limps home, hurt.`, 'warn'); } }
+  G.companion = null; return c.name;
+}
+function adoptDog(name) {
+  setFlag('dog_adopted');
+  if (G.dog) return '';
+  name = name || 'Dog';
+  G.dog = { name, hp: DOG_MAX_HP, restUntil: 0, since: G.day };
+  if (!G.companion) G.companion = { kind: 'dog', id: 'dog', name };
+  log(`${name} is yours now.`, 'good');
+  hintOnce('dog', `${name} follows you on runs and sniffs out loot. H: stay / follow.`);
+  return '';
+}
+function companionDaily(P) {
+  if (G.dog) { G.dog.hp = Math.min(DOG_MAX_HP, G.dog.hp + 25); if (G.dog.restUntil === G.day) { P(`${G.dog.name} is back on four feet.`, 'good'); if (!G.companion) G.companion = { kind: 'dog', id: 'dog', name: G.dog.name }; } }
+  for (const s of G.survivors) if (s.restUntil === G.day) P(`${s.name} is fit for runs again.`, 'good');
+  G.requests = (G.requests || []).filter(r => G.survivors.some(s => s.id === r.sid));
+}
+/* a helper with scavenging skill turns up a little extra when you search near them */
+function companionScavBonus(c) {
+  const s = companionSurvivor(); if (!s || !c) return '';
+  const sk = (s.skills.scav || 1) + (s.trait === 'scavenger' ? 2 : 0);
+  if (!chance(0.1 + sk * 0.08)) return '';
+  const L = LOCS[c.loc] || LOCS.street, e = wpick(L.loot || LOCS.street.loot, x => x[1]);
+  return give(e[0], 1);
+}
+
+/* ---------- Talking to survivors (lines in CONTENT.survivorTalk) ---------- */
+const REQ_ITEMS = [['cigs', 4], ['batteries', 2], ['bandage', 2], ['snack', 3], ['cloth', 4], ['chem', 1], ['canned', 2], ['painkillers', 1], ['water', 2], ['parts', 1]];
+const REQ_REWARDS = [['ammo', 6], ['medkit', 1], ['parts', 2], ['meal', 2], ['antibiotics', 1], ['scrap', 4], ['bolts', 6]];
+const talkLines = () => CONTENT_().survivorTalk || {};
+const traitLine = (bank, s) => { const b = bank || {}; const l = b[s.trait] || b.default || ['...']; return fmtName(pick(l)); };
+function survivorMood(s) {
+  const TL = talkLines(), m = s.morale >= 65 ? 'high' : s.morale < 35 ? 'low' : 'mid';
+  if (s.hp < 40 && TL.hurt) return fmtName(pick(TL.hurt));
+  return traitLine((TL.mood || {})[m], s);
+}
+/* "How are you holding up?": a line, and once a day a little morale */
+function chatSurvivor(s) { if (s.chatDay !== G.day) { s.chatDay = G.day; s.morale = clamp(s.morale + 4, 0, 100); } return traitLine(talkLines().chat, s); }
+function giftItem() { return ['cigs', 'snack', 'canned', 'meal'].find(k => count(k) > 0) || null; }
+function giftSurvivor(s) {
+  const id = giftItem(); if (!id || !take(id, 1)) return '';
+  s.morale = clamp(s.morale + (id === 'meal' ? 12 : 8), 0, 100); addMorale(1);
+  return traitLine(talkLines().gift, s).replace(/\{item\}/g, itemName(id).toLowerCase());
+}
+function requestOf(s) { return (G.requests || []).find(r => r.sid === s.id) || null; }
+/* sometimes (once a day each) someone asks for something: {sid, item, qty, day} */
+function maybeRequest(s) {
+  if (requestOf(s) || s.askDay === G.day) return null;
+  s.askDay = G.day; if (!chance(0.45)) return null;
+  const [item, qty] = pick(REQ_ITEMS), r = { sid: s.id, item, qty, day: G.day };
+  G.requests.push(r); return r;
+}
+function canDeliver(s) { const r = requestOf(s); return !!(r && has(r.item, r.qty)); }
+function deliverRequest(s) {
+  const r = requestOf(s); if (!r || !take(r.item, r.qty)) return '';
+  G.requests.splice(G.requests.indexOf(r), 1);
+  s.morale = clamp(s.morale + 15, 0, 100); xp(15);
+  const [id, n] = pick(REQ_REWARDS); return give(id, n);
+}
+/* job choices for a survivor: [[job, label, ok]] */
+function jobChoices(s) {
+  const out = [['idle', 'Resting', true], ['guard', 'Guard', true], ['scavenge', 'Scavenge runs', true]];
+  for (const k in BUILDINGS) if (BUILDINGS[k].workers && bl(k)) out.push([k, `${BUILDINGS[k].n} ${workerCount(k)}/${bl(k)}`, s.job === k || workerCount(k) < bl(k)]);
+  return out;
+}
+function setJob(s, job) { const o = jobChoices(s).find(j => j[0] === job); if (!o || !o[2]) return false; s.job = job; return true; }
+
+/* ---------- World interactions: doors, wrecks, water, fires, radio ---------- */
+/* barricaded doors: G.doorBars[tileIndex] = HP (about 6 s of one zombie clawing at it). Closed both ways. */
+const DOOR_BAR_HP = 6;
+let BAR_N = 0;
+function recountBars() { BAR_N = G && G.doorBars ? Object.keys(G.doorBars).length : 0; }
+function barredAny() { return BAR_N > 0; }
+function doorBlocked(x, y) { if (!BAR_N || !G) return false; return !!G.doorBars[Math.floor(y) * W + Math.floor(x)]; }
+function doorBarred(tx, ty) { return !!(G && G.doorBars && G.doorBars[ty * W + tx]); }
+function barDoor(tx, ty) {
+  if (tileAt(tx, ty) !== T_DOOR || doorBarred(tx, ty) || !take('wood', 2)) return false;
+  G.doorBars[ty * W + tx] = DOOR_BAR_HP; recountBars(); addNoise(0.5); xp(2); return true;
+}
+function unbarDoor(tx, ty) { if (!doorBarred(tx, ty)) return false; delete G.doorBars[ty * W + tx]; recountBars(); give('wood', 1); return true; }
+/* a zombie hits the barricade; true when it breaks */
+function hitDoorBar(tx, ty, dmg) {
+  const k = ty * W + tx; if (!G.doorBars[k]) return true;
+  G.doorBars[k] -= dmg; if (G.doorBars[k] > 0) return false;
+  delete G.doorBars[k]; recountBars(); return true;
+}
+/* wrecked cars (T_CAR): siphon once per car. A hose always works; without one it is a 40% chance. */
+function carSiphoned(tx, ty) { return !!(G.siphoned && G.siphoned[ty * W + tx]); }
+function siphonCar(tx, ty) {
+  if (tileAt(tx, ty) !== T_CAR || carSiphoned(tx, ty)) return { ok: false, text: 'Bone dry.' };
+  G.siphoned[ty * W + tx] = G.day; advance(5); addNoise(0.6);
+  const hose = has('hose');
+  if (!hose && !chance(0.4)) return { ok: false, text: 'Nothing but fumes. A hose would help.' };
+  return { ok: true, text: give('fuel', hose ? rnd(1, 2) : 1) };
+}
+/* an empty bottle filled at the river (or a pump) */
+function fillBottle() {
+  if (!(G.pack.bottle > 0)) return '';
+  take('bottle', 1); const l = give('dirtywater', 1);
+  if (!/^\+/.test(l)) { G.pack.bottle = (G.pack.bottle || 0) + 1; return ''; }
+  advance(2); return l;
+}
+/* what a fire or the kitchen stove can do with what is in your pack */
+function cookOption() {
+  const pk = G.pack;
+  if (pk.dirtywater > 0) return { label: 'Boil Dirty Water', take: ['dirtywater', 1], out: 'water' };
+  if (pk.rawmeat > 0) return { label: 'Cook Raw Meat', take: ['rawmeat', 1], out: 'meal' };
+  if (pk.veg >= 2) return { label: 'Cook a Stew', take: ['veg', 2], out: 'meal' };
+  return null;
+}
+function cookAt() { const o = cookOption(); if (!o || !take(o.take[0], o.take[1])) return ''; advance(10); xp(2); return give(o.out, 1); }
+/* the bunker radio: one broadcast, a hint for where things stand, and when the caravan calls (every 4 days) */
+function traderDay() { return G.day + ((2 - (G.day % 4)) + 4) % 4; }
+function radioBroadcast() {
+  const C = CONTENT_(), lines = [], r = C.radio || [];
+  if (r.length) { lines.push(r[(G.radioN || 0) % r.length]); G.radioN = (G.radioN || 0) + 1; }
+  const hints = (C.radioHints || []).filter(h => { try { return !h.cond || h.cond(); } catch (e) { return false; } });
+  if (hints.length) { const h = pick(hints); lines.push(typeof h.line === 'function' ? h.line() : h.line); }
+  const td = traderDay(), here = td === G.day && G.hour >= 8 && G.hour < 19;
+  lines.push(here ? 'Caravan: "We\'re at your bunker gate until dusk. Call us on this set."' : `Caravan: next stop at your bunker on day ${td}, 08:00 to dusk.`);
+  return { lines: lines.map(fmtName), trader: here };
+}
+/* optional world props (only if world.js provides them): WORLD.notes [{x,y,text?}], WORLD.bodies [{x,y}], WORLD.pumps [{x,y}], WORLD.beds [{x,y,kind}] */
+function propNear(list, x, y, r) { let best = null, bd = r * r; for (const q of list || []) { const d = (q.x + 0.5 - x) ** 2 + (q.y + 0.5 - y) ** 2; if (d <= bd) { bd = d; best = q; } } return best; }
+function readNote(n) {
+  const C = CONTENT_().graffiti || ['Someone scratched a name here. Then crossed it out.'];
+  const i = n.i != null ? n.i : Math.abs((n.x * 31 + n.y * 17) | 0), line = fmtName(n.text || C[i % C.length]);
+  G.notesRead = G.notesRead || {}; const k = n.x + ',' + n.y;
+  if (!G.notesRead[k]) { G.notesRead[k] = 1; G.journal.unshift({ day: G.day, title: 'Written on a wall', text: line }); xp(2); }
+  return line;
+}
+function searchBody(b) {
+  G.bodies = G.bodies || {}; const k = b.x + ',' + b.y; if (G.bodies[k]) return [];
+  G.bodies[k] = G.day; advance(4); addNoise(0.2);
+  const out = [give(pick(['bandage', 'cigs', 'ammo', 'snack', 'batteries', 'cloth', 'canned', 'painkillers']), 1)];
+  if (chance(0.25)) out.push(give(pick(['knife', 'bottle', 'chem']), 1));
+  return out.filter(Boolean);
+}
+
+/* ---------- Save / load: several saved worlds ----------
+   Index localStorage[SLOTS_KEY] = [{id,name,bg,pname,day,level,lastPlayed,ended,endId,cause,kills,survivors}] and each world at
+   'deadembers_world_<id>'. G.slot is the current world's id (made on its first save). Death and endings mark the world ended
+   (a memorial on the title screen) instead of deleting it. The old single save (deadembers_save_v2) moves once into a slot. */
+const SAVE_KEY = 'deadembers_save_v2', OLD_SAVE_KEY = 'deadembers_save_v1', SLOTS_KEY = 'deadembers_slots';
+const worldKey = id => 'deadembers_world_' + id;
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function newWorldId() { return Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36); }
+function readSlots() { try { const a = JSON.parse(lsGet(SLOTS_KEY) || '[]'); return Array.isArray(a) ? a.filter(w => w && w.id) : []; } catch (e) { return []; } }
+function writeSlots(a) { try { localStorage.setItem(SLOTS_KEY, JSON.stringify(a)); return true; } catch (e) { return false; } }
+function slotMeta(o, id) {
+  const f = o.flags || {}, p = o.p || {}, dead = p.hp <= 0 || f.ended === 'death';
+  return { id, name: o.worldName || p.name || 'Ardent Vale', bg: p.bg || '', pname: p.name || '', day: o.day || 1, level: p.level || 1, lastPlayed: Date.now(),
+    ended: !!(f.ended || dead), endId: f.ended || (dead ? 'death' : null), cause: o.deathCause || null, kills: (o.stats && o.stats.kills) || 0, survivors: (o.survivors || []).length };
+}
+function migrateSave() {
+  const s = lsGet(SAVE_KEY); if (!s) return null;
+  try {
+    const o = JSON.parse(s); if (!o || o.v !== 2) return null;
+    const id = newWorldId(); o.slot = id;
+    localStorage.setItem(worldKey(id), JSON.stringify(o));
+    const list = readSlots(); list.push(slotMeta(o, id)); writeSlots(list);
+    localStorage.removeItem(SAVE_KEY);
+    return id;
+  } catch (e) { return null; }
+}
+/* every saved world, most recently played first */
+function listWorlds() { migrateSave(); return readSlots().sort((a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0)); }
+/* the most recently played world that can still be continued (null if none) */
+function lastWorldId() { const w = listWorlds().find(x => !x.ended); return w ? w.id : null; }
 function serialize() { let s = ''; for (let i = 0; i < G._fog.length; i++) s += G._fog[i] ? '1' : '0'; G.fog = s; const o = Object.assign({}, G); delete o._fog; return JSON.stringify(o); }
-function saveGame(silent) { try { localStorage.setItem(SAVE_KEY, serialize()); if (!silent) log('Game saved.', 'good'); return true; } catch (e) { if (!silent) log('Could not save in this browser.', 'bad'); return false; } }
-function hasOldSave() { try { return !localStorage.getItem(SAVE_KEY) && !!localStorage.getItem(OLD_SAVE_KEY); } catch (e) { return false; } }
-function hasSave() { try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; } }
-function loadFrom(str) { const o = JSON.parse(str); if (!o || o.v !== 2) throw new Error('old save'); G = o; WORLD = genWorld(G.seed); initFog(); recalc(); }
-function loadGame() { try { const s = localStorage.getItem(SAVE_KEY); if (!s) return false; loadFrom(s); return true; } catch (e) { return false; } }
+/* writes the current world (G.slot; made on the first save) and refreshes its index entry */
+function saveGame(silent) {
+  try {
+    if (!G) return false;
+    if (!G.slot) G.slot = newWorldId();
+    localStorage.setItem(worldKey(G.slot), serialize());
+    const list = readSlots(), meta = slotMeta(G, G.slot), i = list.findIndex(w => w.id === G.slot);
+    if (i >= 0) list[i] = meta; else list.push(meta);
+    if (!writeSlots(list)) throw new Error('index');
+    if (!silent) log('Game saved.', 'good'); return true;
+  } catch (e) { if (!silent) log('Could not save in this browser.', 'bad'); return false; }
+}
+/* "Save as new world": the current game continues in a fresh slot; the old slot keeps the state it had. */
+function forkWorld(name) { if (!G) return null; G.slot = newWorldId(); G.worldName = String(name || ((G.worldName || G.p.name) + ' II')).slice(0, 24); return saveGame(true) ? G.slot : null; }
+/* death or an ending: the world stays on the title screen as a memorial and can no longer be continued */
+function markEnded(endId) { if (!G) return false; if (!G.flags.ended) G.flags.ended = endId || 'death'; return saveGame(true); }
+function deleteWorld(id) { try { localStorage.removeItem(worldKey(id)); } catch (e) { } writeSlots(readSlots().filter(w => w.id !== id)); if (G && G.slot === id) G.slot = null; return true; }
+function loadWorld(id) {
+  const meta = readSlots().find(w => w.id === id); if (!meta || meta.ended) return false;
+  try { const s = lsGet(worldKey(id)); if (!s) return false; loadFrom(s); G.slot = id; return true; } catch (e) { return false; }
+}
+function hasOldSave() { return !hasSave() && !!lsGet(OLD_SAVE_KEY); }
+/* any world that can still be continued */
+function hasSave() { return !!lastWorldId(); }
+function loadFrom(str) {
+  const o = JSON.parse(str); if (!o || o.v !== 2) throw new Error('old save'); G = o; WORLD = genWorld(G.seed);
+  /* saves from the 64x48 map: same seed, new world. Start again at the hatch with a fresh map and containers. */
+  if (G.mapV !== 2) { G.mapV = 2; G.fog = ''; G.cont = {}; G.locs = {}; for (const k in WORLD.pois) G.locs[k] = { visited: false }; G.p.x = WORLD.hatch.x + 0.5; G.p.y = WORLD.hatch.y + 1.5; }
+  applyGates(); initFog(); weatherInit(); recalc(); extrasInit();
+}
+/* compatibility: load the most recently played world that can continue */
+function loadGame() { const id = lastWorldId(); return id ? loadWorld(id) : false; }

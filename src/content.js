@@ -699,5 +699,105 @@
   ];
   window.EPILOGUES = epilogues;
 
-  window.CONTENT = { story: story, lore: lore, radio: radio, names: names, barks: barks, shelterEvents: shelterEvents, epilogues: epilogues };
+  /* survivorTalk: what people at the bunker say when you talk to them (E near one). Banks are keyed by trait, with a default.
+     mood.high/mid/low by morale; chat = "How are you holding up?"; gift ({item} = what you gave); ask = they want something
+     ({item} {qty}); thanks = you brought it; follow/stay = coming on runs or not; hurt = when HP is low. */
+  var survivorTalk = {
+    mood: {
+      high: {
+        default: ["Good day. Don't jinx it.", "Slept four hours straight. Felt like a holiday.", "We're still here. That counts."],
+        cheerful: ["I counted the beans. We're rich, by bean standards.", "Somebody hum something. Anything."],
+        grumpy: ["Fine. Don't make a thing of it.", "It's tolerable. Write that on my grave."],
+        brave: ["Point me at something. I'm ready.", "Felt good out there today."],
+        scared: ["I didn't hear them last night. Not once.", "It's quiet. I like quiet."],
+        hardworker: ["Finished early. Got more?", "Busy hands, quiet head."],
+        lazy: ["Don't look at me like that. I'm resting productively."],
+        grateful: ["You keep doing this for us. I notice.", "Thank you. Really."],
+        loyal: ["Wherever this goes, I'm with you."],
+        quiet: ["...good.", "It's alright today."],
+      },
+      mid: {
+        default: ["Getting by.", "Another day. Same dust.", "Ask me tomorrow."],
+        grumpy: ["The roof leaks on my side. Always my side.", "What."],
+        cheerful: ["Could be worse. Could be raining. Oh. It is.", "Chin up. Mine's tired, but up."],
+        scared: ["Did you lock the hatch? Twice?", "I keep hearing feet."],
+        sickly: ["Bit of a cough. It's nothing. Probably.", "Cold's in my chest again."],
+        glutton: ["Is it dinner yet? It feels like dinner.", "I dream about bread. Real bread."],
+        steady: ["We hold. That's all."],
+        medic: ["Everyone's patched. For now.", "Bring me clean cloth if you see any."],
+        scavenger: ["Saw a pharmacy on the east side. Untouched, maybe.", "There's always something left behind."],
+      },
+      low: {
+        default: ["I can't keep doing this.", "What's the point, honestly?", "I don't sleep anymore."],
+        grumpy: ["This place is a tomb with bunks.", "Leave me alone."],
+        cheerful: ["I'm trying to smile. Give me a minute.", "Even I've run out of jokes."],
+        scared: ["They're going to get in. One night they will.", "Please don't send me out there."],
+        loyal: ["It's bad. I'm not going anywhere. But it's bad."],
+        brave: ["I'm tired of being brave."],
+      },
+    },
+    hurt: ["Hurts to breathe. Give me a day.", "Don't look at the bandage. I don't.", "I'll mend. Slowly."],
+    chat: {
+      default: ["Talked to my sister in a dream. She said eat something.", "Remember coffee? Real coffee?", "Some days I forget what month it is. Then I remember."],
+      cheerful: ["Did you know dogs can smell fear? Good thing I'm fearless.", "I named the rat. He's called Gregory."],
+      grumpy: ["You want a chat? Here's a chat: we need more wood.", "I'm holding up. Because nobody else will hold me up."],
+      brave: ["I keep a knife under my pillow. Two, actually.", "I'd go out with you any day."],
+      scared: ["Talking helps. Keep talking. About anything.", "I made a list of exits. Want to see it?"],
+      sickly: ["Better than yesterday. Worse than last week.", "If I cough at night, it's just a cough."],
+      medic: ["Wash your hands. I mean it. Every time.", "Your colour's better. Eat something anyway."],
+      scavenger: ["Junk is just treasure that's having a bad year.", "I could find a can opener in a minefield."],
+      hardworker: ["Talk while I work. I can do both.", "If the hinges squeak, tell me. I'll fix them."],
+      lazy: ["Holding up fine. Lying down, mostly.", "Rest is a skill. I'm very skilled."],
+      glutton: ["I'd fight a bear for a sandwich. A small bear.", "Holding up. Hungry. Same thing."],
+      grateful: ["Better since you found me. Much better.", "Thank you for asking. Nobody used to."],
+      loyal: ["Don't worry about me. Worry about you.", "Same as always. Here."],
+      quiet: ["...", "Fine. Thanks for asking."],
+      steady: ["Breathe in, breathe out. Works every time.", "We take it one day at a time."],
+    },
+    gift: {
+      default: ["{item}? For me? I'll remember this.", "You didn't have to. Thank you.", "That's the nicest thing in weeks."],
+      grumpy: ["Hmph. {item}. ...Thanks.", "Don't tell anyone I smiled."],
+      glutton: ["Oh. Oh, {item}. I could cry.", "Gone in three bites. Thank you."],
+      cheerful: ["A present! It's like a birthday, if birthdays were grim."],
+      quiet: ["...thank you."],
+    },
+    ask: {
+      default: ["If you're out there anyway: {qty} {item}. It would mean a lot.", "Could you bring me {qty} {item}? I'll make it worth it."],
+      sickly: ["I need {qty} {item}. Please. Before it gets worse."],
+      medic: ["I'm short on things. {qty} {item}, if you find any."],
+      grumpy: ["Since you're asking. {qty} {item}. Don't make a face."],
+    },
+    thanks: ["You remembered. Here, I've been saving this.", "That's exactly it. Take this, I insist.", "I owe you. Here."],
+    follow: ["Give me a minute to find my boots.", "About time. Let's go.", "I'll watch your back."],
+    stay: ["Fine by me. Bring something back.", "I'll keep the kettle warm.", "Be careful out there."],
+    jobs: ["On it.", "Right away.", "If you say so."],
+  };
+
+  /* radioHints: one extra line on the bunker radio. cond() picks what fits the moment. */
+  var radioHints = [
+    { cond: function () { return G.hordeNight; }, line: "\"Horde moving on the ring road. Anyone with walls: tonight.\"" },
+    { cond: function () { return !bl('walls'); }, line: "\"Barricades, people. Wood and scrap. Build them before you need them.\"" },
+    { cond: function () { return G.flags.q_bus && !G.flags.bus_ready; }, line: "\"Bus depot still has parts if you're brave. The army road map is at Checkpoint Echo.\"" },
+    { cond: function () { return G.p.inf > 0; }, line: "\"Grey Fever? Antibiotics slow it. St. Agnes had a whole pharmacy wing.\"" },
+    { line: "\"Rain barrels and a hose. That's the whole secret to the dry months.\"" },
+    { line: "\"Wrecks still hold fuel. A hose makes it quick. Siphon, don't spark.\"" },
+    { line: "\"Fill bottles at the river and boil them. Never drink it raw.\"" },
+    { line: "\"Nail a door shut behind you if you have to sleep out. Two planks will do.\"" },
+    { line: "\"Dogs out there aren't all sick. Feed a stray and it might stay.\"" },
+  ];
+
+  /* graffiti: one-liners for notes and writing on walls (WORLD.notes, if the world has them) */
+  var graffiti = [
+    "MARIA WE WENT NORTH. FOLLOW THE TRACKS.",
+    "Don't trust the Tollmen. They count your teeth.",
+    "Day 40. Still no one. Still here.",
+    "WATER IN THE CHURCH CELLAR. BOIL IT.",
+    "They don't climb. Get high.",
+    "Kev was here. Kev is not here anymore.",
+    "If you can read this you're still alive. Good.",
+    "HAVEN IS REAL. 3 DAYS ON FOOT.",
+  ];
+
+  window.CONTENT = { story: story, lore: lore, radio: radio, names: names, barks: barks, shelterEvents: shelterEvents, epilogues: epilogues,
+    survivorTalk: survivorTalk, radioHints: radioHints, graffiti: graffiti };
 })();

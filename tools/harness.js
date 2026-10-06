@@ -13,13 +13,27 @@ window.path = (tx, ty) => { const sx = Math.floor(G.p.x), sy = Math.floor(G.p.y)
 window.goto = (tx, ty, near, maxS) => { const pts = path(tx, ty); if (!pts) return 'nopath'; pts.push([tx, ty]); return go(pts, near || 0.5, maxS || 60); };
 window.clearFoes = () => { for (const e of Combat.enemies.slice()) Combat.despawn && Combat.despawn(e); };
 window.fightBot = (ids, gun, maxS) => { if (ids) { clearFoes(); window.__won = 0; window.__lost = 0; fight(ids, { onWin: () => { __won = 1; return 'Won.'; }, onFlee: () => { __lost = 'flee'; return ''; } }); } const cv = document.querySelector('#view canvas'); let swings = 0, minHp = G.p.hp;
-  const t = sim(maxS || 40, i => { if (ids && (__won || __lost)) return 'stop'; minHp = Math.min(minHp, G.p.hp); if (UI.blocking()) { skipDlg(); return; } const p = G.p; let b = null, bd = 99; for (const e of Combat.enemies) { if (e.dead) continue; const d = Math.hypot(e.x - p.x, e.y - p.y); if (d < bd) { bd = d; b = e; } } if (!b) return ids ? undefined : 'stop'; const s = R.tileToScreen(b.x, b.y, 1); INPUT.aimX = s.x; INPUT.aimY = s.y; INPUT.mouseAim = true;
+  const t = sim(maxS || 40, i => { if (ids && (__won || __lost)) return 'stop'; minHp = Math.min(minHp, G.p.hp); if (UI.blocking()) { unblock(4); return; } const p = G.p; let b = null, bd = 99; for (const e of Combat.enemies) { if (e.dead) continue; const d = Math.hypot(e.x - p.x, e.y - p.y); if (d < bd) { bd = d; b = e; } } if (!b) return ids ? undefined : 'stop'; const s = R.tileToScreen(b.x, b.y, 1); INPUT.aimX = s.x; INPUT.aimY = s.y; INPUT.mouseAim = true;
     const want = gun ? 4.5 : 1.0; if (bd > want + 0.3) { INPUT.mx = (b.x - p.x) / bd; INPUT.my = (b.y - p.y) / bd; } else { INPUT.mx = INPUT.my = 0; }
     if (i % 4 === 0 && bd < (gun ? 7 : 1.7)) { swings++; if (gun) { cv.dispatchEvent(new PointerEvent('pointerdown', { clientX: s.x, clientY: s.y, button: 0, pointerType: 'mouse', bubbles: true })); dispatchEvent(new PointerEvent('pointerup', { clientX: s.x, clientY: s.y, button: 0, pointerType: 'mouse', bubbles: true })); dispatchEvent(new MouseEvent('mouseup')); } else { kd('KeyJ'); ku('KeyJ'); } }
     if (Combat.grabbed && i % 2) { kd('KeyJ'); ku('KeyJ'); } });
   INPUT.mx = INPUT.my = 0; return { won: window.__won, secs: t, swings, minHp: Math.round(minHp), hp: Math.round(G.p.hp), kills: G.stats.kills }; };
 window.nearestCont = () => WORLD.containers.filter(c => containerState(c) !== 'empty').sort((a, b) => ((a.x - G.p.x) ** 2 + (a.y - G.p.y) ** 2) - ((b.x - G.p.x) ** 2 + (b.y - G.p.y) ** 2))[0];
-window.searchNearest = () => { const c = nearestCont(); const adj = [[0, 1], [1, 0], [-1, 0], [0, -1]].map(([dx, dy]) => [c.x + dx + 0.5, c.y + dy + 0.5]).find(([x, y]) => !solidAt(x, y)); goto(adj[0], adj[1], 0.3); const s0 = G.stats.searches; kd('KeyE'); const th = sim(10, () => G.stats.searches > s0 ? 'stop' : 0); ku('KeyE'); return { kind: c.kind, ok: G.stats.searches > s0, held: th }; };
+/* unblock(): clear whatever is in the way (cutscene, dialogue with choices: picks the last option, story beats) */
+window.unblock = (max) => { for (let i = 0; i < (max || 20) && UI.blocking(); i++) { if (typeof Cine !== 'undefined' && Cine.active) { Cine.skip(); sim(0.2); continue; } const mg = document.querySelector('#mg'); if (mg && !mg.hidden) { kd('Escape'); ku('Escape'); sim(0.3); continue; } const bs = dlgButtons(); if (bs.length > 1) bs[bs.length - 1].click(); else { kd('Space'); ku('Space'); } sim(0.3); if (Moments.active) fightBot(null, true, 10); } return !UI.blocking(); };
+/* searchNearest(): walk to the nearest unsearched container (from a free side that has a path; same side of the wall as the container)
+   and hold E until the search completes. Returns {kind, ok, held} plus diagnostics when it fails. */
+window.searchNearest = () => {
+  unblock(); const c = nearestCont(); const inC = indoors(c.x + 0.5, c.y + 0.5);
+  const sides = [[0, 1], [1, 0], [-1, 0], [0, -1]].map(([dx, dy]) => [c.x + dx + 0.5, c.y + dy + 0.5]).filter(([x, y]) => !solidAt(x, y) && path(x, y));
+  sides.sort((a, b) => (indoors(a[0], a[1]) === inC ? 0 : 1) - (indoors(b[0], b[1]) === inC ? 0 : 1));
+  const adj = sides[0]; if (!adj) return { kind: c.kind, ok: false, held: 0, why: 'no reachable side' };
+  const walk = goto(adj[0], adj[1], 0.3); unblock();
+  const s0 = G.stats.searches; kd('KeyE'); const th = sim(10, () => { if (G.stats.searches > s0) return 'stop'; if (UI.blocking()) { ku('KeyE'); unblock(); kd('KeyE'); } }); ku('KeyE');
+  const ok = G.stats.searches > s0, out = { kind: c.kind, ok, held: th };
+  if (!ok) { const t = interactTarget(); Object.assign(out, { walk, d: +Math.hypot(G.p.x - c.x - 0.5, G.p.y - c.y - 0.5).toFixed(2), target: t && t.label, state: containerState(c), blocking: UI.blocking(), mom: Moments.active }); }
+  return out;
+};
 window.holdE = (sec, until) => { kd('KeyE'); const t = sim(sec, () => until && until() ? 'stop' : 0); ku('KeyE'); return t; };
 window.dlgButtons = () => [...document.querySelectorAll('#dlg button:not([disabled])')];
 window.state = () => ({ day: G.day, time: G.hour + ':' + String(G.minute).padStart(2, '0'), p: [+G.p.x.toFixed(1), +G.p.y.toFixed(1)], hp: Math.round(G.p.hp), obj: objectiveInfo().text, unlocks: Object.keys(G.unlocks).join(','), blocking: UI.blocking(), mom: Moments.active, q: Game.Q.map(q => q.type).join(',') });

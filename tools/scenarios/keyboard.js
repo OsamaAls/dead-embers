@@ -23,7 +23,7 @@ module.exports = async B => {
   await press('ArrowDown'); await press('ArrowUp');
   const tf = await ev(`(function(){ const b=[...document.querySelectorAll('#title [data-nav]')]; const n=b.find(x=>x.dataset.t==='new'); return {n:b.length, kf:(document.querySelector('#title .kf')||{}).textContent||''}; })()`);
   // move the ring onto "New game" (it is the last title button) and select it
-  for (let i = 0; i < 3 && !/New game/.test((await ev(`(document.querySelector('#title .kf')||{}).textContent||''`))); i++) await press('ArrowDown');
+  for (let i = 0; i < 3 && !/New (game|world)/.test((await ev(`(document.querySelector('#title .kf')||{}).textContent||''`))); i++) await press('ArrowDown');
   await B.shot('kb-00-title');
   await press('Enter', 1, 400);
   ok('title -> new game', await ev(`!!document.getElementById('ng-name')`), tf);
@@ -136,7 +136,7 @@ module.exports = async B => {
 
   await drain();
   // menu via Esc, arrows to Controls, Enter, Esc back, Esc resume
-  await press('Escape', 1, 300); await press('ArrowDown'); await press('ArrowDown'); await press('Enter', 1, 300);
+  await press('Escape', 1, 300); for (let i = 0; i < 8 && (await ev(`(document.querySelector('#pnl .kf')||{dataset:{}}).dataset.row`)) !== 'help'; i++) await press('ArrowDown'); await press('Enter', 1, 300);
   const help = await ev(`!!document.querySelector('#pnl .help')`);
   await B.shot('kb-09-help');
   await press('Escape', 1, 200); const back = await ev(`UI.state.panel==='menu' && !document.querySelector('#pnl .help')`);

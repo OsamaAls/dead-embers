@@ -304,7 +304,7 @@
       choices: [
         { label: 'Bury him. Take the seeds.', success: () => { mark('teodor_4'); const full = !flag('teodor_abandoned'); xp(full ? 30 : 15); addMorale(full ? 5 : -2); return 'A few half-remembered words. ' + give('veg', full ? 6 : 3) + ' from his garden. Biscuit stops at the gate.'; } },
         { label: 'Share food with Biscuit', req: () => has('canned') || has('snack'), reqText: 'Needs food',
-          success: () => { if (!take('snack', 1)) take('canned', 1); mark('teodor_4'); xp(15); addMorale(5); return 'He eats like he hasn\'t in days, licks your hand once, and goes back to the grave. ' + give('veg', 3) + '.'; } },
+          success: () => { if (!take('snack', 1)) take('canned', 1); mark('teodor_4'); xp(15); addMorale(5); setFlag('dog_biscuit'); const had = !!G.dog; adoptDog('Biscuit'); return 'He eats like he hasn\'t in days, licks your hand, and when you leave he follows. ' + give('veg', 3) + '.' + (had ? ' He finds his own way to the bunker.' : ' Biscuit is coming with you.'); } },
         { label: 'Say a word and go', success: () => { mark('teodor_4'); addMorale(2); return 'Hat in hand, a minute. Then ' + give('veg', 2) + ', because he\'d hate it to rot.'; } },
       ],
     },
