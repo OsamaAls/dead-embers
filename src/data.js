@@ -55,6 +55,10 @@ const ENEMIES = {
   raider:{n:'Raider',hp:24,dmg:[5,10],acc:0.6,flee:0.6,xp:12,loot:[['ammo',3],['canned',1],['cigs',3],['bandage',1]]},
   tollman:{n:'Tollman',hp:30,dmg:[6,11],acc:0.62,flee:0.55,xp:15,loot:[['ammo',4],['cigs',5],['scrap',2]]},
   warden:{n:'The Warden',hp:85,dmg:[10,18],acc:0.65,flee:0.4,xp:60,loot:[['shotgun',1],['shells',6]]},
+  /* act bosses: one named dead per act, in its lair (rules: BOSS_LAIR in engine.js). guar = guaranteed drops */
+  orderly:{n:'The Orderly',hp:120,dmg:[10,17],acc:0.6,flee:0.6,xp:60,z:true,boss:1,intro:'Still doing its rounds.',guar:[['medkit',1],['antibiotics',2]],desc:'A brute in hospital whites.'},
+  butcher:{n:'The Butcher',hp:95,dmg:[5,10],acc:0.5,flee:0.7,xp:60,z:true,gas:true,boss:2,intro:'The cold store kept it fresh.',guar:[['shells',8],['painkillers',2]],desc:'Swollen, in a butcher apron. Do not pop it up close.'},
+  sergeant:{n:'The Sergeant',hp:170,dmg:[12,20],acc:0.62,flee:0.6,xp:90,z:true,boss:3,intro:'The convoy never left. Neither did he.',guar:[['fuel',2],['ammo',12],['coat',1]],desc:'Snow-crusted, still in uniform.'},
 };
 
 /* loot: [id, weight, min, max]; story: item obtainable here when quest allows */
@@ -185,6 +189,10 @@ Object.assign(ENEMIES.brute, { spd: 1.3, sense: 6, reach: 1.3, lunge: 2.2, grab:
 Object.assign(ENEMIES.zdog, { spd: 3.8, sense: 9, reach: 0.8, lunge: 2.6, grab: 0.0, shape: 'dog', scale: 0.7 });
 Object.assign(ENEMIES.raider, { spd: 2.4, sense: 9, reach: 1.0, lunge: 1.6, grab: 0, shape: 'human', scale: 1.0, rng: 8, cd: 1.5, drop: ['pipe', 'pistol'] });
 Object.assign(ENEMIES.tollman, { spd: 2.4, sense: 9, reach: 1.0, lunge: 1.6, grab: 0, shape: 'human', scale: 1.05, rng: 8, cd: 1.3, drop: ['machete', 'pistol'] });
+/* bosses: their kind's shape and gait, bigger, with a look of their own (KINDS overrides in actors.js) */
+Object.assign(ENEMIES.orderly, { spd: 1.35, sense: 7, reach: 1.4, lunge: 2.2, grab: 0.0, shape: 'brute', scale: 1.8, knock: true, look: { shirt: 0xb8c4bc, sleeve: 0x485640, pants: 0x9aaaa4, shin: 0x6a7a74 } });
+Object.assign(ENEMIES.butcher, { spd: 0.9, sense: 6, reach: 1.1, lunge: 1.6, grab: 0.15, shape: 'bloater', scale: 1.6, look: { shirt: 0xd8d0c0, belly: 0xa83a2a, skin: 0x9aa8a0 } });
+Object.assign(ENEMIES.sergeant, { spd: 1.45, sense: 7, reach: 1.4, lunge: 2.3, grab: 0.0, shape: 'brute', scale: 1.85, knock: true, look: { skin: 0xb8c2c8, sleeve: 0xb8c2c8, shirt: 0x5a6446, pants: 0x4a5040, shin: 0xd8dee2, fist: 0x9aa4aa } });
 Object.assign(ENEMIES.warden, { spd: 2.0, sense: 10, reach: 1.1, lunge: 1.6, grab: 0, shape: 'human', scale: 1.15, rng: 6, cd: 1.6, drop: ['shotgun'] });
 /* Zombie types unlock over the first days so the threat grows gradually. */
 const ZTIERS = [[1, ['walker']], [2, ['zdog', 'runner']], [3, ['screamer', 'bloater']], [4, ['brute']]];

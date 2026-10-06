@@ -124,6 +124,7 @@ const Actors = (function () {
   function make(kind, opts) {
     opts = opts || {};
     const k = Object.assign({}, KINDS[kind] || KINDS.walker);
+    if (opts.k) Object.assign(k, opts.k); // a one-off look (act bosses)
     if (kind === 'survivor') { k.shirt = opts.tint || SURV_TINTS[(Math.random() * SURV_TINTS.length) | 0]; k.hair = HAIR[(Math.random() * HAIR.length) | 0]; }
     const sc = (k.scale || 1) * (opts.scale || 1) * 1.12;
     const mats = {}, matList = [];

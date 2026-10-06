@@ -694,6 +694,10 @@ const ENEMIES = {
   raider:{n:'Raider',hp:24,dmg:[5,10],acc:0.6,flee:0.6,xp:12,loot:[['ammo',3],['canned',1],['cigs',3],['bandage',1]]},
   tollman:{n:'Tollman',hp:30,dmg:[6,11],acc:0.62,flee:0.55,xp:15,loot:[['ammo',4],['cigs',5],['scrap',2]]},
   warden:{n:'The Warden',hp:85,dmg:[10,18],acc:0.65,flee:0.4,xp:60,loot:[['shotgun',1],['shells',6]]},
+  /* act bosses: one named dead per act, in its lair (rules: BOSS_LAIR in engine.js). guar = guaranteed drops */
+  orderly:{n:'The Orderly',hp:120,dmg:[10,17],acc:0.6,flee:0.6,xp:60,z:true,boss:1,intro:'Still doing its rounds.',guar:[['medkit',1],['antibiotics',2]],desc:'A brute in hospital whites.'},
+  butcher:{n:'The Butcher',hp:95,dmg:[5,10],acc:0.5,flee:0.7,xp:60,z:true,gas:true,boss:2,intro:'The cold store kept it fresh.',guar:[['shells',8],['painkillers',2]],desc:'Swollen, in a butcher apron. Do not pop it up close.'},
+  sergeant:{n:'The Sergeant',hp:170,dmg:[12,20],acc:0.62,flee:0.6,xp:90,z:true,boss:3,intro:'The convoy never left. Neither did he.',guar:[['fuel',2],['ammo',12],['coat',1]],desc:'Snow-crusted, still in uniform.'},
 };
 
 /* loot: [id, weight, min, max]; story: item obtainable here when quest allows */
@@ -824,6 +828,10 @@ Object.assign(ENEMIES.brute, { spd: 1.3, sense: 6, reach: 1.3, lunge: 2.2, grab:
 Object.assign(ENEMIES.zdog, { spd: 3.8, sense: 9, reach: 0.8, lunge: 2.6, grab: 0.0, shape: 'dog', scale: 0.7 });
 Object.assign(ENEMIES.raider, { spd: 2.4, sense: 9, reach: 1.0, lunge: 1.6, grab: 0, shape: 'human', scale: 1.0, rng: 8, cd: 1.5, drop: ['pipe', 'pistol'] });
 Object.assign(ENEMIES.tollman, { spd: 2.4, sense: 9, reach: 1.0, lunge: 1.6, grab: 0, shape: 'human', scale: 1.05, rng: 8, cd: 1.3, drop: ['machete', 'pistol'] });
+/* bosses: their kind's shape and gait, bigger, with a look of their own (KINDS overrides in actors.js) */
+Object.assign(ENEMIES.orderly, { spd: 1.35, sense: 7, reach: 1.4, lunge: 2.2, grab: 0.0, shape: 'brute', scale: 1.8, knock: true, look: { shirt: 0xb8c4bc, sleeve: 0x485640, pants: 0x9aaaa4, shin: 0x6a7a74 } });
+Object.assign(ENEMIES.butcher, { spd: 0.9, sense: 6, reach: 1.1, lunge: 1.6, grab: 0.15, shape: 'bloater', scale: 1.6, look: { shirt: 0xd8d0c0, belly: 0xa83a2a, skin: 0x9aa8a0 } });
+Object.assign(ENEMIES.sergeant, { spd: 1.45, sense: 7, reach: 1.4, lunge: 2.3, grab: 0.0, shape: 'brute', scale: 1.85, knock: true, look: { skin: 0xb8c2c8, sleeve: 0xb8c2c8, shirt: 0x5a6446, pants: 0x4a5040, shin: 0xd8dee2, fist: 0x9aa4aa } });
 Object.assign(ENEMIES.warden, { spd: 2.0, sense: 10, reach: 1.1, lunge: 1.6, grab: 0, shape: 'human', scale: 1.15, rng: 6, cd: 1.6, drop: ['shotgun'] });
 /* Zombie types unlock over the first days so the threat grows gradually. */
 const ZTIERS = [[1, ['walker']], [2, ['zdog', 'runner']], [3, ['screamer', 'bloater']], [4, ['brute']]];
@@ -1572,6 +1580,11 @@ const BUILD_SLOTS = {
         : "The brothers stayed by their mother's grave. They keep a garden there now."; } },
     { id: 'chimes', pri: 3, endings: GONE, cond: function () { return !!flag('chimes_home'); },
       line: "You kept three wind chimes from that balcony. Wherever you sleep, they ring you down." },
+    // ---- act bosses ----
+    { id: 'bosses', pri: 4, endings: null, cond: function () { return G.bosses && Object.keys(G.bosses).some(function (k) { return G.bosses[k] === 'dead'; }); },
+      line: function () { var n = Object.keys(G.bosses).filter(function (k) { return G.bosses[k] === 'dead'; }).map(function (k) { return ENEMIES[k].n; });
+        return n.length === 1 ? n[0] + " is a story they tell in the Vale now. You're in it, at the end."
+          : n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1] + ": names the Vale says quietly now. You put them down."; } },
     // ---- numbers ----
     { id: 'survivors_many', pri: 2, endings: WON, cond: function () { return G.survivors.length >= 8; },
       line: function () { return G.survivors.length + " people sleep under your watch. You know every one of their names."; } },
@@ -3485,7 +3498,7 @@ function newGame(name, bgId, attrs, worldName) {
     p: { name, bg: bgId, attr: a, hp: 100, maxHp: 100, sta: 0, maxSta: 0, hunger: 80, thirst: 70, morale: 60, inf: 0, xp: 0, level: 1, points: 0, weapon: null, x: 0, y: 0, face: 0, status: {} },
     pack: {}, store: { canned: 2, water: 2, wood: 6, cloth: 3 },
     survivors: [], buildings: {}, flags: {}, seenEnc: {}, seenScenes: {}, journal: [], loreRead: [], log: [],
-    locs: {}, cont: {}, wear: {}, unlocks: {}, hints: {}, fog: '', noise: 0, encTimer: rnd(70, 110), nextId: 1, hordeDay: 0, hordeNight: false, hordeResult: null,
+    locs: {}, cont: {}, wear: {}, bosses: {}, unlocks: {}, hints: {}, fog: '', noise: 0, encTimer: rnd(70, 110), nextId: 1, hordeDay: 0, hordeNight: false, hordeResult: null,
     stats: { kills: 0, searches: 0, encounters: 0, recruited: 0 },
     mapV: 2, weather: 'clear', weatherH: rnd(5, 9), season: 'autumn', snowCover: 0, storm: false,
   };
@@ -3989,7 +4002,38 @@ function onKill(enemyId) {
   if (e.drop && chance(enemyId === 'warden' ? 1 : 0.5)) { const w = pick(e.drop); drops.push({ id: w, qty: 1 }); if (ITEMS[w].ammo) drops.push({ id: ITEMS[w].ammo, qty: rnd(2, 6) }); }
   if (e.z && chance(0.22)) drops.push({ id: pick(['cloth', 'cloth', 'cigs', 'snack', 'bandage', 'scrap', 'batteries']), qty: 1 });
   if (e.gas) drops.gas = true;
+  if (e.guar) for (const [id, q] of e.guar) drops.push({ id, qty: q });
+  if (BOSS_LAIR[enemyId]) bossKilled(enemyId);
   return drops;
+}
+/* ---------- act bosses: one named dead per act, waiting in its lair. It shows up when you walk in during its act (and after
+   minDay), comes back if you leave and return, and is gone for good once killed or once the act is over. G.bosses[id]: 'met'|'dead'. ---------- */
+function actNow() { const f = (G && G.flags) || {}; return f.q_bus ? 3 : f.radio_built ? 2 : 1; }
+const BOSS_LAIR = {
+  orderly: { act: 1, minDay: 3, type: 'hospital', journal: ['The Orderly', 'It wore whites and walked the ward like it still had patients. I ended its shift.'] },
+  butcher: { act: 2, label: 'Cold Store', journal: ['The Butcher', 'Something kept itself fat in the cold store. It burst like the rest of them.'] },
+  sergeant: { act: 3, label: 'Wrecked Convoy', r: 5, journal: ['The Sergeant', 'He was still guarding the convoy in the snow. I took his coat. He did not need it.'] },
+};
+/* The boss whose lair (x,y) is in, if it should be there now; else null. Building lairs count once you're inside. */
+function bossHere(x, y) {
+  if (!G || !WORLD) return null;
+  const act = actNow(), B = G.bosses || {};
+  for (const id in BOSS_LAIR) {
+    const L = BOSS_LAIR[id]; if (L.act !== act || B[id] === 'dead' || G.day < (L.minDay || 0)) continue;
+    if (L.r) { const p = Object.values(WORLD.pois).find(q => q.label === L.label); if (p && Math.hypot(p.x + 0.5 - x, p.y + 0.5 - y) <= L.r) return id; continue; }
+    const bi = buildingAt(x, y); if (bi < 0 || !indoors(x, y)) continue;
+    const r = WORLD.roofs[bi], p = WORLD.pois[r.poi];
+    if (L.type ? r.type === L.type : p && p.label === L.label) return id;
+  }
+  return null;
+}
+/* Mark a boss met; true the first time (show the intro). */
+function bossMet(id) { if (!G.bosses) G.bosses = {}; if (G.bosses[id]) return false; G.bosses[id] = 'met'; return true; }
+function bossKilled(id) {
+  if (!G.bosses) G.bosses = {};
+  if (G.bosses[id] === 'dead') return;
+  G.bosses[id] = 'dead'; const j = BOSS_LAIR[id].journal; journal(j[0], j[1]);
+  Hooks.toast && Hooks.toast(`${ENEMIES[id].n} is down.`, 'good');
 }
 /* Pick up a drop. Returns the toast label. */
 function pickup(id, qty) { return give(id, qty); }
@@ -6725,6 +6769,7 @@ const Actors = (function () {
   function make(kind, opts) {
     opts = opts || {};
     const k = Object.assign({}, KINDS[kind] || KINDS.walker);
+    if (opts.k) Object.assign(k, opts.k); // a one-off look (act bosses)
     if (kind === 'survivor') { k.shirt = opts.tint || SURV_TINTS[(Math.random() * SURV_TINTS.length) | 0]; k.hair = HAIR[(Math.random() * HAIR.length) | 0]; }
     const sc = (k.scale || 1) * (opts.scale || 1) * 1.12;
     const mats = {}, matList = [];
@@ -7771,7 +7816,8 @@ const Combat = (function () {
   function spawnAt(id, x, y, o) {
     o = o || {};
     const E = ENEMIES[id]; if (!E) return null;
-    const a = Actors.make(kindOf(id)); R.scene.add(a.root);
+    const base = E.look && ENEMIES[E.shape] ? ENEMIES[E.shape] : null; // a boss: its shape's kind, scaled up, with its own look
+    const a = Actors.make(kindOf(id), base ? { k: E.look, scale: (E.scale || 1) / (base.scale || 1) } : undefined); R.scene.add(a.root);
     if (E.shape === 'human') a.setCarry(E.rng ? (id === 'warden' ? 'shotgun' : 'pistol') : 'pipe');
     const sc = E.scale || 1;
     const e = {
@@ -8113,6 +8159,29 @@ const Combat = (function () {
     const list = ambientTypes().filter(t => !exclude || !exclude.includes(t));
     const mix = zMix(G.p.x, G.p.y);
     return list.length ? wpick(list, t => (W_[t] || 1) * (mix[t] || 1)) : 'walker';
+  }
+  /* act bosses (rules: bossHere in engine.js): walk into the lair during its act and it is there, at the far end of the building */
+  let bossT = 0;
+  function bossSpot() {
+    const p = G.p, bi = buildingAt(p.x, p.y);
+    if (bi >= 0 && indoors(p.x, p.y)) {
+      const r = WORLD.roofs[bi]; let best = null, bd = 2.5;
+      for (let y = r.y + 1; y < r.y + r.h - 1; y++) for (let x = r.x + 1; x < r.x + r.w - 1; x++) {
+        const cx = x + 0.5, cy = y + 0.5; if (hitR(cx, cy, 0.42) || flowAt(cx, cy) < 0) continue;
+        const d = dist(cx, cy, p.x, p.y); if (d > bd) { bd = d; best = { x: cx, y: cy }; }
+      }
+      if (best) return best;
+    }
+    return findSpot(p.x, p.y, 4, 7, { reach: true, shelterOK: true });
+  }
+  function updateBoss(dt) {
+    bossT -= dt; if (bossT > 0 || C.wave || (typeof Moments !== 'undefined' && Moments.active)) return; bossT = 0.5;
+    const id = typeof bossHere === 'function' ? bossHere(G.p.x, G.p.y) : null;
+    if (!id || C.enemies.some(e => e.id === id && !e.dead)) return;
+    const s = bossSpot(); if (!s) return;
+    const e = spawnAt(id, s.x, s.y, { aware: true }); if (!e) return;
+    if (bossMet(id) && typeof UI !== 'undefined' && UI.banner) UI.banner(e.E.n, e.E.intro || '');
+    sfx(e.E.gas ? 'groan' : 'scream');
   }
   function manageAmbient(dt) {
     ambT -= dt; ambCd -= dt;
@@ -8655,6 +8724,7 @@ const Combat = (function () {
       updateGroups();
       updateWave(dt);
       manageAmbient(dt);
+      updateBoss(dt);
       updateSurvivors(dt);
       updateCompanion(dt);
       updateDoorBars();

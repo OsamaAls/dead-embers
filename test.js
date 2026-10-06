@@ -18,7 +18,7 @@ vm.runInContext(src + `
   serialize, listWorlds, loadWorld, deleteWorld, forkWorld, markEnded, hasSave, lastWorldId, recruit, adoptDog, setCompanion, clearCompanion, companionInfo,
   companionHurt, companionCarry, carryCap, hordeWaveSize, barDoor, unbarDoor, doorBlocked, hitDoorBar, siphonCar, fillBottle, cookAt, cookOption, radioBroadcast,
   maybeRequest, requestOf, deliverRequest, chatSurvivor, giftSurvivor, survivorMood, setJob, jobChoices, T_DOOR, T_CAR,
-  weaponCond, wearWeapon, repairCost, repairWeapon, playerHitDamage };`, ctx);
+  weaponCond, wearWeapon, repairCost, repairWeapon, playerHitDamage, actNow, bossHere, bossMet, BOSS_LAIR, buildingAt, endingEpilogue };`, ctx);
 const T = ctx.__T;
 const queued = [];
 T.Hooks.queue = q => queued.push(q);
@@ -161,6 +161,26 @@ try {
   delete T.G.pack.axe; delete T.G.store.axe; T.wearWeapon('axe', 30); T.give('axe', 1); if (T.weaponCond('axe') !== 100) fail('wear', 'a new find should be fresh');
   T.G.atShelter = false;
 } catch (err) { fail('wear', err); }
+
+/* ---- act bosses: each lair is found, a boss only in its act, gone once dead, guaranteed loot, journal + epilogue ---- */
+try {
+  fresh(); T.G.day = 5; const W_ = T.WORLD, at = {};
+  for (let i = 0; i < W_.roofs.length; i++) { const r = W_.roofs[i]; for (let y = r.y + 1; y < r.y + r.h - 1 && !at[i]; y++) for (let x = r.x + 1; x < r.x + r.w - 1; x++) { const b = T.bossHere(x + 0.5, y + 0.5); if (b) { at[i] = b; break; } } }
+  const found = Object.values(at); if (!found.includes('orderly')) fail('boss', 'no hospital lair for the Orderly');
+  if (found.some(b => b !== 'orderly')) fail('boss', 'act 1 lair holds ' + found);
+  T.G.flags.radio_built = true; if (T.actNow() !== 2) fail('boss', 'act 2');
+  const cs = W_.roofs.find(r => W_.pois[r.poi] && W_.pois[r.poi].label === 'Cold Store');
+  let csAt = null; if (cs) for (let y = cs.y + 1; y < cs.y + cs.h - 1 && !csAt; y++) for (let x = cs.x + 1; x < cs.x + cs.w - 1; x++) if (T.bossHere(x + 0.5, y + 0.5) === 'butcher') { csAt = [x + 0.5, y + 0.5]; break; }
+  if (!csAt) fail('boss', 'no Butcher in the Cold Store in act 2');
+  T.G.flags.q_bus = true; const cv = Object.values(W_.pois).find(p => p.label === 'Wrecked Convoy');
+  if (T.bossHere(cv.x + 0.5, cv.y + 2.5) !== 'sergeant') fail('boss', 'no Sergeant at the convoy in act 3');
+  if (csAt && T.bossHere(...csAt)) fail('boss', 'the Butcher outlived act 2');
+  if (!T.bossMet('sergeant') || T.bossMet('sergeant')) fail('boss', 'intro should show once');
+  const d = T.onKill('sergeant'); if (!d.some(x => x.id === 'fuel' && x.qty === 2) || !d.some(x => x.id === 'coat')) fail('boss', 'guaranteed loot ' + JSON.stringify(d));
+  if (T.G.bosses.sergeant !== 'dead' || T.bossHere(cv.x + 0.5, cv.y + 2.5)) fail('boss', 'dead boss came back');
+  if (!T.G.journal.some(j => j.title === 'The Sergeant')) fail('boss', 'no journal line');
+  const ep = T.endingEpilogue('end_stand'); if (!JSON.stringify(ep).includes('Sergeant')) fail('boss', 'epilogue does not mention it: ' + JSON.stringify(ep));
+} catch (err) { fail('boss', err); }
 
 /* ---- 14 days of time: horde nights (unfought), act gates, endings, save/load ---- */
 try {

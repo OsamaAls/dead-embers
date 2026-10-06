@@ -410,7 +410,8 @@ const Combat = (function () {
   function spawnAt(id, x, y, o) {
     o = o || {};
     const E = ENEMIES[id]; if (!E) return null;
-    const a = Actors.make(kindOf(id)); R.scene.add(a.root);
+    const base = E.look && ENEMIES[E.shape] ? ENEMIES[E.shape] : null; // a boss: its shape's kind, scaled up, with its own look
+    const a = Actors.make(kindOf(id), base ? { k: E.look, scale: (E.scale || 1) / (base.scale || 1) } : undefined); R.scene.add(a.root);
     if (E.shape === 'human') a.setCarry(E.rng ? (id === 'warden' ? 'shotgun' : 'pistol') : 'pipe');
     const sc = E.scale || 1;
     const e = {
@@ -752,6 +753,29 @@ const Combat = (function () {
     const list = ambientTypes().filter(t => !exclude || !exclude.includes(t));
     const mix = zMix(G.p.x, G.p.y);
     return list.length ? wpick(list, t => (W_[t] || 1) * (mix[t] || 1)) : 'walker';
+  }
+  /* act bosses (rules: bossHere in engine.js): walk into the lair during its act and it is there, at the far end of the building */
+  let bossT = 0;
+  function bossSpot() {
+    const p = G.p, bi = buildingAt(p.x, p.y);
+    if (bi >= 0 && indoors(p.x, p.y)) {
+      const r = WORLD.roofs[bi]; let best = null, bd = 2.5;
+      for (let y = r.y + 1; y < r.y + r.h - 1; y++) for (let x = r.x + 1; x < r.x + r.w - 1; x++) {
+        const cx = x + 0.5, cy = y + 0.5; if (hitR(cx, cy, 0.42) || flowAt(cx, cy) < 0) continue;
+        const d = dist(cx, cy, p.x, p.y); if (d > bd) { bd = d; best = { x: cx, y: cy }; }
+      }
+      if (best) return best;
+    }
+    return findSpot(p.x, p.y, 4, 7, { reach: true, shelterOK: true });
+  }
+  function updateBoss(dt) {
+    bossT -= dt; if (bossT > 0 || C.wave || (typeof Moments !== 'undefined' && Moments.active)) return; bossT = 0.5;
+    const id = typeof bossHere === 'function' ? bossHere(G.p.x, G.p.y) : null;
+    if (!id || C.enemies.some(e => e.id === id && !e.dead)) return;
+    const s = bossSpot(); if (!s) return;
+    const e = spawnAt(id, s.x, s.y, { aware: true }); if (!e) return;
+    if (bossMet(id) && typeof UI !== 'undefined' && UI.banner) UI.banner(e.E.n, e.E.intro || '');
+    sfx(e.E.gas ? 'groan' : 'scream');
   }
   function manageAmbient(dt) {
     ambT -= dt; ambCd -= dt;
@@ -1294,6 +1318,7 @@ const Combat = (function () {
       updateGroups();
       updateWave(dt);
       manageAmbient(dt);
+      updateBoss(dt);
       updateSurvivors(dt);
       updateCompanion(dt);
       updateDoorBars();

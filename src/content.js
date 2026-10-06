@@ -709,6 +709,11 @@
         : "The brothers stayed by their mother's grave. They keep a garden there now."; } },
     { id: 'chimes', pri: 3, endings: GONE, cond: function () { return !!flag('chimes_home'); },
       line: "You kept three wind chimes from that balcony. Wherever you sleep, they ring you down." },
+    // ---- act bosses ----
+    { id: 'bosses', pri: 4, endings: null, cond: function () { return G.bosses && Object.keys(G.bosses).some(function (k) { return G.bosses[k] === 'dead'; }); },
+      line: function () { var n = Object.keys(G.bosses).filter(function (k) { return G.bosses[k] === 'dead'; }).map(function (k) { return ENEMIES[k].n; });
+        return n.length === 1 ? n[0] + " is a story they tell in the Vale now. You're in it, at the end."
+          : n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1] + ": names the Vale says quietly now. You put them down."; } },
     // ---- numbers ----
     { id: 'survivors_many', pri: 2, endings: WON, cond: function () { return G.survivors.length >= 8; },
       line: function () { return G.survivors.length + " people sleep under your watch. You know every one of their names."; } },

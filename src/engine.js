@@ -677,7 +677,7 @@ function newGame(name, bgId, attrs, worldName) {
     p: { name, bg: bgId, attr: a, hp: 100, maxHp: 100, sta: 0, maxSta: 0, hunger: 80, thirst: 70, morale: 60, inf: 0, xp: 0, level: 1, points: 0, weapon: null, x: 0, y: 0, face: 0, status: {} },
     pack: {}, store: { canned: 2, water: 2, wood: 6, cloth: 3 },
     survivors: [], buildings: {}, flags: {}, seenEnc: {}, seenScenes: {}, journal: [], loreRead: [], log: [],
-    locs: {}, cont: {}, wear: {}, unlocks: {}, hints: {}, fog: '', noise: 0, encTimer: rnd(70, 110), nextId: 1, hordeDay: 0, hordeNight: false, hordeResult: null,
+    locs: {}, cont: {}, wear: {}, bosses: {}, unlocks: {}, hints: {}, fog: '', noise: 0, encTimer: rnd(70, 110), nextId: 1, hordeDay: 0, hordeNight: false, hordeResult: null,
     stats: { kills: 0, searches: 0, encounters: 0, recruited: 0 },
     mapV: 2, weather: 'clear', weatherH: rnd(5, 9), season: 'autumn', snowCover: 0, storm: false,
   };
@@ -1181,7 +1181,38 @@ function onKill(enemyId) {
   if (e.drop && chance(enemyId === 'warden' ? 1 : 0.5)) { const w = pick(e.drop); drops.push({ id: w, qty: 1 }); if (ITEMS[w].ammo) drops.push({ id: ITEMS[w].ammo, qty: rnd(2, 6) }); }
   if (e.z && chance(0.22)) drops.push({ id: pick(['cloth', 'cloth', 'cigs', 'snack', 'bandage', 'scrap', 'batteries']), qty: 1 });
   if (e.gas) drops.gas = true;
+  if (e.guar) for (const [id, q] of e.guar) drops.push({ id, qty: q });
+  if (BOSS_LAIR[enemyId]) bossKilled(enemyId);
   return drops;
+}
+/* ---------- act bosses: one named dead per act, waiting in its lair. It shows up when you walk in during its act (and after
+   minDay), comes back if you leave and return, and is gone for good once killed or once the act is over. G.bosses[id]: 'met'|'dead'. ---------- */
+function actNow() { const f = (G && G.flags) || {}; return f.q_bus ? 3 : f.radio_built ? 2 : 1; }
+const BOSS_LAIR = {
+  orderly: { act: 1, minDay: 3, type: 'hospital', journal: ['The Orderly', 'It wore whites and walked the ward like it still had patients. I ended its shift.'] },
+  butcher: { act: 2, label: 'Cold Store', journal: ['The Butcher', 'Something kept itself fat in the cold store. It burst like the rest of them.'] },
+  sergeant: { act: 3, label: 'Wrecked Convoy', r: 5, journal: ['The Sergeant', 'He was still guarding the convoy in the snow. I took his coat. He did not need it.'] },
+};
+/* The boss whose lair (x,y) is in, if it should be there now; else null. Building lairs count once you're inside. */
+function bossHere(x, y) {
+  if (!G || !WORLD) return null;
+  const act = actNow(), B = G.bosses || {};
+  for (const id in BOSS_LAIR) {
+    const L = BOSS_LAIR[id]; if (L.act !== act || B[id] === 'dead' || G.day < (L.minDay || 0)) continue;
+    if (L.r) { const p = Object.values(WORLD.pois).find(q => q.label === L.label); if (p && Math.hypot(p.x + 0.5 - x, p.y + 0.5 - y) <= L.r) return id; continue; }
+    const bi = buildingAt(x, y); if (bi < 0 || !indoors(x, y)) continue;
+    const r = WORLD.roofs[bi], p = WORLD.pois[r.poi];
+    if (L.type ? r.type === L.type : p && p.label === L.label) return id;
+  }
+  return null;
+}
+/* Mark a boss met; true the first time (show the intro). */
+function bossMet(id) { if (!G.bosses) G.bosses = {}; if (G.bosses[id]) return false; G.bosses[id] = 'met'; return true; }
+function bossKilled(id) {
+  if (!G.bosses) G.bosses = {};
+  if (G.bosses[id] === 'dead') return;
+  G.bosses[id] = 'dead'; const j = BOSS_LAIR[id].journal; journal(j[0], j[1]);
+  Hooks.toast && Hooks.toast(`${ENEMIES[id].n} is down.`, 'good');
 }
 /* Pick up a drop. Returns the toast label. */
 function pickup(id, qty) { return give(id, qty); }
