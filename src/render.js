@@ -11,7 +11,13 @@
      R.touch             true on coarse-pointer devices (lower quality settings).
      R.camDist           current camera distance in metres (zoom aware).
      R.flashK            0..1 current flashlight fade (World3D / actors may use it).
-     R.lookTarget        smoothed world-space Vector3 the camera looks at. */
+     R.lookTarget        smoothed world-space Vector3 the camera looks at.
+   Weather + seasons (read from the engine every frame: weatherAt() / G.weather, G.season, G.snowCover, G.storm):
+     R.env               shared shader uniforms {uSnow, uWet, uFrost, uAutumn, uBare, uWind, uTime} ({value}) used by World3D materials:
+                         snow cover on up-facing surfaces, wet darkening, morning frost, autumn colour, leaf drop, wind sway.
+     R.weatherK          smoothed 0..1 weights {rain, fog, snow, storm, leaves, mist} for other layers (ambience, UI).
+     Precipitation is three cheap draws around the camera (rain streaks, snow flakes, falling autumn leaves), animated in the
+     vertex shader. Fog distance and colour, sun strength and the sky follow the weather on top of the R.setTime day/night curve. */
 const R = (() => {
   const V3 = () => new THREE.Vector3();
   const PITCH = 56 * Math.PI / 180, BASE_DIST = 27, ZMIN = 0.55, ZMAX = 1.7;
@@ -41,7 +47,9 @@ const R = (() => {
     scene: null, camera: null, renderer: null, target: null, lookTarget: null,
     zoomK: 1, zoomT: 1, shakeA: 0, nightK: 0, dayK: 1, time: 0, touch: false, camDist: BASE_DIST, flashK: 0,
     _ray: null, _plane: null, _snap: true, _vel: null, _face: 0, _flashOn: false, _flash: { x: 0, y: 0, face: 0 }, _lastT: -1,
-    _sunDir: null, _fogNear: 30, _fogFar: 80, _shake: null, _aspect: 1,
+    _sunDir: null, _fogNear: 30, _fogFar: 80, _shake: null, _aspect: 1, _bg: null, _hemiI: 1.7, _sunI: 3, _precip: null, _natT: 0, _trees: 0,
+    env: { uSnow: { value: 0 }, uWet: { value: 0 }, uFrost: { value: 0 }, uAutumn: { value: 1 }, uBare: { value: 0.12 }, uWind: { value: 0.35 }, uTime: { value: 0 } },
+    weatherK: { rain: 0, fog: 0, snow: 0, storm: 0, leaves: 0, mist: 0 },
 
     init(parent) {
       this.touch = !!(window.matchMedia && matchMedia('(pointer:coarse)').matches);
@@ -82,6 +90,8 @@ const R = (() => {
       addEventListener('resize', fit);
       if (window.ResizeObserver) new ResizeObserver(fit).observe(parent);
       fit();
+      this._bg = new THREE.Color(0x15120f);
+      this._precip = makePrecip(s, this.touch);
       this.setTime(8, 0);
     },
 
@@ -103,10 +113,10 @@ const R = (() => {
       let i = 0; while (i < KEYS.length - 2 && KEYS[i + 1][0] <= t) i++;
       const a = KEYS[i], b = KEYS[i + 1], k = clamp((t - a[0]) / Math.max(0.001, b[0] - a[0]), 0, 1);
       const s = this.scene;
-      lerpHex(s.background, a[1], b[1], k); s.fog.color.copy(s.background);
+      lerpHex(this._bg, a[1], b[1], k); s.background.copy(this._bg); s.fog.color.copy(this._bg);
       lerpHex(this.sun.color, a[2], b[2], k); this._sunI = a[3] + (b[3] - a[3]) * k;
       lerpHex(this.hemi.color, a[4], b[4], k); lerpHex(this.hemi.groundColor, a[5], b[5], k);
-      this.hemi.intensity = a[6] + (b[6] - a[6]) * k;
+      this.hemi.intensity = this._hemiI = a[6] + (b[6] - a[6]) * k;
       this.nightK = a[7] + (b[7] - a[7]) * k; this.dayK = 1 - this.nightK;
       /* sun arcs east -> south -> west; the moon hangs high in the south-west */
       const ang = clamp((t - 5.5) / 14, 0, 1) * Math.PI;
@@ -142,9 +152,12 @@ const R = (() => {
       cam.lookAt(L.x + this._shake.x * 0.5, 0.6, L.z + this._shake.z * 0.5);
       cam.updateMatrixWorld();
 
-      /* fog follows zoom; night closes it in */
+      /* fog follows zoom; night closes it in; the weather closes it further */
       const n = this.nightK, f = this.scene.fog;
-      f.near = dist * (0.95 - 0.35 * n); f.far = dist * (2.5 - 0.85 * n);
+      const wk = this._weather(dt, L);
+      const fogK = 1 - 0.62 * wk.fog - 0.22 * wk.rain - 0.25 * wk.snow - 0.3 * wk.storm - 0.25 * wk.mist;
+      /* never fog out the player: the camera sits ~dist away, keep far beyond it */
+      f.near = Math.max(dist * 0.62, dist * (0.95 - 0.35 * n) * Math.max(0.25, fogK - 0.1 * wk.fog)); f.far = Math.max(dist * 1.32, dist * (2.5 - 0.85 * n) * Math.max(0.36, fogK));
 
       /* shadow camera: tight box around the look target, snapped to shadow texels to avoid shimmer */
       const half = 20 + 6 * clamp(this.zoomK - 1, -0.4, 0.7);
@@ -171,7 +184,50 @@ const R = (() => {
       this.glow.position.set(fx, 2.4, fz);
     },
 
+    /* weather + season: smooth weights, sky/fog colour and light on top of the day curve, shader uniforms, precipitation */
+    _weather(dt, L) {
+      const g = typeof G !== 'undefined' && G ? G : null, K = this.weatherK, E = this.env;
+      const w = g ? ((typeof weatherAt === 'function' ? weatherAt(g.p.x, g.p.y) : g.weather) || 'clear') : 'clear';
+      const season = g ? (g.season || 'autumn') : 'autumn', storm = !!(g && g.storm), inside = g && typeof indoors === 'function' ? indoors(g.p.x, g.p.y) : false;
+      const biome = g && typeof biomeAt === 'function' ? biomeAt(g.p.x, g.p.y) : '';
+      /* trees nearby make the autumn leaves fall (checked once a second) */
+      this._natT -= dt;
+      if (this._natT <= 0) { this._natT = 1; try { const nn = typeof World3D !== 'undefined' && World3D.natureNear && g ? World3D.natureNear(g.p.x, g.p.y, 9) : null; this._trees = nn ? nn.trees + nn.bushes * 0.3 : 0; } catch (e) { this._trees = 0; } }
+      const ap = (k, to, rate) => { K[k] += (to - K[k]) * (1 - Math.exp(-dt * rate)); };
+      ap('rain', w === 'rain' ? 1 : 0, 0.5); ap('fog', w === 'fog' ? 1 : 0, 0.35); ap('snow', w === 'snow' ? 1 : 0, 0.5); ap('storm', storm ? 1 : 0, 0.4);
+      ap('mist', biome === 'flooded' ? 1 : 0, 0.6);
+      ap('leaves', season !== 'winter' && w !== 'snow' ? clamp(this._trees / 10, 0, 1) * (season === 'autumn' ? 1 : 0.6) : 0, 0.5);
+      /* shader uniforms */
+      const h = this.hour == null ? 12 : this.hour, morning = clamp(1 - Math.abs(h - 7) / 3.2, 0, 1);
+      const tgt = {
+        uAutumn: season === 'winter' ? 0.55 : season === 'late' ? 0.9 : 1, uBare: season === 'winter' ? 0.93 : season === 'late' ? 0.68 : 0.14,
+        uFrost: season === 'late' ? 0.85 * morning + 0.1 * this.nightK : season === 'winter' ? 0.3 + 0.4 * morning : 0, uSnow: g ? clamp(g.snowCover || 0, 0, 1) : 0,
+        uWind: 0.3 + 0.35 * K.rain + 0.25 * K.snow + 1.3 * K.storm - 0.15 * K.fog,
+      };
+      for (const k in tgt) E[k].value += (tgt[k] - E[k].value) * (1 - Math.exp(-dt * (k === 'uWind' ? 0.8 : 0.35)));
+      E.uWet.value = clamp(E.uWet.value + dt * (K.rain > 0.3 ? 0.08 * K.rain : -0.012), 0, 1);
+      E.uTime.value = this.time;
+      /* sky + fog colour: overcast greys of the same brightness; the mist hangs over the flood */
+      const bg = this._bg, lum = Math.max(0.02, bg.r * 0.3 + bg.g * 0.59 + bg.b * 0.11), mixK = clamp(K.rain * 0.5 + K.fog * 0.75 + K.snow * 0.55 + K.storm * 0.2 + K.mist * 0.3, 0, 0.9);
+      const grey = cA.setRGB(0.52, 0.56, 0.6).multiplyScalar(lum / 0.55 * (1 + 0.25 * K.snow));
+      this.scene.background.copy(bg).lerp(grey, mixK); this.scene.fog.color.copy(this.scene.background);
+      const dim = 1 - 0.5 * K.rain - 0.55 * K.fog - 0.4 * K.snow - 0.2 * K.storm;
+      this.sun.intensity = this._sunI * Math.max(0.25, dim); this.hemi.intensity = this._hemiI * (1 + 0.08 * (K.fog + K.snow));
+      /* precipitation */
+      const P = this._precip;
+      if (P) {
+        for (const m of [P.rain, P.snow, P.leaf]) { m.material.uniforms.uT.value = this.time; m.material.uniforms.uCenter.value.set(L.x, 0, L.z); }
+        const rainA = K.rain * (inside ? 0.25 : 1), snowA = K.snow * (inside ? 0.2 : 1), leafA = K.leaves * (inside ? 0 : 1);
+        P.rain.visible = rainA > 0.02; P.rain.material.uniforms.uOpacity.value = 0.42 * rainA;
+        P.snow.visible = snowA > 0.02; P.snow.material.uniforms.uOpacity.value = 0.9 * snowA; P.snow.material.uniforms.uWind.value = 0.5 + 3.2 * K.storm;
+        P.snow.material.uniforms.uDensity.value = clamp((season === 'winter' ? 0.75 : 0.45) + K.storm, 0, 1);
+        P.leaf.visible = leafA > 0.02; P.leaf.material.uniforms.uOpacity.value = leafA;
+      }
+      return K;
+    },
+
     render() { this.renderer.render(this.scene, this.camera); },
+
 
     screenToTile(sx, sy) {
       const el = this.renderer.domElement, rc = el.getBoundingClientRect();
@@ -183,5 +239,50 @@ const R = (() => {
       return { x: rc.left + (v.x + 1) / 2 * rc.width, y: rc.top + (1 - v.y) / 2 * rc.height, on: v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1 };
     },
   };
+  /* rain streaks (line pairs), snow flakes and falling leaves (points): positions wrap around the camera in the vertex shader */
+  function makePrecip(scene, touch) {
+    const BOX = new THREE.Vector3(46, 24, 46);
+    const mk = (n, pairs) => {
+      const g = new THREE.BufferGeometry(), k = pairs ? 2 : 1, p = new Float32Array(n * 3 * k), e = new Float32Array(n * k), r = new Float32Array(n * k);
+      for (let i = 0; i < n; i++) {
+        const x = Math.random() * BOX.x, y = Math.random() * BOX.y, z = Math.random() * BOX.z, rv = Math.random();
+        for (let j = 0; j < k; j++) { p.set([x, y, z], (i * k + j) * 3); e[i * k + j] = j; r[i * k + j] = rv; }
+      }
+      g.setAttribute('position', new THREE.BufferAttribute(p, 3)); g.setAttribute('aEnd', new THREE.BufferAttribute(e, 1)); g.setAttribute('aR', new THREE.BufferAttribute(r, 1));
+      g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e5);
+      return g;
+    };
+    const common = `uniform float uT; uniform vec3 uCenter; uniform vec3 uBox; attribute float aEnd; attribute float aR; varying float vR;
+vec3 wrapP(vec3 p) { vec3 w; w.y = p.y; w.xz = uCenter.xz - uBox.xz * 0.5 + mod(p.xz - (uCenter.xz - uBox.xz * 0.5), uBox.xz); return w; }
+`;
+    const uni = o => Object.assign({ uT: { value: 0 }, uCenter: { value: new THREE.Vector3() }, uBox: { value: BOX }, uOpacity: { value: 0 } }, o || {});
+    const rain = new THREE.LineSegments(mk(touch ? 700 : 1600, true), new THREE.ShaderMaterial({
+      uniforms: uni(), transparent: true, depthWrite: false,
+      vertexShader: common + `void main() { vR = aR; vec3 p = position; p.y = mod(p.y - uT * (17.0 + aR * 6.0), uBox.y); vec3 w = wrapP(p); w.x += w.y * 0.12;
+  if (aEnd > 0.5) { w.y += 0.75; w.x += 0.09; } gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0); }`,
+      fragmentShader: `uniform float uOpacity; varying float vR; void main() { gl_FragColor = vec4(0.72, 0.78, 0.86, uOpacity * (0.5 + 0.5 * vR)); }`,
+    }));
+    const snow = new THREE.Points(mk(touch ? 800 : 1800, false), new THREE.ShaderMaterial({
+      uniforms: uni({ uWind: { value: 0.5 }, uDensity: { value: 1 } }), transparent: true, depthWrite: false,
+      vertexShader: common + `uniform float uWind; uniform float uDensity; varying float vK;
+void main() { vR = aR; vK = step(aR, uDensity); vec3 p = position; p.y = mod(p.y - uT * (1.6 + aR * 1.2) * (1.0 + uWind * 0.35), uBox.y);
+  p.x += uT * uWind * 2.2 + sin(uT * 0.9 + aR * 40.0) * 0.6; p.z += cos(uT * 0.7 + aR * 23.0) * 0.5;
+  vec3 w = wrapP(p); vec4 mv = viewMatrix * vec4(w, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = clamp((0.09 + aR * 0.08) * 300.0 / -mv.z, 1.0, 9.0); }`,
+      fragmentShader: `uniform float uOpacity; varying float vR; varying float vK; void main() { if (vK < 0.5) discard; vec2 c = gl_PointCoord - 0.5; float a = smoothstep(0.5, 0.1, length(c)); gl_FragColor = vec4(0.94, 0.96, 1.0, a * uOpacity); }`,
+    }));
+    const leaf = new THREE.Points(mk(touch ? 40 : 90, false), new THREE.ShaderMaterial({
+      uniforms: uni(), transparent: true, depthWrite: false,
+      vertexShader: common + `varying float vS;
+void main() { vR = aR; vec3 p = position; p.y = mod(p.y * 0.55 - uT * (0.9 + aR * 0.6), uBox.y * 0.55);
+  p.x += sin(uT * 1.3 + aR * 30.0) * 1.2 + uT * 0.6; p.z += cos(uT * 1.1 + aR * 17.0) * 0.8;
+  vec3 w = wrapP(p); vec4 mv = viewMatrix * vec4(w, 1.0); vS = sin(uT * (3.0 + aR * 4.0) + aR * 9.0); gl_Position = projectionMatrix * mv; gl_PointSize = clamp(0.32 * 300.0 / -mv.z, 2.0, 14.0); }`,
+      fragmentShader: `uniform float uOpacity; varying float vR; varying float vS;
+void main() { vec2 c = gl_PointCoord - 0.5; c.x /= max(0.25, abs(vS)); float a = smoothstep(0.5, 0.3, length(c * vec2(1.0, 1.7))); if (a < 0.05) discard;
+  vec3 col = mix(vec3(0.62, 0.3, 0.08), vec3(0.75, 0.55, 0.12), vR); gl_FragColor = vec4(col * (0.7 + 0.3 * abs(vS)), a * uOpacity); }`,
+    }));
+    for (const m of [rain, snow, leaf]) { m.frustumCulled = false; m.visible = false; m.renderOrder = 5; scene.add(m); }
+    return { rain, snow, leaf };
+  }
   return self;
 })();
+

@@ -32,9 +32,11 @@ const ITEMS = {
   backpack:{n:'Hiking Backpack',c:'gear',w:0,v:25,desc:'+15 carry capacity'},
   boots:{n:'Work Boots',c:'gear',w:0,v:15,desc:'-30% travel stamina'},
   vest:{n:'Kevlar Vest',c:'gear',w:3,v:40,desc:'-3 damage taken, halves bite chance'},
+  coat:{n:'Winter Coat',c:'gear',w:1.5,v:22,desc:'Keeps the cold out: no stamina loss in snow'},
   cigs:{n:'Cigarettes',c:'misc',w:0.05,v:3},
   bottle:{n:'Glass Bottle',c:'misc',w:0.4,v:1,desc:'Throw it (G) and the dead go to the noise.'},
   batteries:{n:'Batteries',c:'misc',w:0.2,v:4},
+  hose:{n:'Siphon Hose',c:'gear',w:0.3,v:6,desc:'Siphon fuel from any wreck you find (hold E at a car).'},
   radio_coil:{n:'Radio Coil',c:'story',w:0.3,v:0},
   radio_antenna:{n:'Radio Antenna',c:'story',w:1,v:0},
   radio_cell:{n:'Power Cell',c:'story',w:1,v:0},
@@ -58,11 +60,11 @@ const ENEMIES = {
 /* loot: [id, weight, min, max]; story: item obtainable here when quest allows */
 const LOCS = {
   shelter:{n:'Metro Bunker',icon:'🚇',danger:0,desc:'A maintenance bunker under the old Line 3. Thick concrete, one steel door. Home.'},
-  street:{n:'Ruined Street',icon:'🏚️',danger:1,searches:3,loot:[['bottle',4,1,2],['wood',5,1,2],['scrap',5,1,2],['cloth',4,1,2],['canned',2,1,1],['dirtywater',2,1,1],['cigs',2,1,3],['pipe',1,1,1]],desc:'Burned-out cars and broken windows. Picked over, but not clean.'},
+  street:{n:'Ruined Street',icon:'🏚️',danger:1,searches:3,loot:[['bottle',4,1,2],['hose',1,1,1],['wood',5,1,2],['scrap',5,1,2],['cloth',4,1,2],['canned',2,1,1],['dirtywater',2,1,1],['cigs',2,1,3],['pipe',1,1,1]],desc:'Burned-out cars and broken windows. Picked over, but not clean.'},
   supermarket:{n:'FreshMart',icon:'🛒',danger:2,searches:5,loot:[['bottle',4,1,2],['canned',6,1,2],['snack',5,1,3],['water',4,1,2],['veg',2,1,2],['cloth',2,1,2],['cigs',2,2,4],['batteries',1,1,2]],rare:['backpack','medkit'],desc:'Shelves toppled, freezers rotten. Something still shuffles in the stockroom.'},
   hospital:{n:"St. Agnes Hospital",icon:'🏥',danger:3,searches:5,loot:[['bandage',6,1,2],['painkillers',4,1,2],['medkit',2,1,1],['antibiotics',2,1,1],['chem',3,1,2],['cloth',3,1,2]],rare:['serum','antibiotics'],desc:'Ground zero for the Fever in this district. The quarantine tape still flutters.'},
   police:{n:'Precinct 9',icon:'🚓',danger:3,searches:4,loot:[['ammo',6,2,6],['batteries',3,1,2],['bandage',2,1,1],['canned',2,1,1],['knife',1,1,1]],rare:['pistol','vest'],story:['radio_cell'],desc:'The last stand of the city police. Barricades from the inside.'},
-  gas:{n:'Gas Station',icon:'⛽',danger:2,searches:4,loot:[['bottle',4,1,2],['fuel',5,1,2],['snack',4,1,2],['water',3,1,1],['parts',2,1,1],['cigs',3,2,4],['chem',2,1,1]],rare:['boots'],desc:'Pumps dry, but the underground tank might still hold something.'},
+  gas:{n:'Gas Station',icon:'⛽',danger:2,searches:4,loot:[['bottle',4,1,2],['fuel',5,1,2],['hose',1,1,1],['snack',4,1,2],['water',3,1,1],['parts',2,1,1],['cigs',3,2,4],['chem',2,1,1]],rare:['boots'],desc:'Pumps dry, but the underground tank might still hold something.'},
   factory:{n:'Rail Works',icon:'🏭',danger:2,searches:5,loot:[['bottle',4,1,2],['scrap',7,1,3],['parts',4,1,2],['chem',3,1,1],['wood',3,1,2],['fuel',1,1,1]],rare:['axe','boots'],desc:'Rusting cranes and stacked sheet metal. Echoes carry far here.'},
   farm:{n:'Allotment Farm',icon:'🌾',danger:1,searches:4,loot:[['veg',6,1,3],['rawmeat',2,1,1],['wood',3,1,2],['dirtywater',3,1,2],['cloth',1,1,1]],desc:'Overgrown community plots. Some vegetables survived without anyone.'},
   river:{n:'Vale River',icon:'🌊',danger:1,searches:6,loot:[['dirtywater',8,2,3],['rawmeat',3,1,1],['wood',2,1,1]],desc:'Brown water and drifting debris. Bodies float past sometimes.'},
@@ -70,9 +72,19 @@ const LOCS = {
   apartments:{n:'Tower Blocks',icon:'🏢',danger:2,searches:5,loot:[['bottle',4,1,2],['canned',4,1,2],['cloth',5,1,3],['bandage',2,1,1],['cigs',3,1,3],['batteries',2,1,1],['painkillers',1,1,1],['knife',1,1,1]],rare:['backpack','bat'],story:['radio_coil'],desc:'Twelve floors of locked doors. Not all of them are empty.'},
   electronics:{n:'Volt & Co.',icon:'📻',danger:2,searches:4,loot:[['parts',6,1,2],['batteries',5,1,3],['scrap',2,1,1],['cigs',1,1,2]],rare:['crossbow'],story:['radio_coil','radio_cell'],desc:'An electronics store. Looters took the TVs and left the useful stuff.'},
   radiotower:{n:'KVAL Radio Tower',icon:'📡',danger:3,searches:3,loot:[['parts',5,1,2],['scrap',4,1,2],['batteries',3,1,2],['cloth',1,1,1]],story:['radio_antenna'],desc:'The old broadcast mast on Signal Hill. Its red light died months ago.'},
-  military:{n:'Checkpoint Echo',icon:'🪖',danger:4,searches:4,loot:[['ammo',5,3,8],['shells',3,2,4],['medkit',2,1,1],['canned',4,1,3],['water',3,1,2],['bolts',2,3,6]],rare:['shotgun','vest'],story:['haven_map'],desc:'An abandoned army checkpoint. Overrun, then forgotten.'},
-  depot:{n:'Bus Depot',icon:'🚌',danger:3,searches:4,loot:[['scrap',5,1,3],['parts',4,1,2],['fuel',4,1,2],['wood',1,1,1]],story:['engine_parts'],desc:'Rows of city buses. One yellow school bus looks almost whole.'},
+  military:{n:'Checkpoint Echo',icon:'🪖',danger:4,searches:4,loot:[['ammo',5,3,8],['shells',3,2,4],['medkit',2,1,1],['canned',4,1,3],['water',3,1,2],['bolts',2,3,6]],rare:['shotgun','vest','coat'],story:['haven_map'],desc:'An abandoned army checkpoint. Overrun, then forgotten.'},
+  depot:{n:'Bus Depot',icon:'🚌',danger:3,searches:4,loot:[['scrap',5,1,3],['hose',1,1,1],['parts',4,1,2],['fuel',4,1,2],['wood',1,1,1]],story:['engine_parts'],desc:'Rows of city buses. One yellow school bus looks almost whole.'},
   tollcamp:{n:'Tollmen Camp',icon:'⛓️',danger:0,desc:'A fortified gas depot flying a black flag. The Warden holds court here.'},
+  /* biome districts (WORLD.biome) and their buildings. alias = an older type whose encounters also fit here */
+  park:{n:'City Park',icon:'🌳',danger:1,searches:3,alias:'street',loot:[['wood',6,1,2],['dirtywater',3,1,1],['bottle',3,1,1],['veg',1,1,1],['cloth',1,1,1]],desc:'Overgrown lawns and a scummy pond. The trees are taking it back.'},
+  docks:{n:'Vale Docks',icon:'⚓',danger:2,searches:4,alias:'factory',loot:[['scrap',6,1,3],['parts',3,1,2],['fuel',3,1,2],['chem',2,1,1],['cloth',2,1,2],['canned',2,1,2],['rawmeat',2,1,1],['bottle',3,1,2],['cigs',2,1,3]],rare:['crossbow','vest'],desc:'Cranes over black water. Shipping containers stacked like tombstones.'},
+  warehouse:{n:'Dock Warehouse',icon:'📦',danger:3,searches:5,alias:'factory',loot:[['canned',5,1,3],['water',3,1,2],['cloth',3,1,2],['scrap',3,1,2],['chem',2,1,1],['batteries',2,1,2],['bottle',2,1,2]],rare:['backpack','coat'],desc:'Knee-deep water between the racks. Something bloated drifts in the dark.'},
+  suburbs:{n:'Elm Row',icon:'🏡',danger:1,searches:3,alias:'street',loot:[['canned',3,1,2],['cloth',4,1,2],['bottle',3,1,2],['snack',2,1,2],['wood',3,1,2],['batteries',1,1,1],['cigs',2,1,2]],desc:'Quiet streets of identical houses. The dogs run in packs here now.'},
+  house:{n:'House',icon:'🏠',danger:1,searches:3,alias:'apartments',loot:[['canned',4,1,2],['water',3,1,1],['snack',3,1,2],['cloth',4,1,2],['bandage',2,1,1],['painkillers',1,1,1],['batteries',2,1,1],['cigs',2,1,2],['bottle',3,1,2],['knife',1,1,1]],rare:['coat','backpack','bat'],desc:'Family photos still on the walls. The dog bowl is empty.'},
+  garage:{n:'Garage',icon:'🔧',danger:1,searches:2,alias:'street',loot:[['fuel',4,1,2],['hose',2,1,1],['scrap',5,1,2],['parts',3,1,1],['wood',2,1,2],['chem',2,1,1]],rare:['axe','boots'],desc:'Oil stains, a workbench, a car that never left.'},
+  ranger:{n:'Ranger Station',icon:'🛖',danger:2,searches:4,alias:'forest',loot:[['canned',3,1,2],['water',3,1,2],['bandage',3,1,2],['bolts',3,2,5],['wood',3,1,2],['batteries',2,1,2],['rawmeat',2,1,1]],rare:['crossbow','coat','boots'],desc:'A log cabin above the tree line. Someone kept the stove warm here.'},
+  flooded:{n:'Flooded Quarter',icon:'🌫️',danger:2,searches:4,alias:'river',loot:[['dirtywater',5,1,2],['cloth',4,1,2],['canned',3,1,2],['bottle',3,1,2],['chem',2,1,1],['bandage',2,1,1],['scrap',2,1,2]],rare:['medkit','coat'],desc:'The river took these streets. Houses stand to their windows in brown water.'},
+  pass:{n:'Northern Pass',icon:'🏔️',danger:3,searches:3,alias:'military',loot:[['canned',4,1,2],['water',3,1,2],['ammo',3,2,5],['fuel',2,1,2],['cloth',2,1,2],['bandage',2,1,1]],rare:['coat','vest'],desc:'The road to Haven climbs into the snow. Wrecked convoys mark the way.'},
 };
 
 /* Buildings: cost per level (index = level-1) */
@@ -109,6 +121,7 @@ const RECIPES = [
   {out:'shells',q:3,in:{scrap:1,chem:2},bench:2,int:5},
   {out:'ammo',q:6,in:{scrap:1,chem:1,parts:1},bench:2,int:6},
   {out:'vest',q:1,in:{scrap:6,cloth:4},bench:2,int:4},
+  {out:'coat',q:1,in:{cloth:6,scrap:1},bench:1,int:2,label:'Sew a Winter Coat'},
   {out:'antibiotics',q:1,in:{chem:3,parts:1},bench:3,int:8},
   {out:'engine_parts',q:1,in:{parts:8,scrap:10},bench:3,int:6,label:'Rebuild Engine Parts'},
 ];
@@ -195,6 +208,8 @@ const CONT_KINDS = {
   gas: ['shelf', 'fridge', 'toolbox'], factory: ['toolbox', 'crate', 'locker'], farm: ['crate', 'toolbox', 'shelf'], apartments: ['cabinet', 'fridge', 'desk', 'shelf'],
   electronics: ['shelf', 'desk', 'crate'], radiotower: ['locker', 'toolbox', 'desk'], military: ['locker', 'crate', 'crate'], depot: ['toolbox', 'locker', 'crate'],
   street: ['rubble', 'crate', 'shelf'], forest: ['stash'], river: ['nets'],
+  docks: ['locker', 'crate', 'toolbox', 'desk'], warehouse: ['crate', 'shelf', 'crate', 'locker'], house: ['cabinet', 'fridge', 'desk', 'shelf'], garage: ['toolbox'],
+  ranger: ['locker', 'cabinet', 'desk', 'crate'], flooded: ['cabinet', 'shelf', 'fridge'], pass: ['crate', 'locker', 'cabinet'], suburbs: ['crate'],
 };
 const CONT_REFILL_DAYS = 6;
 
