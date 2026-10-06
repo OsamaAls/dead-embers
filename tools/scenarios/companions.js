@@ -99,7 +99,7 @@ module.exports = async B => {
     sim(4, () => { safeHp(); G.encTimer=1e9; if (!e.dead) maxY=Math.max(maxY,e.y); }); const held={hits:Combat.doorHits-h0, inside:maxY < d.y+0.95, hp:G.doorBars[d.y*W+d.x]||0};
     return {label:lb, barred, held, wood:G.pack.wood}`, "/Barricade the door/.test(r.label) && r.barred && r.held.inside && r.held.hits>=1 && r.wood===2");
   await B.shot('c09-door');
-  await step('it breaks through in a few seconds', `let broke=0; sim(10, i => { safeHp(); if (!barredAny()) { broke=i/20; return 'stop'; } }); return {broke}`, 'r.broke>0');
+  await step('it breaks through in a few seconds', `let broke=null; sim(10, i => { safeHp(); if (!barredAny()) { broke=(i+1)/20; return 'stop'; } }); return {broke}`, 'r.broke!==null'); // the first frame counts: the bar can be one hit from breaking
 
   B.log(fails ? `COMPANIONS: ${fails} step(s) failed` : 'COMPANIONS: all steps ok');
   if (fails) throw new Error(fails + ' companions step(s) failed');
