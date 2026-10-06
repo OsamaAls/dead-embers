@@ -9,7 +9,16 @@
    Extras (not in API.md): Actors.itemMesh(id) → Object3D for a pickup (weapons use their hand model), Actors.night (bool, eyes glow),
      anim names 'roll' (dodge), 'grab' (zombie holding the player), 'held' (player struggling in a grab).
    Rig: root (unscaled; combat positions/rotates it; awareness sprite lives here) → base (scaled; feet pivot for falls) → mid (hip-height pivot
-   for rolls) → body → hips → torso → head / arms (shoulder → elbow → hand) and legs (hip → knee). Model faces +z; its right side is -x. */
+   for rolls) → body → hips → torso → head / arms (shoulder → elbow → hand) and legs (hip → knee). Model faces +z; its right side is -x.
+   Gestures (player / survivor / any human; Actors.GESTURES): they keep playing through locomotion calls ('idle'/'walk' every frame is fine)
+     and stop when the actor actually moves (update speed > 0.6), on anim('stop'), or on any other action. Loops run until stopped.
+       search (loop: kneel, reach in, rummage)   hammer (loop: kneel and hammer)   chat (loop: talking hand gestures, head turns)
+       pickup 0.75 s (bend down and up)   eat / drink 1.6 s (hand to mouth)   bandage 2 s (wrap the forearm)   inspect 1.6 s (hold the weapon up)
+       handshake 1.6 s   wave 1.8 s   cheer 1.6 s (arms up, level-up)   point 1.6 s (arm out ahead)
+   Zombie idle variety: when a zombie stands still it picks sway / shuffle / still on its own; a suspicious one (setAware 0..1) slowly turns its
+     head ('turn'). actor.mood(name|null) forces one: 'feed' (crouched over a body) | 'sway' | 'shuffle' | 'turn' | 'still'; opts.mood does the same.
+   Deaths: die(variant?) — zombies pick at random: 0 fall back, 1 fall forward, 2 knees buckle and spin down. Humans fall back.
+   Hard hits: anim('stagger') or anim('hit', {hard:true}) = a 0.6 s stumble back with flailing arms (combat: for big hits / crits). */
 const Actors = (function () {
   const GEO = {}, SHARED = {};
   const geo = (key, fn) => GEO[key] || (GEO[key] = fn());
@@ -104,9 +113,12 @@ const Actors = (function () {
   };
   const LOCO = { idle: 1, walk: 1, run: 1, crouch: 1 };
   const LOOP = { work: 1, scream: 1, grab: 1, held: 1 };
-  const DUR = { lunge: 0.45, shoot: 0.32, hit: 0.26, roll: 0.36 };
-  const KEYS = ['sink', 'by', 'bx', 'bz', 'mx', 'tx', 'ty', 'tz', 'nx', 'nz', 'alx', 'alz', 'arx', 'arz', 'elx', 'erx', 'llx', 'lrx', 'klx', 'krx', 'jaw', 'tail'];
+  const DUR = { lunge: 0.45, shoot: 0.32, hit: 0.26, roll: 0.36, stagger: 0.62 };
+  /* gestures: value = duration in seconds (0 = loop until stopped) */
+  const GEST = { search: 0, hammer: 0, chat: 0, pickup: 0.75, eat: 1.6, drink: 1.6, bandage: 2.0, inspect: 1.6, handshake: 1.6, wave: 1.8, cheer: 1.6, point: 1.6 };
+  const KEYS = ['sink', 'by', 'bx', 'bz', 'byaw', 'mx', 'tx', 'ty', 'tz', 'nx', 'ny', 'nz', 'alx', 'alz', 'arx', 'arz', 'elx', 'erx', 'llx', 'lrx', 'klx', 'krx', 'jaw', 'tail'];
   const ease = f => f < 0 ? 0 : f > 1 ? 1 : f * f * (3 - 2 * f);
+  const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
   const lerp = (a, b, f) => a + (b - a) * f;
 
   function make(kind, opts) {
@@ -195,19 +207,29 @@ const Actors = (function () {
 
     const cur = {}, tgt = {}; for (const key of KEYS) { cur[key] = 0; tgt[key] = 0; }
     let loco = 'idle', act = null, actT = 0, actOpts = {}, phase = Math.random() * 6, t = Math.random() * 10, flashT = 0, carry = null, carryId = null, dead = false;
+    let mood = opts.mood || null, autoMood = Math.random() < 0.5 ? 'sway' : 'shuffle', moodT = 3 + Math.random() * 6, aware01 = 0, deathV = 0;
+    const endAct = () => { act = null; A.action = null; };
 
     const A = {
       root, kind, height: height * sc, aiming: false, dead: false, deadT: 0, sunk: false, action: null,
       anim(name, o) {
         if (dead && name !== 'die') return;
-        if (LOCO[name]) { loco = name; if (act && LOOP[act]) { act = null; A.action = null; } return; }
-        if (name === 'die') { A.die(); return; }
-        if (LOOP[name] && act === name) return;
+        if (name === 'stop') { if (act && (LOOP[act] || GEST[act] != null)) endAct(); return; }
+        if (LOCO[name]) { loco = name; if (act && LOOP[act]) endAct(); return; }
+        if (name === 'die') { A.die(o && o.variant); return; }
+        if (name === 'hit' && o && o.hard) name = 'stagger';
+        if ((LOOP[name] || GEST[name] === 0) && act === name) return;
         act = name; actT = 0; actOpts = o || {}; A.action = name;
       },
-      die() { if (dead) return; dead = true; A.dead = true; act = 'die'; actT = 0; A.action = 'die'; A.setAware(null); },
+      die(variant) {
+        if (dead) return; dead = true; A.dead = true; act = 'die'; actT = 0; A.action = 'die'; A.setAware(null);
+        deathV = variant != null ? variant : (k.z && !k.dog ? Math.floor(Math.random() * 3) : 0); A.deathVariant = deathV;
+      },
+      /* zombie idle mood: 'feed' | 'sway' | 'shuffle' | 'turn' | 'still' | null (automatic). Returns the mood in use. */
+      mood(name) { if (name !== undefined) mood = name || null; return mood || autoMood; },
       flash(hex) { flashT = 0.09; const c = hex == null ? 0xff5a40 : hex; for (const m of matList) m.emissive.setHex(c); },
       setAware(v) {
+        aware01 = v == null ? 0 : v;
         if (v == null || v <= 0.02) { aware.visible = false; return; }
         aware.visible = true; const M = awareMats();
         aware.material = v >= 1 ? M[4] : M[Math.min(3, Math.floor(v * 4))];
@@ -221,6 +243,7 @@ const Actors = (function () {
       },
       update(dt, speed) {
         speed = speed || 0; t += dt;
+        if (act && GEST[act] != null && speed > 0.6) endAct();
         if (flashT > 0) { flashT -= dt; if (flashT <= 0) for (const m of matList) m.emissive.setHex(0); }
         if (k.z && EYE) EYE.color.setHex(Actors.night ? 0xffcc33 : 0x6a5a30);
         for (const key of KEYS) tgt[key] = 0;
@@ -257,9 +280,18 @@ const Actors = (function () {
       const P = tgt; let rate = 14;
       locoPart(dt, speed);
       if (A.aiming && !act && carry && carry.userData.gun) { P.arx = -1.5; P.erx = 0; P.arz = 0.05; P.alx = -1.3; P.alz = -0.5; P.elx = -0.5; }
+      if (k.z && !act && !dead && speed < 0.15) zombieIdle(dt, P);
       if (act) {
         actT += dt; const a = actT;
+        if (GEST[act] != null) { rate = gesture(act, a, P); return rate; }
         switch (act) {
+          case 'stagger': {
+            rate = 20; const f = Math.max(0, 1 - a / DUR.stagger), m = Math.sin(Math.PI * Math.min(1, a / DUR.stagger));
+            P.tx = (k.hunch || 0) - 0.55 * f; P.nx = -0.5 * f; P.alz = 0.9 * m + Math.sin(a * 21) * 0.3 * f; P.arz = -0.9 * m - Math.sin(a * 19 + 1) * 0.3 * f;
+            P.alx = P.arx = -0.6 * m; P.llx = 0.5 * m; P.lrx = -0.3 * m; P.klx = 0.4 * m; P.tz = Math.sin(a * 12) * 0.15 * f; P.by = -0.08 * m;
+            if (a > DUR.stagger) endAct();
+            break;
+          }
           case 'attack': {
             const W = actOpts.wind != null ? Math.max(0.08, actOpts.wind) : (k.z ? 0.4 : 0.25), S = 0.16, end = W + S + 0.22;
             rate = 26;
@@ -319,8 +351,19 @@ const Actors = (function () {
             P.tz = Math.sin(a * 17) * 0.18; P.ty = Math.sin(a * 9) * 0.3; P.alx = P.arx = -1.3; P.elx = P.erx = -0.6; P.alz = -0.2; P.arz = 0.2; P.tx = -0.15; rate = 20; break;
           }
           case 'die': {
-            rate = 30; const f = ease(Math.min(1, a / 0.6));
-            P.bx = -Math.PI / 2 * f * 0.97; P.alz = 1.3 * f; P.arz = -1.2 * f; P.alx = P.arx = -0.4 * f; P.llx = -0.25 * f; P.lrx = 0.15 * f; P.klx = 0.3 * f; P.nx = -0.3 * f; P.tx = 0; P.jaw = k.jaw ? 0.8 : 0; P.sink = 0.13 * f;
+            rate = 30;
+            if (deathV === 1) { /* forward onto the face, arms thrown ahead */
+              const f = ease(Math.min(1, a / 0.7));
+              P.bx = Math.PI / 2 * f * 0.95; P.alx = P.arx = -2.6 * f; P.alz = 0.35 * f; P.arz = -0.35 * f; P.elx = P.erx = -0.2 * f; P.llx = 0.15 * f; P.lrx = -0.1 * f; P.krx = 0.5 * f; P.nx = -0.5 * f; P.nz = 0.4 * f; P.tx = 0; P.sink = 0.12 * f;
+            } else if (deathV === 2) { /* knees buckle, a half turn, then down on the side */
+              const f1 = ease(Math.min(1, a / 0.4)), f2 = ease(clamp01((a - 0.3) / 0.6));
+              P.by = -0.38 * f1 * (1 - f2 * 0.6); P.llx = P.lrx = -0.7 * f1; P.klx = P.krx = 1.5 * f1; P.byaw = 1.8 * ease(Math.min(1, a / 0.9)); P.bz = Math.PI / 2 * 0.95 * f2;
+              P.tx = (k.hunch || 0) + 0.3 * f1; P.alz = 0.6 * f2; P.arz = -1.2 * f2; P.alx = -0.8 * f1; P.arx = -0.3; P.nx = 0.3 * f1; P.nz = 0.3 * f2; P.sink = 0.12 * f2;
+            } else {
+              const f = ease(Math.min(1, a / 0.6));
+              P.bx = -Math.PI / 2 * f * 0.97; P.alz = 1.3 * f; P.arz = -1.2 * f; P.alx = P.arx = -0.4 * f; P.llx = -0.25 * f; P.lrx = 0.15 * f; P.klx = 0.3 * f; P.nx = -0.3 * f; P.tx = 0; P.sink = 0.13 * f;
+            }
+            P.jaw = k.jaw ? 0.8 : 0;
             sinkCheck(a, P); break;
           }
           default: act = null; A.action = null;
@@ -328,6 +371,50 @@ const Actors = (function () {
       }
       if (k.jaw && !(act === 'scream' || act === 'grab' || act === 'die')) P.jaw = 0.35 + Math.sin(t * 2.3) * 0.12;
       return rate;
+    }
+    function kneel(P, f) { P.by = -0.36 * f; P.llx = -1.45 * f; P.klx = 1.55 * f; P.lrx = 0.35 * f; P.krx = 1.95 * f; }
+    /* zombies standing still: sway, shuffle in place, crouch and feed, or a slow suspicious head-turn */
+    function zombieIdle(dt, P) {
+      moodT -= dt;
+      if (moodT <= 0) { moodT = 4 + Math.random() * 6; const r = Math.random(); autoMood = r < 0.45 ? 'sway' : r < 0.8 ? 'shuffle' : 'still'; }
+      const m = mood || (aware01 > 0.02 && aware01 < 1 ? 'turn' : autoMood), sw = k.sway || 0.5;
+      if (m === 'sway') {
+        P.tz += Math.sin(t * 0.8) * 0.12 * sw; P.tx += Math.sin(t * 0.55) * 0.07; P.nz += Math.sin(t * 0.6 + 1) * 0.2; P.byaw = Math.sin(t * 0.3) * 0.15;
+        P.alx += Math.sin(t * 0.8) * 0.1; P.arx += Math.sin(t * 0.8 + 2) * 0.1;
+      } else if (m === 'shuffle') {
+        const s = Math.sin(t * 2.6), c = Math.cos(t * 2.6);
+        P.llx += s * 0.28; P.lrx -= s * 0.28; P.klx += Math.max(0, c) * 0.35; P.krx += Math.max(0, -c) * 0.35; P.by += Math.abs(s) * 0.03 - 0.02; P.byaw = Math.sin(t * 0.45) * 0.6; P.ty += s * 0.06;
+      } else if (m === 'turn') {
+        P.ny = Math.sin(t * 0.65) * 0.95; P.ty += Math.sin(t * 0.65) * 0.3; P.tx -= 0.15; P.nx -= 0.2 + Math.sin(t * 1.7) * 0.05; P.alx *= 0.6; P.arx *= 0.6;
+      } else if (m === 'feed') {
+        kneel(P, 1); P.tx = 1.05; P.nx = 0.55 + Math.sin(t * 6) * 0.12; P.alx = -1.5 + Math.sin(t * 4.7) * 0.3; P.arx = -1.5 + Math.sin(t * 4.7 + 2) * 0.3; P.elx = P.erx = -0.6; P.ty = Math.sin(t * 2) * 0.08; P.tz = 0;
+        if (k.jaw) P.jaw = 0.4 + Math.sin(t * 9) * 0.35;
+      }
+    }
+    /* player / survivor gestures; returns the blend rate */
+    function gesture(g, a, P) {
+      const D = GEST[g], w = D ? Math.min(clamp01(a / 0.25), clamp01((D - a) / 0.3)) : clamp01(a / 0.3);
+      if (D && a > D) { endAct(); return 14; }
+      switch (g) {
+        case 'search': kneel(P, w); P.tx = 0.55 * w; P.nx = 0.35 * w; P.arx = (-1.15 + Math.sin(a * 5.5) * 0.22) * w; P.erx = (-0.35 + Math.sin(a * 5.5 + 1) * 0.2) * w; P.alx = (-0.9 + Math.sin(a * 4.3 + 2) * 0.18) * w; P.elx = -0.5 * w; P.ty = Math.sin(a * 1.3) * 0.12 * w; return 12;
+        case 'hammer': {
+          kneel(P, w); P.tx = 0.45 * w; P.nx = 0.4 * w; const c = (a * 2.1) % 1;
+          P.arx = c < 0.6 ? lerp(-0.5, -2.4, ease(c / 0.6)) : lerp(-2.4, -0.4, ease((c - 0.6) / 0.1)); P.erx = -0.6; P.alx = -0.95 * w; P.elx = -0.8 * w; P.ty = -0.12 * w; return 24;
+        }
+        case 'chat': P.arx = -0.45 + Math.sin(a * 2.3) * 0.28; P.erx = -0.95 + Math.sin(a * 3.1) * 0.2; P.arz = -0.12; P.alx = -0.25 + Math.sin(a * 1.7 + 2) * 0.18; P.elx = -0.55; P.ny = Math.sin(a * 0.7) * 0.3; P.nx = 0.03 + Math.sin(a * 2.9) * 0.06; P.ty = Math.sin(a * 0.9) * 0.1; return 8;
+        case 'pickup': { const f = Math.sin(Math.PI * clamp01(a / D)); P.by = -0.32 * f; P.tx = 0.95 * f; P.llx = -0.7 * f; P.klx = 1.1 * f; P.lrx = -0.4 * f; P.krx = 0.9 * f; P.arx = -1.1 * f; P.erx = -0.2 * f; P.alx = -0.6 * f; P.nx = 0.3 * f; return 18; }
+        case 'eat': case 'drink': {
+          P.arx = (-1.75 + (g === 'eat' ? Math.sin(a * 7) * 0.12 : 0)) * w; P.erx = -2.0 * w; P.arz = 0.35 * w; P.alx = -0.2 * w;
+          P.nx = g === 'drink' ? -0.45 * w : (0.12 + Math.sin(a * 9) * 0.04) * w; return 14;
+        }
+        case 'bandage': P.alx = -1.25 * w; P.elx = -0.7 * w; P.alz = -0.25 * w; P.arx = (-1.15 + Math.sin(a * 8) * 0.22) * w; P.arz = (0.45 + Math.cos(a * 8) * 0.18) * w; P.erx = -1.35 * w; P.nx = 0.45 * w; P.tx += 0.12 * w; return 14;
+        case 'inspect': P.arx = -1.55 * w; P.erx = -1.05 * w; P.arz = 0.3 * w; P.alx = -0.6 * w; P.elx = -1.0 * w; P.ty = (-0.15 + Math.sin(a * 2.4) * 0.12) * w; P.nx = 0.15 * w; P.ny = (-0.2 + Math.sin(a * 2.4) * 0.12) * w; return 12;
+        case 'handshake': P.arx = (-1.05 + (a > 0.35 && a < 1.2 ? Math.sin(a * 15) * 0.13 : 0)) * w; P.erx = -0.35 * w; P.arz = 0.12 * w; P.tx += 0.12 * w; P.nx = 0.12 * w; return 16;
+        case 'wave': P.arx = -0.25 * w; P.arz = (-2.55 + Math.sin(a * 9) * 0.28) * w; P.erx = (-0.3 + Math.sin(a * 9 + 1) * 0.2) * w; P.nx = -0.05 * w; P.tz = 0.05 * w; return 14;
+        case 'cheer': { const pu = Math.sin(a * 11) * 0.15; P.alz = (2.55 + pu) * w; P.arz = (-2.55 - pu) * w; P.alx = P.arx = -0.35 * w; P.elx = P.erx = -0.2 * w; P.by = Math.abs(Math.sin(a * 7)) * 0.06 * w; P.nx = -0.3 * w; return 16; }
+        case 'point': P.arx = -1.5 * w; P.erx = 0; P.arz = -0.05 * w; P.ty = -0.1 * w; P.nx = 0; return 14;
+      }
+      return 14;
     }
     function sinkCheck(a, P) {
       A.deadT = a;
@@ -362,9 +449,9 @@ const Actors = (function () {
     }
     function apply() {
       const c = cur;
-      base.position.y = c.sink; body.position.y = -hipH + c.by; base.rotation.x = c.bx; base.rotation.z = c.bz; mid.rotation.x = c.mx;
+      base.position.y = c.sink; body.position.y = -hipH + c.by; base.rotation.x = c.bx; base.rotation.y = c.byaw; base.rotation.z = c.bz; mid.rotation.x = c.mx;
       const T = J.torso; T.rotation.set(c.tx, c.ty, c.tz);
-      if (J.head) J.head.rotation.set(c.nx, 0, c.nz);
+      if (J.head) J.head.rotation.set(c.nx, c.ny, c.nz);
       if (jaw) jaw.rotation.x = c.jaw * 0.6;
       if (k.dog) {
         J.fl.rotation.x = c.llx; J.br.rotation.x = c.llx * 0.9; J.fr.rotation.x = c.lrx; J.bl.rotation.x = c.lrx * 0.9;
@@ -377,5 +464,5 @@ const Actors = (function () {
     apply();
     return A;
   }
-  return { make, itemMesh, handItem, night: false, KINDS };
+  return { make, itemMesh, handItem, night: false, KINDS, GESTURES: Object.keys(GEST), MOODS: ['feed', 'sway', 'shuffle', 'turn', 'still'] };
 })();
