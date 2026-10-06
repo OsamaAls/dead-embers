@@ -40,6 +40,11 @@ module.exports = async B => {
 
   /* ---- gates closed: the woods, the pass and the docks are sealed ---- */
   await check('gates closed at start', `const g=WORLD.gates; return {forest:solidAt(g.forest.x0+0.5,g.forest.y0+0.5), pass:solidAt(g.pass.x0+0.5,g.pass.y0+0.5), docks:solidAt(g.docks.x0+0.5,g.docks.y0+0.5), path:path(WORLD.gates.forest.x0+0.5, WORLD.gates.forest.y0-3)}`, 'r.forest && r.pass && r.docks && !r.path');
+  /* nothing spawns across a closed gate: stand on the west bank by the sealed docks, sample moment spots and let the night's ambient dead come */
+  await check('no spawns in closed districts', `${calm} G.p.x=83.5; G.p.y=30.5; G.hour=23; G.isNight=true; let bad=0, n=0;
+    for (let i=0;i<300;i++){ const s=Moments.spotNear(G.p.x,G.p.y,3,14); if(s){ n++; if(!districtOpen(biomeAt(s.x,s.y))) bad++; } }
+    let seen=0, across=0; sim(40, ()=>{ G.p.hp=9999; G.encTimer=1e9; G.hour=23; G.isNight=true; skipDlg(); for (const e of Combat.enemies) if(!e.dead){ seen++; if(!districtOpen(biomeAt(e.x,e.y))) across++; } });
+    clearFoes(); return {spots:n, bad, seen, across, docksOpen:districtOpen('docks')}`, 'r.spots>50 && r.bad===0 && r.across===0 && !r.docksOpen');
   const shots = [];
   shots.push(await view('b01-gate-rockfall-closed', { at: tile(34.5, 19.5), h: 10, face: 3.14 }));
   shots.push(await view('b02-gate-toll-closed', { at: tile(58.5, 19.5), h: 10.5, face: 3.14 }));
@@ -79,6 +84,8 @@ module.exports = async B => {
   await check('bush hides a crouched player', `${calm} const i=WORLD.tiles.findIndex((t,i)=>t===T_BUSH && !solidAt(i%W+1.5,Math.floor(i/W)+0.5)); G.p.x=i%W+0.5; G.p.y=Math.floor(i/W)+0.5; INPUT.crouch=true; const e=Combat.spawnAt('walker',G.p.x+1.5,G.p.y+3.2); let seen=null; if(e){ e.face=Math.atan2(G.p.x-e.x,G.p.y-e.y); sim(0.4); seen=e.sees; } INPUT.crouch=false; clearFoes(); return {inBush:inBush(G.p.x,G.p.y), seen}`, 'r.inBush && r.seen===false');
   const busiest = shots.reduce((a, b) => (b && b.calls > (a ? a.calls : 0) ? b : a), null);
   B.log('busiest view', JSON.stringify(busiest));
+  /* phones choke on draw calls before triangles: keep every view under 180 */
+  if (!busiest || busiest.calls >= 180) { fails++; B.log(`CHECK draw calls under 180: FAIL ${JSON.stringify(busiest)}`); } else B.log(`CHECK draw calls under 180: ok ${busiest.calls}`);
   B.log(fails ? `BIOMES: ${fails} check(s) failed` : 'BIOMES: all checks ok');
   if (fails) throw new Error(fails + ' biome check(s) failed');
 };

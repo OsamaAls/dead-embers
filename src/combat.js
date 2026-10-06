@@ -852,6 +852,7 @@ const Combat = (function () {
       else if (side === 2) { x = r.x0 - off; y = rand(r.y0 - 3, r.y1 + 3); }
       else { x = r.x1 + off; y = rand(r.y0 - 3, r.y1 + 3); }
       if (x < 1 || y < 1 || x > W - 1 || y > H - 1 || hitR(x, y, 0.35) || indoors(x, y) || flowAt(x, y) < 0) continue;
+      if (typeof districtOpen === 'function' && !districtOpen(biomeAt(x, y))) continue;
       return { x, y };
     }
     return { x: r.x0 - 4, y: r.y1 + 4 };

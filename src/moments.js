@@ -36,6 +36,7 @@ const Moments = (() => {
       const x = Math.floor(cx + Math.cos(a) * r) + 0.5, y = Math.floor(cy + Math.sin(a) * r) + 0.5;
       if (x < 1 || y < 1 || x > W - 1 || y > H - 1) continue;
       if (!clearAround(x, y, 0.45)) continue;
+      if (typeof districtOpen === 'function' && !districtOpen(biomeAt(x, y))) continue; // never across a closed gate
       if (o.outdoor && !open.has(tileAt(Math.floor(x), Math.floor(y)))) continue;
       if (o.noShelter && inShelter(x, y)) continue;
       if (o.dm) { const pd = o.dm[Math.floor(y) * W + Math.floor(x)]; if (pd < 0 || (o.maxPath && pd > o.maxPath)) continue; }
@@ -43,6 +44,7 @@ const Moments = (() => {
     }
     return null;
   }
+  M.spotNear = spotNear; // for the scenario checks
   /* fight() then move the new enemies next to (x,y) if Combat exposes them. Returns the new enemy objects. */
   function spawnNear(ids, x, y, opts, rmin, rmax) {
     const list = typeof Combat !== 'undefined' && Array.isArray(Combat.enemies) ? Combat.enemies : null;
