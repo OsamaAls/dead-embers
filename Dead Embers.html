@@ -155,7 +155,20 @@ body.lowhp #edge{opacity:1;animation:edgep 1.25s ease-in-out infinite}
 #wpn .c{width:30px;height:4px;background:var(--line2)}
 #wpn .c i{display:block;height:100%;background:var(--ember2)}
 #wpn .c.low i{background:#ff6a55}
-#wpn .k{font:600 10px var(--mono);color:var(--mute)}
+#wpn .k{font:600 11px var(--mono);color:var(--ember2);border:1px solid rgba(255,176,103,.45);padding:2px 5px}
+#wpn .k:empty{display:none}
+/* weapon picker: every weapon you carry, one tap (or 1-4) to pick */
+#wsel{position:absolute;right:0;bottom:calc(100% + 6px);display:flex;flex-direction:column;gap:4px;pointer-events:auto;min-width:100%}
+#wsel button{display:flex;align-items:center;gap:9px;min-height:44px;padding:6px 12px;background:rgba(14,12,10,.9);border:1px solid var(--line2);text-align:left;white-space:nowrap}
+#wsel button.on{border-color:var(--ember);background:rgba(58,38,24,.92)}
+#wsel button:hover{border-color:var(--ember)}
+#wsel .nb{font:600 11px var(--mono);color:var(--soot);background:var(--dim);width:18px;height:18px;display:grid;place-items:center;flex:none}
+#wsel button.on .nb{background:var(--ember)}
+#wsel .wn{font:800 15px/1 var(--display);letter-spacing:.07em;text-transform:uppercase;flex:1}
+#wsel .wa{font:600 12px var(--mono);color:var(--ember2)}
+#wsel .wa.out{color:#ff6a55}
+body.touch #wsel .nb{display:none}
+body.phone #wsel{top:calc(100% + 6px);bottom:auto}
 #wpn.swap{animation:objnew .6s}
 #barri{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--sab) + 92px);width:min(320px,70vw);text-align:center}
 #barri .lb{font:800 14px/1 var(--display);letter-spacing:.1em;text-transform:uppercase;color:var(--bone);margin-bottom:5px;text-shadow:0 1px 2px #000}
@@ -684,7 +697,7 @@ body.phone #dlg .ch button{min-height:40px;padding:6px 12px}
     </div>
   </div>
   <div id="notes"><div id="hint"></div><div id="toasts"></div></div>
-  <div class="hud-br"><div id="wpn"><span class="n"></span><span class="c" hidden><i></i></span><span class="a"></span><span class="k k-hide"></span></div></div>
+  <div class="hud-br"><div id="wpn" role="button" aria-label="Weapon: tap to choose"><span class="n"></span><span class="c" hidden><i></i></span><span class="a"></span><span class="k"></span></div><div id="wsel" hidden></div></div>
   <div id="barri" hidden><div class="lb">Barricade <span class="pc"></span></div><div class="tr"><div class="gh"></div><div class="fl"></div></div></div>
   <div id="prompt" hidden><span class="key"><svg class="ring" width="40" height="40"><rect class="tk" x="2" y="2" width="36" height="36" rx="5" pathLength="100"/><rect class="pg" x="2" y="2" width="36" height="36" rx="5" pathLength="100"/></svg><span class="kt">E</span></span><span class="tx"></span></div>
 </div>
@@ -857,7 +870,7 @@ const BACKGROUNDS = {
   athlete:{n:'Athlete',bonus:{end:2,agi:1},items:{snack:3,water:2,bat:1},desc:'Huge stamina and fast on foot.'},
   scavenger:{n:'Scavenger',bonus:{per:2,agi:1},items:{cloth:3,canned:2,knife:1},desc:'Finds more in every ruin.'},
   negotiator:{n:'Negotiator',bonus:{cha:3},items:{cigs:15,canned:1,knife:1},desc:'Talks people into almost anything.'},
-  soldier:{n:'Ex-Soldier',bonus:{str:2,end:1},items:{pistol:1,ammo:8,bandage:1},desc:'Strong, armed, and steady under fire.'},
+  soldier:{n:'Ex-Soldier',bonus:{str:2,end:1},items:{pistol:1,knife:1,ammo:8,bandage:1},desc:'Strong, armed, and steady under fire.'},
 };
 const ATTRS = {
   str:{n:'Strength',d:'Carry capacity and melee damage'},
@@ -1495,7 +1508,7 @@ const BUILD_SLOTS = {
     },
     {
       id: 'sh_pipe', title: 'Burst Pipe', where: ['shelter'], weight: 9, minDay: 3,
-      text: 'A ceiling pipe has split, spraying brown water over the cots. The valve is rusted solid. Wrench it.',
+      text: 'Brown water sprays out of the bunker door: a pipe has split over the cots. The valve is rusted solid. Wrench it.',
       play: { type: 'lock', mode: 'pry', diff: 4,
         onWin: function () { xp(12); return 'The valve gives with a shriek. The spray dies to a drip.'; },
         onLose: function () { take('water', 1); addMorale(-3); return 'The wrench slips. Clean water runs to waste before it stops.'; } }
@@ -1848,7 +1861,7 @@ window.ENCOUNTERS = [
   },
   {
     id: 'corpse_pile', title: 'The Pile', where: ['travel', 'street', 'hospital', 'depot'], weight: 9,
-    text: 'A heap of bodies behind a fence. Flies. Something in the pile twitches. Not the wind.',
+    text: 'A heap of bodies by the road, and the dead crouched over it. Flies. Something in the pile twitches. Not the wind.',
     play: { type: 'horde', foes: ['walker', 'walker'],
       onWin: () => 'Now the pile stays still. Pockets: ' + list(give('cigs', 2), give('cloth', 1), give('bandage', 1)) + '.',
       onLose: () => { setStatus('sick', 4); return 'You retch and stumble off, empty-handed.'; } },
@@ -1992,7 +2005,7 @@ window.ENCOUNTERS = [
   },
   {
     id: 'hospital_cage', title: 'The Drug Cage', where: ['hospital'], weight: 7,
-    text: 'A pharmacy cage in the basement, padlocked. The shelves inside are not empty.',
+    text: 'A pharmacy cage in the back room, padlocked. The shelves inside are not empty.',
     play: { type: 'lock', mode: 'pick', diff: 5,
       onWin: () => { xp(12); return 'The padlock drops. ' + list(give('antibiotics', 1), give('painkillers', 2), give('bandage', 2)) + '.'; },
       onLose: () => { addNoise(2); fight(['walker', 'walker']); return 'The pick snaps in the lock. Footsteps in the corridor.'; } },
@@ -2098,7 +2111,7 @@ window.ENCOUNTERS = [
   },
   {
     id: 'lost_kids', title: 'Two Small Faces', where: ['travel', 'street', 'apartments', 'supermarket'], weight: 6, minDay: 2,
-    text: 'Two kids behind a bus shelter, nine and twelve maybe. Empty backpack. They haven\'t eaten in days.',
+    text: 'Two kids huddled behind a wreck, nine and twelve maybe. Empty backpack. They haven\'t eaten in days.',
     choices: [
       { label: 'Share your food', req: () => has('canned') || has('snack'), reqText: 'Needs food',
         success: () => { if (!take('snack', 1)) take('canned', 1); xp(15); addMorale(8); recruit({ name: 'Mina', trait: 'scared', skills: { scav: 1 } }); return 'They eat in silence. "Can we come with you?" You can\'t say no.'; } },
@@ -2233,7 +2246,7 @@ window.ENCOUNTERS = [
   },
   {
     id: 'guard_dog', title: 'The Guard Dog', where: ['street', 'apartments', 'farm', 'travel'], weight: 7, minDay: 4, once: true,
-    text: 'A shepherd dog lies across a body in a doorway. It growls, weak but steady. It hasn\'t eaten in days.',
+    text: 'A shepherd dog lies across a body by the road. It growls, weak but steady. It hasn\'t eaten in days.',
     choices: [
       { label: 'Feed it', req: () => has('rawmeat') || has('canned'), reqText: 'Needs meat or canned food',
         success: () => { if (!take('rawmeat', 1)) take('canned', 1); const had = !!G.dog; adoptDog('Shep'); addMorale(8); xp(10); return 'It eats, noses the body one last time, then falls in at your heel.' + (had ? ' It trots off toward the bunker to meet the others.' : ' You call it Shep.'); } },
@@ -2247,7 +2260,7 @@ window.ENCOUNTERS = [
   {
     id: 'stray_pump', title: 'Stray at the Pump', where: ['gas', 'street', 'suburbs', 'park', 'travel'], weight: 9, minDay: 2,
     cond: () => !G.dog && (G.flags.stray_fed || 0) < 3 && G.flags.stray_day !== G.day,
-    text: () => (G.flags.stray_fed || 0) === 0 ? 'A thin brown dog watches you from under a dead fuel pump. It does not run. It does not come closer either.'
+    text: () => (G.flags.stray_fed || 0) === 0 ? 'A thin brown dog watches you from under the old hand pump. It does not run. It does not come closer either.'
       : (G.flags.stray_fed || 0) === 1 ? 'The brown stray again. It stands up when it sees you, tail low, waiting.' : 'The stray trots out to meet you this time. It sits. It has decided something.',
     choices: [
       { label: 'Share some food', req: () => has('canned') || has('snack') || has('rawmeat'), reqText: 'Needs food',
@@ -2510,7 +2523,7 @@ window.ENCOUNTERS = [
     {
       id: 'eli_1', title: 'Small Footsteps', where: ['apartments'], weight: 30, once: true,
       cond: () => !flag('eli_1'),
-      text: 'You set your pack down for a minute. A can is gone. Something small and fast clatters up the stairwell.',
+      text: 'A boy on the Tower Blocks steps, a can of yours under his coat. He freezes, then bolts for the stairwell.',
       choices: [
         { label: 'Chase the thief', check: { attr: 'agi', diff: 5 },
           success: () => { mark('eli_1'); setFlag('eli_scared', true); xp(8); return 'A boy of ten, all elbows, clutching your can. He sees your face and vanishes into the wall.'; },
@@ -2582,7 +2595,7 @@ window.ENCOUNTERS = [
     {
       id: 'ines_2', title: 'Ines\'s List', where: ['travel', 'any'], weight: 30, once: true,
       cond: () => flag('ines_1') && !flag('ines_2') && later('ines_1_day', 1) && has('chem', 3) && has('parts', 2),
-      text: 'Your pack clinks with everything Dr. Okafor asked for. The hospital is a short detour. A cure is a big bet.',
+      text: 'Dr. Okafor eyes your pack from the hospital door. It clinks with everything she asked for. A cure is a big bet.',
       choices: [
         { label: 'Deliver everything', success: () => { take('chem', 3); take('parts', 2); mark('ines_2'); passTime(2); xp(15); return 'She counts twice, then hugs you. "Four months since I touched another person."'; } },
         { label: 'Haggle, keep some back', check: { attr: 'cha', diff: 5 },
@@ -2621,7 +2634,7 @@ window.ENCOUNTERS = [
       id: 'marcus_1', title: 'A Tollman in the Culvert', where: ['travel'], weight: 30, minDay: 5, once: true,
       cond: () => !flag('marcus_1'),
       who: 'Marcus Hale',
-      text: '"Not here to hurt you. Marcus Hale. Tollmen lieutenant. Was." He\'s bleeding into a culvert, pistol on his knee.',
+      text: '"Not here to hurt you. Marcus Hale. Tollmen lieutenant. Was." He\'s bleeding in the culvert under the bridge, pistol on his knee.',
       choices: [
         { label: 'Hear him out', check: { attr: 'cha', diff: 4 },
           success: () => { mark('marcus_1'); xp(12); return '"I saw something last week I can\'t unsee. I want out." That\'s all, for now.'; },
@@ -2700,7 +2713,7 @@ window.ENCOUNTERS = [
     {
       id: 'choir_3', title: 'What the Choir Keeps', where: ['street', 'any'], weight: 34, night: true, once: true,
       cond: () => flag('choir_2') && (flag('choir_inside') || flag('choir_spy')) && !flag('choir_3') && later('choir_2_day', 1),
-      text: 'Under the church, captives in chains sing to keep the dead calm. A woman looks up and mouths: "Please."',
+      text: 'In the cellar of the shop they call a church, captives in chains sing to keep the dead calm. A woman looks up and mouths: "Please."',
       choices: [
         { label: 'Break them out', success: () => { mark('choir_3'); return FG(['raider', 'raider'], { onWin: () => {
             recruit({ name: 'Nadia', trait: 'grateful', skills: { scav: 2, farm: 1 } });
@@ -3929,7 +3942,8 @@ function eat(id) {
 /* ---------- Containers (searching = opening things in the world) ---------- */
 function containerById(id) { return WORLD.containers.find(c => c.id === id) || null; }
 /* nearest container whose tile centre is within r tiles of (x,y) */
-function containerNear(x, y, r) { let best = null, bd = r * r; for (const c of WORLD.containers) { const d = (c.x + 0.5 - x) ** 2 + (c.y + 0.5 - y) ** 2; if (d <= bd) { bd = d; best = c; } } return best; }
+/* the nearest container within r tiles; full: only ones that still have something in them */
+function containerNear(x, y, r, full) { let best = null, bd = r * r; for (const c of WORLD.containers) { const d = (c.x + 0.5 - x) ** 2 + (c.y + 0.5 - y) ** 2; if (d <= bd && (!full || containerState(c) !== 'empty')) { bd = d; best = c; } } return best; }
 /* 'full' (never searched), 'refilled' (searched long ago, some loot again) or 'empty' */
 function containerState(c) { const d = G.cont[c.id]; if (d == null) return 'full'; return G.day - d >= CONT_REFILL_DAYS ? 'refilled' : 'empty'; }
 /* real seconds to hold E. Perception makes it faster. */
@@ -9403,7 +9417,7 @@ const PLACE = {
   wind_chimes: { at: 'wall', prop: 'chimes', verb: 'Listen to the chimes', snd: 'ping' }, elm_kids_room: { at: 'inside', prop: 'rabbit', verb: 'Look at the rabbit' },
   woods_campfire: { at: 'fire', prop: 'tins', verb: 'Sit by the fire' },
   /* arcs: the person waits at home (npcHome); props and verbs per step */
-  eli_1: { actor: 'kid', verb: 'Follow the noise', lure: '', snd: 'creak' }, eli_2: { actor: 'none', prop: 'trap', verb: 'Look at the cup and spoon' },
+  eli_1: { actor: 'kid', verb: 'Go after the boy', lure: '', snd: 'creak' }, eli_2: { actor: 'none', prop: 'trap', verb: 'Look at the cup and spoon' },
   eli_3: { actor: 'kid', pose: 'sit' }, eli_4: { at: 'yard', actor: 'none', prop: 'none', name: 'Eli', verb: 'Talk to Eli' },
   ines_1: { prop: 'boards', tint: 0xd8d4c8 }, ines_2: { tint: 0xd8d4c8, verb: 'Knock for Dr. Okafor' }, ines_3: { tint: 0xd8d4c8, prop: 'vial' }, ines_4: { tint: 0xd8d4c8, prop: 'cage', verb: 'Open the drug cage' },
   marcus_1: { actor: 'tollman', pose: 'sit', lure: 'Not here to hurt you.' }, marcus_2: { actor: 'tollman', pose: 'sit' }, marcus_3: { actor: 'tollman', pose: 'sit' }, marcus_3b: { at: 'gate', actor: 'tollman' },
@@ -9734,6 +9748,15 @@ const Places = (() => {
   };
   const isBunker = src => src === 'shelter';
   P.busy = src => P.live.some(ev => ev.state === 'lure' && !ev.home && (isBunker(ev.src) === isBunker(src)));
+  /* a story scene that happens at a place (the Tollmen's demand at the yard gate): people stand there, E plays the scene */
+  P.sceneAt = function (id, o) {
+    if (!G || !has3D()) return false;
+    if (P.live.some(ev => ev.enc.scene === id)) return true;
+    const sc = CONTENT_().story[id], enc = { id: 'scene_' + id, title: sc ? sc.title : id, where: ['shelter'], scene: id, text: '' };
+    enc._ps = Object.assign({ at: 'gate', n: 1, pose: 'stand', engage: 'E', r: 1.8, after: null, prop: null, k: null, tint: null, keep: true, foes: null }, o);
+    const spot = placeFor(enc, G.p.x, G.p.y, {}); if (!spot) return false;
+    return !!spawn(enc, spot, { src: 'shelter' });
+  };
   /* dev / scenario helper */
   P.spawn = function (id, ctx) {
     const enc = encById(id); if (!enc || !G) return null;
@@ -9750,6 +9773,7 @@ const Places = (() => {
     if (!encEligible(ev.enc, null, true)) { leave(ev); return; }
     ev.state = 'engaged';
     const enc = ev.enc, p = G.p;
+    if (enc.scene) { Game.Q.unshift({ type: 'scene', id: enc.scene, ready: true }); for (const a of ev.actors) if (a.human) safe(() => a.a.anim('chat')); after(ev, null); return; }
     for (const a of ev.actors) if (a.human) { a.a.root.rotation.y = Math.atan2(p.x - a.x, p.y - a.y); safe(() => a.a.anim('chat')); }
     ev.before = { surv: G.survivors.length, dog: !!G.dog };
     safe(() => UI.say('pl' + ev.uid, null));
@@ -9803,10 +9827,27 @@ const Places = (() => {
   }
   const onScreen = (x, y) => safe(() => { const s = R.tileToScreen(x, y, 1); return s.on && s.x > -40 && s.y > -40 && s.x < innerWidth + 40 && s.y < innerHeight + 40; }, false);
 
+  /* ---------- the dog, when it stays home: in the yard, lying by the bunker wall, up and over to you when you come close ---------- */
+  let dogH = null;
+  function homeDog(dt) {
+    const p = G.p, r = WORLD.shelterRect, cx = (r.x0 + r.x1 + 1) / 2, cy = (r.y0 + r.y1 + 1) / 2;
+    const want = !!G.dog && !(G.companion && G.companion.kind === 'dog') && Math.hypot(p.x - cx, p.y - cy) < 25;
+    if (!want) { if (dogH) { disposeActor(dogH); dogH = null; } return; }
+    if (!dogH) { const a = safe(() => Actors.make('dog', { friendly: true, tint: 0x8a5a32 }), null); if (!a) return; R.scene.add(a.root); const h = WORLD.hatch; dogH = { a, x: h.x + 2.5, y: h.y + 1.6, hx: h.x + 2.5, hy: h.y + 1.6 }; safe(() => a.anim('crouch')); }
+    const d = Math.hypot(p.x - dogH.x, p.y - dogH.y), resting = G.dog.restUntil > G.day;
+    let tx = dogH.hx, ty = dogH.hy;
+    if (!resting && d < 6 && inShelter(p.x, p.y)) { tx = p.x + (dogH.x - p.x) / (d || 1) * 1.4; ty = p.y + (dogH.y - p.y) / (d || 1) * 1.4; }
+    const dx = tx - dogH.x, dy = ty - dogH.y, dd = Math.hypot(dx, dy); let spd = 0;
+    if (dd > 0.2) { const st = Math.min(dd, 2.2 * dt), nx = dogH.x + dx / dd * st, ny = dogH.y + dy / dd * st; if (!solidAt(nx, ny)) { dogH.x = nx; dogH.y = ny; spd = 2.2; } dogH.a.root.rotation.y = Math.atan2(dx, dy); }
+    else if (d < 8) dogH.a.root.rotation.y = Math.atan2(p.x - dogH.x, p.y - dogH.y);
+    safe(() => dogH.a.anim(spd ? 'walk' : d < 6 && !resting ? 'idle' : 'crouch'));
+    dogH.a.root.position.set(dogH.x * TILE, 0, dogH.y * TILE); safe(() => dogH.a.update(dt, spd));
+  }
   /* ---------- per frame ---------- */
   P.update = function (dt) {
     if (!G || !has3D()) return;
     const p = G.p;
+    homeDog(dt);
     gateNote -= dt;
     /* arc people at their homes, polled twice a second like the bosses */
     homeT -= dt;
@@ -9849,7 +9890,7 @@ const Places = (() => {
         /* missed: it drifts off when you go away for a while, or the moment passes */
         if (d > (ev.home ? 28 : 34)) ev.far += dt; else ev.far = 0;
         /* people at home just go back inside when you leave; they're there again next time you pass */
-        const stale = (!ev.home && ev.t > 300) || ev.far > (ev.home ? 6 : 20) || (ev.t > 1 && !encEligible(ev.enc, null, true));
+        const stale = !s.keep && ((!ev.home && ev.t > 300) || ev.far > (ev.home ? 6 : 20) || (ev.t > 1 && !encEligible(ev.enc, null, true)));
         if (stale) { if (onScreen(ev.x, ev.y)) leave(ev); else { remove(ev); continue; } }
       } else if (ev.state === 'after') {
         let any = false;
@@ -9868,9 +9909,14 @@ const Places = (() => {
       for (const a of ev.actors) { a.a.root.position.set(a.x * TILE, 0, a.y * TILE); safe(() => a.a.update(dt, ev.arrive || (ev.state === 'after' && !a.keep) ? 1.6 : 0)); }
     }
   };
-  /* E targets for the events standing nearby */
+  /* E targets for the events standing nearby (and the dog at home) */
   P.targets = function (p, d2) {
     const out = [];
+    if (dogH && G.dog && d2(dogH.x, dogH.y) < 1.7 * 1.7) {
+      const n = G.dog.name, take = !G.companion && companionReady('dog').ok;
+      out.push({ key: 'homedog', d: d2(dogH.x, dogH.y) + 0.05, at: { x: dogH.x, y: dogH.y, h: 1.2 }, label: take ? `Take ${n} on runs` : `Pet ${n}`, time: 0,
+        act: () => { if (take) { setCompanion('dog'); safe(() => SFX.play('good')); } else { safe(() => SFX.play('ui')); if (G.flags.dog_pet !== G.day) { G.flags.dog_pet = G.day; addMorale(1); } safe(() => UI.toast(`${n} leans into your hand.`, 'dim')); } } });
+    }
     for (const ev of P.live) {
       if (ev.state !== 'lure' || ev.arrive || ev.spec.engage !== 'E') continue;
       let bx = ev.x, by = ev.y, bd = d2(ev.x, ev.y);
@@ -9878,7 +9924,7 @@ const Places = (() => {
       if (bd > 1.9 * 1.9) continue;
       const verb = String(ev.spec.verb || 'Look').replace('{s}', ev.who && ev.who.name ? ev.who.name : 'them');
       /* someone calling for you wins over the rubble they are sitting next to */
-      out.push({ key: 'pl' + ev.uid, d: 0.02 + bd * 0.1, at: { x: bx, y: by, h: ev.actors.some(a => a.human) ? 2.3 : 1.3 }, label: verb, time: 0, act: () => engage(ev) });
+      out.push({ key: 'pl' + ev.uid, d: 0.02 + bd * 0.1, pri: 0.8, at: { x: bx, y: by, h: ev.actors.some(a => a.human) ? 2.3 : 1.3 }, label: verb, time: 0, act: () => engage(ev) });
     }
     return out;
   };
@@ -9895,7 +9941,7 @@ const Places = (() => {
     return out;
   };
   P.pins = () => P.live.filter(ev => ev.state === 'lure').map(ev => ({ x: ev.x, y: ev.y, z: ev.actors.some(a => a.z) }));
-  P.reset = function () { for (const ev of P.live.slice()) remove(ev); P.live.length = 0; homeT = 0; };
+  P.reset = function () { for (const ev of P.live.slice()) remove(ev); P.live.length = 0; homeT = 0; if (dogH) { disposeActor(dogH); dogH = null; } };
   return P;
 })();
 
@@ -11221,6 +11267,7 @@ const UI = (() => {
     const open = { KeyI: 'pack', Tab: 'journal', KeyB: 'char', KeyM: 'map', Escape: 'menu' }[c];
     if (open) { delete K[c]; U.open(open); }
     if (c === 'KeyQ') U.swapWeapon();
+    const dn = /^Digit([1-4])$/.exec(c); if (dn) { const w = ownedWeapons()[+dn[1] - 1]; if (w) pickWeapon(w); }
   }
   function onKeyUp(e) { delete K[e.code]; if (e.code === 'KeyJ') S.atk.key = false; if (!blocking()) syncMove(); }
 
@@ -11260,7 +11307,9 @@ const UI = (() => {
     touchButtons();
     // HUD clicks
     D.mm.addEventListener('click', () => U.open('map'));
-    D.wpn.addEventListener('click', () => U.swapWeapon());
+    D.wpn.addEventListener('click', e => { e.stopPropagation(); toggleWsel(); });
+    el('wsel').addEventListener('click', e => { e.stopPropagation(); const b = e.target.closest('[data-w]'); if (b) pickWeapon(b.dataset.w); });
+    addEventListener('pointerdown', e => { if (S.wselOn && !(e.target.closest && e.target.closest('#wsel, #wpn'))) toggleWsel(false); }, true);
     D.cmp.addEventListener('click', () => { if (!blocking()) INPUT.companionCmd = true; });
     D.chips.addEventListener('click', e => { if (e.target.closest('.chip.ember')) U.open('char'); });
     document.querySelectorAll('.hb[data-open]').forEach(b => b.addEventListener('click', () => U.open(b.dataset.open)));
@@ -11512,13 +11561,40 @@ const UI = (() => {
     if (it && it.ammo) { const n = G.pack[it.ammo] || 0; ammo = n + ' ' + (it.ammo === 'shells' ? 'SH' : it.ammo === 'bolts' ? 'BLT' : 'RND'); out = n === 0; }
     const owned = Object.keys(G.pack).filter(k => ITEMS[k] && ITEMS[k].c === 'weapon').length;
     const cond = w ? Math.round(safe(() => weaponCond(w), 100)) : 100;
+    /* a gun ran dry and the fists/knife took over: say so once */
+    const sel = G.p.weapon, selIt = sel && ITEMS[sel], dry = !!(selIt && selIt.ammo && !(G.pack[selIt.ammo] > 0));
+    if (dry && !S.dry && w !== sel) toast(`Out of ${selIt.ammo === 'shells' ? 'shells' : selIt.ammo === 'bolts' ? 'bolts' : 'ammo'}: fighting with the ${name}.`, 'warn');
+    S.dry = dry;
+    if (owned > 1) safe(() => hintOnce('weapons', INPUT.touch ? `You have ${owned} weapons. Tap the weapon name to pick one.` : 'You carry more than one weapon. Q or 1-4 switches; click the weapon to pick.'));
     const key = name + ammo + owned + '|' + cond;
+    if (S.wselOn) renderWsel();
     if (S.c.wpn === key) return; S.c.wpn = key;
     D.wpn.querySelector('.n').textContent = name;
     /* condition pip: only once this weapon has started to wear */
     const c = D.wpn.querySelector('.c'); c.hidden = cond >= 100; c.classList.toggle('low', cond < 60); c.firstChild.style.width = cond + '%'; c.title = `Condition ${cond}%`;
     const a = D.wpn.querySelector('.a'); a.textContent = ammo; a.classList.toggle('out', out);
-    D.wpn.querySelector('.k').textContent = owned > 1 ? 'Q' : '';
+    D.wpn.querySelector('.k').textContent = owned > 1 ? owned + ' ▾' : '';
+  }
+  /* ---------- weapon picker: tap the weapon chip (or press 1-4) ---------- */
+  const ownedWeapons = () => sortIds(Object.keys(G.pack).filter(k => ITEMS[k] && ITEMS[k].c === 'weapon'));
+  function renderWsel() {
+    const el_ = el('wsel'); if (!el_) return;
+    const list = ownedWeapons(), cur = safe(() => weaponOf(), null);
+    const key = list.join(',') + '|' + cur + '|' + list.map(k => ITEMS[k].ammo ? (G.pack[ITEMS[k].ammo] || 0) : '').join(',');
+    if (S.c.wsel === key) return; S.c.wsel = key;
+    el_.innerHTML = list.map((k, i) => { const it = ITEMS[k], n = it.ammo ? (G.pack[it.ammo] || 0) : null;
+      return `<button data-w="${k}" class="${k === G.p.weapon ? 'on' : ''}"><span class="nb">${i + 1}</span><span class="wn">${esc(it.n)}</span>${n != null ? `<span class="wa${n ? '' : ' out'}">${n}</span>` : ''}</button>`; }).join('');
+  }
+  function toggleWsel(on) {
+    const el_ = el('wsel'); if (!el_ || !G) return;
+    if (on == null) on = !S.wselOn;
+    if (on && ownedWeapons().length < 2) { toast(INPUT.touch ? 'Only one weapon. Find more in buildings.' : 'Only one weapon. Find more in buildings.', 'dim'); on = false; }
+    S.wselOn = on; el_.hidden = !on; S.c.wsel = null; if (on) renderWsel();
+  }
+  function pickWeapon(id) {
+    if (!G || !id || !G.pack[id] || blocking()) return;
+    if (G.p.weapon !== id) { G.p.weapon = id; SFX.play('swing'); D.wpn.classList.remove('swap'); void D.wpn.offsetWidth; D.wpn.classList.add('swap'); }
+    toggleWsel(false);
   }
   function barricade() {
     const hp = typeof Combat !== 'undefined' ? Combat.barricadeHp : null;
@@ -12916,7 +12992,7 @@ const UI = (() => {
       if (!G || blocking()) return;
       const owned = sortIds(Object.keys(G.pack).filter(k => ITEMS[k] && ITEMS[k].c === 'weapon'));
       if (owned.length < 2) { if (owned.length === 1 && G.p.weapon !== owned[0]) G.p.weapon = owned[0]; return; }
-      const i = owned.indexOf(G.p.weapon); G.p.weapon = owned[(i + 1) % owned.length];
+      const i = owned.indexOf(G.p.weapon); G.p.weapon = owned[(i + 1) % owned.length]; S.c.wsel = null;
       SFX.play('swing'); D.wpn.classList.remove('swap'); void D.wpn.offsetWidth; D.wpn.classList.add('swap');
     },
     spendPoint, craft, lockOn, enemyHit,
@@ -12946,7 +13022,7 @@ function wireHooks() {
   Hooks.hint = (t, key) => UI.hint(t, { key });
   Hooks.unlock = k => UI.onUnlock && UI.onUnlock(k);
   Hooks.spawnFight = (ids, opts) => Combat.spawnFight(ids, opts);
-  Hooks.openTrader = () => Game.Q.unshift({ type: 'trader' });
+  /* no Hooks.openTrader: a trade screen only ever opens on a trader you walked up to (places.js), the radio caravan or the camp market */
   Hooks.hordeStart = () => startHorde();
   Hooks.finalWave = () => true;
   Hooks.gateOpened = id => { if (typeof Cine !== 'undefined' && Cine.has && Cine.has('gate_' + id)) Game.Q.push({ type: 'cine', id: 'gate_' + id }); }; // a district opens: short cutscene
@@ -12977,15 +13053,25 @@ Game.quit = function () { saveGame(true); Game.running = false; Combat.clear(); 
 
 /* ---------- encounter queue ---------- */
 function encText(enc) { try { return fmtName(typeof enc.text === 'function' ? enc.text() : enc.text); } catch (e) { return ''; } }
+/* Story that happens at the bunker waits until you are there: nothing about "your gate" or "the radio in the corner" pops up
+   in the middle of the street. The Tollmen's demand is people at the gate you walk up to. Weather lines are a banner. */
+const HOME_SCENES = { first_night: 1, radio_found: 1, haven_coords: 1, horde_warning: 1, tollmen_demand: 1 };
+const GATE_SCENES = { tollmen_demand: { actor: 'tollman', n: 3, verb: 'Talk to the Tollman', lure: 'The Warden sends his regards.' } };
+const BANNER_SCENES = { first_frost: 1, first_snow: 1 };
+const sceneReady = q => q.type !== 'scene' || q.ready || !HOME_SCENES[q.id] || G.atShelter;
 function pump() {
   if (Game.showing || !Game.Q.length || UI.blocking() || cineOn() || Game.dead) return;
-  const q = Game.Q[0];
+  const qi = Game.Q.findIndex(sceneReady); if (qi < 0) return;
+  const q = Game.Q[qi];
   // physical encounters wait until the current fight or moment is over; story can interrupt anything but a moment
   if ((q.type === 'enc' && (Moments.active || Combat.inFight())) || (q.type !== 'end' && Moments.active)) return;
-  Game.Q.shift(); Game.showing = true;
+  if (q.type === 'scene' && GATE_SCENES[q.id] && !q.ready) { if (Places.sceneAt(q.id, GATE_SCENES[q.id])) Game.Q.splice(qi, 1); return; }
+  Game.Q.splice(qi, 1); Game.showing = true;
   const done = line => { Game.showing = false; if (line) UI.toast(line); };
   switch (q.type) {
-    case 'scene': cineThen(q.id, () => UI.scene(q.id, done)); break;
+    case 'scene':
+      if (BANNER_SCENES[q.id]) { const sc = CONTENT_().story[q.id], b = sc && sc.beats || []; UI.banner(sc ? sc.title : '', b.map(x => x.line).join(' ')); done(); break; }
+      cineThen(q.id, () => UI.scene(q.id, done)); break;
     case 'summary': UI.summary(q, done); break;
     case 'final': UI.final(done); break;
     case 'end': cineThen(q.id, () => UI.end(q.id)); break;
@@ -13021,7 +13107,7 @@ function interactTarget() {
   const d2 = (x, y) => (x - p.x) ** 2 + (y - p.y) ** 2;
   const drop = Combat.nearestDrop(p.x, p.y, 1.3);
   if (drop) out.push({ key: 'drop' + drop.uid, d: d2(drop.x, drop.y), at: { x: drop.x, y: drop.y, h: 0.9 }, label: `Pick up ${itemName(drop.id)}${drop.qty > 1 ? ' ×' + drop.qty : ''}`, time: 0, act: () => { Combat.pickupDrop(drop); gesture(ITEMS[drop.id] && ITEMS[drop.id].c === 'weapon' ? 'inspect' : 'pickup'); } });
-  const c = containerNear(p.x, p.y, 1.45);
+  const c = containerNear(p.x, p.y, 1.45, true); /* a searched box beside a full one never hides the full one */
   if (c) {
     const st = containerState(c), K = CONTAINERS[c.kind];
     /* a searched container says nothing: its lid hangs open */
@@ -13062,6 +13148,9 @@ function pickTarget(out) {
     let sc;
     if (t.d < 0) sc = -9;
     else { const a = t.at || p, dx = a.x - p.x, dy = a.y - p.y, d = Math.hypot(dx, dy); sc = Math.sqrt(t.d) - (d > 0.05 ? 0.35 * Math.max(0, (dx * fx + dy * fy) / (d * fl)) : 0.35); }
+    /* something you can do beats a "why not" line; a person calling for you (pri) beats the rubble beside them */
+    if (t.time < 0) sc += 0.6;
+    sc -= t.pri || 0;
     if (sc < bs) { bs = sc; best = t; }
     if (t.key === Game.lastTarget) { cur = t; cs = sc; }
   }
@@ -13181,7 +13270,7 @@ function updateInteraction(dt) {
 /* ---------- horde nights & the final stand ---------- */
 function startHorde() {
   if (Game.wave || G.hordeResult) return;
-  Game.wave = true;
+  Game.wave = true; Places.reset(); /* visitors at the gate clear off when the horde comes */
   UI.banner('Horde night', 'They are here. Hold the barricades.');
   SFX.play('scream');
   Combat.startWave(hordeWaveSize(), res => {
@@ -13228,7 +13317,7 @@ Game.finalRun = function (kind) {
   return false;
 };
 Game.finalWave = function () {
-  Game.wave = true;
+  Game.wave = true; Places.reset();
   const plan = finalWavePlan();
   UI.banner('The great horde', `Everything the city has left is coming. About ${plan.count} of them.`);
   placePlayer({ x: WORLD.hatch.x + 0.5, y: WORLD.hatch.y + 1.5 });

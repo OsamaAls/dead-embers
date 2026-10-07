@@ -136,7 +136,7 @@ const BACKGROUNDS = {
   athlete:{n:'Athlete',bonus:{end:2,agi:1},items:{snack:3,water:2,bat:1},desc:'Huge stamina and fast on foot.'},
   scavenger:{n:'Scavenger',bonus:{per:2,agi:1},items:{cloth:3,canned:2,knife:1},desc:'Finds more in every ruin.'},
   negotiator:{n:'Negotiator',bonus:{cha:3},items:{cigs:15,canned:1,knife:1},desc:'Talks people into almost anything.'},
-  soldier:{n:'Ex-Soldier',bonus:{str:2,end:1},items:{pistol:1,ammo:8,bandage:1},desc:'Strong, armed, and steady under fire.'},
+  soldier:{n:'Ex-Soldier',bonus:{str:2,end:1},items:{pistol:1,knife:1,ammo:8,bandage:1},desc:'Strong, armed, and steady under fire.'},
 };
 const ATTRS = {
   str:{n:'Strength',d:'Carry capacity and melee damage'},

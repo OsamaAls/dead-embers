@@ -24,6 +24,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 /* never leave a headless browser behind (a killed or timed-out check used to orphan it) */
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { try { proc.kill(); } catch (e) { } process.exit(1); });
 process.on('exit', () => { try { proc.kill(); } catch (e) { } });
+/* watchdog: a check that stops making progress (a CDP call that never returns) fails instead of hanging for hours.
+   CHECK_TIMEOUT_MIN overrides the 30-minute limit (balance.js with BAL_N=10 needs more). */
+const LIMIT_MS = +(process.env.CHECK_TIMEOUT_MIN || 30) * 60e3;
+setTimeout(() => { console.log('PAGE ERRORS (1): DRIVER timeout after ' + LIMIT_MS / 60e3 + ' min'); try { proc.kill(); } catch (e) { } process.exit(1); }, LIMIT_MS).unref();
 const errors = [], logs = [];
 let ws, msgId = 0; const pending = {};
 const send = (method, params) => new Promise((res, rej) => { const id = ++msgId; pending[id] = { res, rej }; ws.send(JSON.stringify({ id, method, params: params || {} })); });
@@ -44,7 +48,8 @@ const B = {
   async tap(x, y) { await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await sleep(80); await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); },
   /* resize the emulated phone (touch, mobile metrics) to w x h */
   async viewport(w, h) { await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 2, mobile: true }); await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }); await sleep(300); },
-  async touchHold(x, y, ms) { await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await sleep(ms); await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); },
+  /* touch events are acked only once the page has handled them; never wait more than a few seconds for that */
+  async touchHold(x, y, ms) { const t = p => Promise.race([p, sleep(8000)]); await t(send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })); await sleep(ms); await t(send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })); },
   wait: sleep,
   async shot(name) { fs.mkdirSync(shotDir, { recursive: true }); const r = await send('Page.captureScreenshot', { format: 'png' }); const f = path.join(shotDir, name + (mobile ? '-mobile' : '') + '.png'); fs.writeFileSync(f, Buffer.from(r.data, 'base64')); console.log('shot', f); return f; },
   log: (...a) => console.log(...a),

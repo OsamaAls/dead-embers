@@ -20,11 +20,27 @@ Phases:
   - Buttons appear only when they do something.
   - `tools/scenarios/layout.js` checks for overlaps at four sizes.
   - `--mobile` is now 844x390.
-- [ ] 2. Prompts on the object, and fewer of them.
-- [ ] 3. Objectives that say how.
-- [ ] 4. One notice at a time.
-- [ ] 5. Every event is physical (`src/places.js`).
-- [ ] 6. Checks and docs.
+- [x] **2. Prompts on the object, and fewer of them.**
+  - The prompt floats over the thing it's about and can be tapped.
+  - Wrecks offer fuel only with a hose.
+  - Doors offer a barricade only at night or with the dead near.
+  - Searched boxes say nothing.
+- [x] **3. Objectives that say how.**
+  - `objectiveInfo().how`.
+  - "Find water" means water in your pack: FreshMart's shelves, then a pump.
+  - Material steps name a building that has the materials.
+- [x] **4. One notice at a time.**
+  - One queue for hints and unlock cards; it waits behind dialogues and fights.
+  - Journal entries light the Log button instead of toasting.
+- [x] **5. Every event is physical** (`src/places.js`).
+  - People, the dead and props stand in fitting places.
+  - Arc people wait at their homes.
+  - Visitors come to the gate.
+  - The dog stays in the yard when left home.
+- [x] **6. Checks and docs.**
+  - New checks: `layout.js` and `events.js`. `test.js` places every event in five worlds.
+  - README, API.md and the scheduled task's SKILL.md are updated.
+  - The suite runner (`de-checks/run.ps1`) includes the new checks.
 
 ## If a session gets cut off
 The computer may restart or lose internet mid-session (another session shares it). Commit every step locally as soon as it's done and keep a short progress log at the top of this file in the same commit. `git log --oneline origin/main..main` shows what isn't pushed yet.
@@ -68,7 +84,16 @@ A scheduled task, `dead-embers-github-input`, also does this twice a week. Its i
   - No thick one-sided accent borders in the UI.
 
 ## Where things stand
-Everything is pushed to `main` and live. The 2026-10-07 session added:
+Everything is pushed to `main` and live.
+
+The phone UX session (2026-10-07, afternoon) reworked how the game teaches and shows things. See the progress log above, `src/API.md` (§1 "Where an event happens", §3 `Places`) and `src/places.js`. In short:
+- **Phones** are landscape-only, with a thumb-arc HUD.
+- **Prompts** float on objects, and there are far fewer of them.
+- **Objectives** have a "how" line.
+- **Notices** come one at a time.
+- **Every event** stands somewhere you can see it.
+
+The morning session (2026-10-07) added:
 - **Snow footprints:**
   - Boot prints behind you and paw pairs behind the dog, on outdoor snow.
   - One InstancedMesh ring of 160 decals, filling in over 90 s.
@@ -106,6 +131,11 @@ All checks pass (2026-10-07):
 Known flake: in `playthrough`, the rescue step can stay open if the gun-fight bot burned most of its ammo first. It failed once in four runs. The step now prints `why` (enemies left and their distance, ammo, distance to the survivor) when it fails.
 
 ## Still to do
+0. **Ask Osama how the phone build feels now.**
+   - Landscape layout, reachable buttons, the floating prompt.
+   - Whether "Find water" and the other first-day steps are clear.
+   - Whether events read as happening somewhere.
+   - Tune from his answer: arc homes and how often events roll (`fieldEncounterRoll`, `PLACE` in places.js).
 1. **Issue #2 (phone FPS):**
    - Read Osama's answer.
    - If a view is slow on the phone, cut draw calls or triangles there. `biomes.js` prints calls, triangles and FPS per view.

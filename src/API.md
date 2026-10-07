@@ -46,6 +46,37 @@ Item ids, enemy ids and location types: see `src/data.js` (`ITEMS`, `ENEMIES`, `
 Use `play` for anything physical: fights, rescues, dodging, lockpicking, races, trading. Use `choices` only for real decisions.
 A choice may *lead* to a fight (`fight([...])`), e.g. "Refuse to pay" makes the Tollmen attack. You never pick "Fight" and get a narrated result.
 
+### Where an event happens (places.js)
+Every event is placed in the world before it runs: nothing opens a dialogue by itself. A roll (field timer, container search, rest,
+dawn/22:00 at the bunker) calls `Places.offer(enc, ctx)`, which puts the event somewhere that fits it.
+- **People** stand in a doorway, by a wreck or on the road.
+- **The dead** stand in a group, or feed on a body.
+- **Things to look at or pry** sit with a soft ring under them.
+- **Visitors** walk up to the yard gate.
+- **Bunker happenings** hold the survivor they are about by the bunker wall.
+
+You walk up and press E (or, for the dead and hazards, get close), and then the normal `choices` dialogue or `play` moment runs, where it stands.
+
+The defaults come from `where`, `who` and `play.type`. Exceptions live in the `PLACE` table at the top of places.js:
+- `at`: `road`, `car`, `door:<types>`, `inside:<types>`, `wall`, `body`, `pump`, `water`, `fire`, `field`, `trail`, `planks`, `bridge`, `deco:<kind>`, `poi:<label>`, `tollgate`, `gate`, `fence`, `hatch`, `yard`, `follow` or `here` (`here` runs at once).
+- `actor`: `survivor`, `kid`, `raider`, `tollman`, `dog`, `zombies` or `none`; `n` sets how many.
+- `pose`: `stand`, `sit`, `chat`, `still` or `feed`.
+- `engage`: `E`, `near` or `zone`; `r` sets the reach for `near` and `zone`.
+- `verb`: the E prompt, e.g. "Talk to the bitten woman" (`{s}` = the survivor's name).
+- `lure`: a short line they call out.
+- `after[i]`: what follows choice i: `leave`, `stay`, `die`, `home` or `gone`.
+- `prop`, `tint`, `k`: the prop and the actor's look.
+- `snd`: a sound from where they are.
+- `subject`: which survivor a bunker event is about.
+- `daily`: the chance per day that they are there.
+
+Arc people (Eli, Okafor, Marcus, the Choir, the Relay, Teodor, Rosa, Vance) and a few fixed people (the doctor, the hermit, No. 14, the convoy man, the angler, the stray) **wait at a home** (`npcHome`) and are there whenever their next eligible step is. They are never in the random pool.
+- Homes need day 2 (or building unlocked).
+- At most two show within 26 tiles.
+- They go back inside when you leave.
+
+Text that names a place should match the place it gets.
+
 ### Gameplay moment params (`play`)
 | type | params | win when | lose when |
 |---|---|---|---|
@@ -83,9 +114,12 @@ Combat rules (numbers only): `weaponProfile()` → `{id, ranged, dmg, reach|rng,
 `moveSpeed('walk'|'sprint'|'crouch')` tiles/s; `sprintCost()` stamina/s; `DODGE_COST`; `enemyHitsPlayer(enemyId, mult)` (applies armour, bites, bleeding);
 `onKill(enemyId)` → drops `[{id,qty}]` (counts the kill, gives XP); `pickup(id,qty)` → label; `zombieTypes()` (the types unlocked so far); `ENEMIES[id].spd/sense/reach/lunge/grab/shape/scale/rng/cd`.
 Progression: `G.unlocks` keys `needs, build, craft, people, horde, radio, journal, fetch`. `unlock(k)`, `isUnlocked(k)`, `hintOnce(key,text)`.
-Objective: `objectiveInfo()` → `{text, target:{x,y}|null}`.
+Objective: `objectiveInfo()` → `{text, how, target:{x,y}|null}`.
+- `how` is one more short line saying how to do it, in keyboard words; the UI swaps in USE on touch.
+- "Find water" is done once there is water in the pack. Its target moves from FreshMart's door, to the nearest unsearched shelf inside, then to a pump.
+- Missing materials point at the nearest open building whose loot has them (`nearestWith(items)`).
 Horde: `G.hordeNight` (tonight), `hordeWaveSize()`, `resolveHorde({held,kills,breaches})`. Endings: `finalOptions()`, `chooseFinal(id)` → ending id | 'wait' | 'wave', `finishStand(held)`.
-Encounters: `pickEncounter(type)`, `fieldEncounterRoll(dtSec)`, `checkChance({attr,diff})`, `encEligible`. Shelter: `build(k)`, `canBuild(k)`, `buildCost(k)`, `bl(k)`, `bName(k)`, `sleep()`, `canSleep()`, `eat(id)`.
+Encounters: `pickEncounter(type)` (skips home events), `fieldEncounterRoll(dtSec)` (none on day one until building unlocks), `checkChance({attr,diff})`, `encEligible`. Shelter: `build(k)`, `canBuild(k)`, `buildCost(k)`, `bl(k)`, `bName(k)`, `sleep()`, `canSleep()`, `eat(id)`.
 Trader: `makeTrader()`, `buyPrice(id)`, `sellPrice(id)`, `traderDay()` (the caravan calls at the bunker every 4 days; the radio can call it).
 **Saved worlds:** index `localStorage.deadembers_slots` = `[{id,name,bg,pname,day,level,lastPlayed,ended,endId,cause,kills,survivors}]`, each world at `deadembers_world_<id>`.
 `G.slot` (current world id, made on the first save), `G.worldName`. `listWorlds()` (most recent first), `lastWorldId()` (most recent continuable), `hasSave()` (any continuable world),
@@ -203,12 +237,12 @@ Boss `ENEMIES` entries borrow a kind's `shape` with a bigger `scale`, a `look` (
   Helper: pistol at combat 4+, else melee; medic heals you after a fight; downed at 0 HP (20 s to revive: `Combat.reviveCompanion()`, main's hold E). `Combat.companionCommand()` / `INPUT.companionCmd` (H) toggles stay/follow.
 - Barricaded doors block movement in `hitR`; a chasing zombie at one claws it (`Combat.doorHits`, a world bar shows its HP). Hook: `World3D.setDoorBar(tx,ty,on)` if present.
 - UI-facing state: `Combat.grabbed`, `grabNeed/grabMash`, `dodging`, `barricadeHp/barricadeMax` (0/0 when no wave), `aware`, `threat` (0..1), `wave`.
-- Extras: `spawnAt(id,x,y,{aware,screamTime})`, `kill(e)`, `despawn(e)`, `hurtEnemy(e,n,opts)`. `spawnFight` opts may carry `screamTime` and `at:{x,y}`.
+- Extras: `spawnAt(id,x,y,{aware,screamTime})`, `kill(e)`, `despawn(e)`, `hurtEnemy(e,n,opts)`. `spawnFight` opts may carry `screamTime`, `at:{x,y}` and `spots:[{x,y}]` (exact positions, e.g. the raiders you talked to). A shelter survivor entry with `hold:{x,y,pose}` stays there (places.js).
 - Pathing: enemies follow a BFS flow field from the player over walkable tiles (refreshed 4x/s). Horde-wave zombies far from the ring follow it too,
   and `walkTo` slides along one axis before detouring, so nobody jams in one-tile gaps.
 
 ### `Moments`: moments.js (encounter `play` runner)
-- `Moments.start(enc, done(resultLine))` runs `enc.play`, calling `onWin`/`onLose` and then `done` with the line. It uses Combat for spawns, UI for overlays (`UI.lockpick`, `UI.barter`, `UI.timer`) and R/World3D for markers.
+- `Moments.start(enc, done(resultLine), place?)` runs `enc.play` (at `place:{x,y,actor?}` when places.js placed it), calling `onWin`/`onLose` and then `done` with the line. It uses Combat for spawns, UI for overlays (`UI.lockpick`, `UI.barter`, `UI.timer`) and R/World3D for markers.
 - `Moments.active` (bool), `Moments.update(dt)`.
 - Also: `Moments.abort()` (silent end on title/end/death), `Moments.target` (`{x,y,label}` the HUD arrow points at during a moment).
 
@@ -216,7 +250,18 @@ Boss `ENEMIES` entries borrow a kind's `shape` with a bigger `scale`, a `look` (
 - `INPUT` global: `{mx,my}` (move, -1..1; WASD, arrows or the virtual joystick), `sprint, crouch, attack` (held), `attackPressed, dodgePressed, interactPressed` (edges; whoever handles one sets it false), `interact` (held), `aimX, aimY` (screen px or null), `touch` (bool).
 - Keys: WASD/arrows move. Shift sprint. C or Ctrl crouch. Space dodge. Left click or J attacks. H companion stay/follow. E interact (hold to search). I pack. Tab journal. B character. Esc menu. Mouse aims. Wheel zooms.
 - `UI.init()`, `UI.update(dt)` refreshes the HUD each frame. It reveals bars progressively: HP and stamina always; hunger and thirst after `unlocks.needs`; survivors after `people`.
-- `UI.toast(text,cls)`, `UI.hint(text)` (one-line contextual tip), `UI.banner(title, line)` (encounter one-liner at the top), `UI.prompt(text|null, progress|null)` (the "Hold E to search" bar near the bottom centre).
+- **`UI.toast(text,cls)`**: at most 3 on screen (2 on a phone). One search makes one toast.
+- **`UI.banner(title, line)`**: the encounter one-liner at the top.
+- **`UI.hint(text, {key})`**: a teaching card. Hints and `UI.onUnlock` cards ("New: X", merged with the hint the same unlock fires) share one queue:
+  - one card at a time, on the game clock;
+  - it waits behind dialogues, panels and cutscenes;
+  - in a fight only fight lessons show;
+  - a lesson already done (`HINT_DONE`) is dropped.
+- **"Journal: X"** doesn't toast; the Log button lights up until the journal is opened.
+- **`UI.prompt(text|null, progress|null, at?)`**: the "E / Hold E" prompt.
+  - With `at:{x,y,h}` it floats over the thing and follows it; on a phone it keeps clear of the button arc.
+  - On touch the prompt itself is a button.
+- **`UI.say(key, x, y, text|null)`**: a line someone in the world calls out.
 - `UI.dmgNum(x,y,text,cls)` for floating numbers at tile coords. `UI.flash(kind)`. `UI.vignette()` reacts to low HP, infection and grabs. `UI.levelUp()`.
 - `UI.dialogue({ who, lines:[...], choices:[{label, note, disabled, onPick}] })` is the short speaker box, 1–2 lines at a time and 2–4 replies. Stat replies show e.g. "CHA 62%".
 - `UI.encounter(enc, done(resultLine))` shows a choice encounter as a dialogue (with checks and req), then a result line, then `done`.
@@ -270,6 +315,24 @@ Boss `ENEMIES` entries borrow a kind's `shape` with a bigger `scale`, a `look` (
 
 ### `main.js`: boot + loop + glue
 It wires Hooks, runs the game loop, advances time (1 real second = 1 game minute outside, faster indoors at the shelter when sleeping), handles interaction (containers, drops, hatch, gate, build markers, bus), the encounter queue, horde nights, death and saving.
+Interaction targets are `{key, d, at:{x,y,h}, label, time (0 tap, >0 hold, -1 info), hl, act}`. `pickTarget` favours the one you face and keeps the current one unless another is clearly better.
+- Wrecks offer fuel only with a hose (or while the bus needs fuel).
+- Doors offer a barricade only at night or with the dead within 10 tiles (`deadNear`).
+- Searched containers say nothing.
+- Resting needs a bed and a reason (hurt, tired or night).
+
+### `Places`: places.js (events in the world)
+- `Places.offer(enc, ctx)` → bool: place a rolled event. `ctx.src` is `field`, `search` (with `bi`), `rest` or `shelter`.
+- `Places.update(dt)` drives the people and props:
+  - they turn to you, wave and call their line;
+  - the dead and hazards start up close;
+  - missed events drift off after 300 s, or 20 s once you are 34+ tiles away;
+  - people at home go back inside once you are 28+ tiles away.
+- `Places.targets(p, d2)`: the E targets.
+- `Places.emitters(px, py)`: sounds, for ambience.js.
+- `Places.pins()`: the minimap diamonds.
+- `Places.busy(src)`, `Places.reset()`, `Places.live`.
+- `Places.spawn(id, ctx)`: a dev/scenario helper.
 
 ---------------------------------------------------------------------------------------------------
 ## 4. Checks (run all of them after any change)
@@ -282,9 +345,13 @@ It wires Hooks, runs the game loop, advances time (1 real second = 1 game minute
    fights, build, screamer and rescue moments, a decision, sleep to day 2, a horde night, the Haven ending). Prints `STEP name: ok|FAIL` and exits 1 on any FAIL.
    Other scenarios: `worlds.js` (saved worlds, keys only, with a reload), `companions.js` (dog incl. fetch, helper, talk, siphon, water, cook, door, props), `endings.js`, `keyboard.js`,
    `biomes.js` (every biome/weather/season shot; also no spawns across closed gates and the busiest view under 180 draw calls), `cinematic.js`,
+   `layout.js` (run with `--mobile`): every HUD piece at four landscape phone sizes, with checks for overlaps, 40 px buttons, the prompt floating on its object and portrait pausing.
+   `events.js` (placed events): the bitten woman in a doorway, the dead on the road, a safe in the searched building, the gate dog, the stray at the pump, a yard happening, a random roll being placed, and draw calls.
+   `--mobile` is a landscape phone, 844x390. Portrait shows the "turn your phone" card.
    `balance.js` (not pass/fail: prints `BAL` lines for travel, zombie density per biome by day and night, winter cold with and without a coat, the bus quest and the final stand on day 20; `BAL_N=10`, `BAL_DAY`). `companions.js` pins its world seed, `tools/scenarios/world.js` (city/lighting shots), `combat.js` (actor lineup, fights), `ui.js` (every panel, minigame and moment).
 - `tools/harness.js` is the in-page harness those scenarios use (never bundled). In any running page: `fetch('tools/harness.js').then(r=>r.text()).then(eval)`, then
-  `sim(sec, ctl)` steps the game deterministically at 20 fps without drawing, `goto(x,y)` walks there by BFS, `fightBot(ids, gun)`, `searchNearest()`, `holdE(sec)`, `state()`.
+  `sim(sec, ctl)` steps the game deterministically at 20 fps without drawing, `goto(x,y)` walks there by BFS, `fightBot(ids, gun)`, `searchNearest()`, `holdE(sec)`, `state()`,
+  `meetEvent(id, ctx)` (place an event, walk up, press E), `placedNow()`.
   Use it in the Browser pane too: a hidden pane pauses requestAnimationFrame, so drive the loop with `sim()` instead of waiting.
 - Dev console: `__skipTo(2)` (radio built) and `__skipTo(3)` (last night) jump the story forward.
-- Scenario conventions: `G.encTimer = 1e9` turns random encounters off (field rolls and container searches). The lock/pry minigame is ticked from `UI.update`, so it runs under `sim()`.
+- Scenario conventions: `G.encTimer = 1e9` turns random encounters off: field rolls, container searches, and people waiting at home. The lock/pry minigame is ticked from `UI.update`, so it runs under `sim()`.

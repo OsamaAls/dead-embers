@@ -143,6 +143,13 @@ module.exports = async B => {
   await press('Escape', 1, 200);
   ok('menu + controls with keys', help && back && !(await panel()), { help, back });
   ok('no mouse aim after keyboard play', await ev('INPUT.mouseAim===false'));
+  // weapons: 1-4 pick one directly, Q cycles
+  await ev(`(function(){ give('pipe',1); give('knife',1); return 1; })()`);
+  const wl = await ev(`(function(){ return Object.keys(G.pack).filter(k=>ITEMS[k]&&ITEMS[k].c==='weapon').length; })()`);
+  await press('Digit2', 1, 200); const w2 = await ev('G.p.weapon');
+  await press('Digit1', 1, 200); const w1 = await ev('G.p.weapon');
+  await press('KeyQ', 1, 200); const wq = await ev('G.p.weapon');
+  ok('number keys and Q pick weapons', wl >= 2 && w1 && w2 && w1 !== w2 && wq !== w1, { wl, w1, w2, wq });
 
   B.log(fails ? `KEYBOARD: ${fails} step(s) failed` : 'KEYBOARD: all steps ok');
   if (fails) throw new Error(fails + ' keyboard step(s) failed');

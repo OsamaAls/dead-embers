@@ -5,6 +5,14 @@ A 3D zombie survival RPG that runs in the browser. You walk a ruined city, fight
 - **A world that changes with the story.** Seven biomes: Old Town, the Elm Row suburbs, Kessler Woods and the hills, farmland, the Flooded Quarter, the Docks and the Northern Pass. The woods, the docks and the pass are blocked until the story opens them. Rain, fog and snow change how the dead hear, see and move. The seasons run from autumn to the first snow, and the last night is a snowstorm.
 - **Many endings.** Haven by bus, the Convoy with Sgt. Vance's escort, holding the bunker, an alliance with the Warden, storming the Tollmen camp, broadcasting Dr. Okafor's formula from KVAL, the Choir's bells, or walking north alone. Each one adds epilogue lines that depend on the people you helped or failed.
 - **Eight character arcs:** Eli, Dr. Okafor, Marcus, the Choir, the Relay, Teodor, Rosa the lamplighter and Sgt. Ada Vance. There are around a hundred encounters, played as moments (rescues, screamers, collapses, locks, races, trades) or short decisions.
+- **Every event happens somewhere you can see.**
+  - The bitten woman sits in a doorway and calls out.
+  - The dead stand on the road ahead.
+  - The safe is at the back of the shop you're searching.
+  - A stranger walks up to the yard gate.
+  - The arc people wait at their own places.
+
+  Walk up and press E (USE) to start it.
 - **A backstory intro and cutscenes.** The intro plays once; replay it from the title or the menu. Story beats and endings have short cutscenes you can skip.
 - **Companions.** A dog (Biscuit, or a stray you feed) or a survivor can follow you on runs. After a day together the dog fetches for you.
 - **Bosses.** Each act has one named dead waiting in its lair: the Orderly in the hospital, the Butcher in the docks' Cold Store, the Sergeant at the Wrecked Convoy. Each guards a guaranteed drop and earns a journal line and an epilogue mention.
@@ -29,7 +37,11 @@ A 3D zombie survival RPG that runs in the browser. You walk a ruined city, fight
 - Pack: I. Journal: Tab. Character: B. Map: M. Swap weapon: Q. Companion stay / follow: H. Dog, fetch: R. Menu: Esc.
 - Saves: several worlds side by side. Continue, Worlds (load or delete; fallen and finished worlds stay as memorials) and New world on the title; Save now and Save as new world in the menu (Esc).
 - Zoom: wheel.
-- On phones: a virtual joystick plus on-screen buttons.
+- **On phones: played sideways.**
+  - A floating joystick on the left.
+  - Buttons in an arc under the right thumb. USE, TARGET, THROW and FETCH show only when they do something.
+  - The prompt floats over the thing itself, and you can tap it.
+  - Tap the companion's name to make them stay or follow.
 
 ## How to give input
 
@@ -54,6 +66,7 @@ Everything about this game is driven from this repo's issues.
 | `src/actors.js` | Procedural low-poly people and zombies with animation |
 | `src/combat.js` | Player controller, real-time combat, zombie AI, drops, survivors, horde waves |
 | `src/moments.js` | Gameplay moments for encounters (rescues, screamers, collapses, locks, races, barter) |
+| `src/places.js` | Where each event happens: people, animals, the dead and props placed in the world, arc people at their homes |
 | `src/cinematic.js` | Cutscene player (`Cine`): the backstory intro, story and ending cutscenes |
 | `src/ambience.js` | Procedural ambient sound (`Ambience`), driven by what is near the player |
 | `src/ui.js` | HUD, dialogue, panels, touch controls, minigames, sound |
@@ -63,7 +76,7 @@ Everything about this game is driven from this repo's issues.
 | `build.js` | Bundles everything into `index.html`, `Dead Embers.html` and `artifact/dead-embers.html` |
 | `test.js` | Headless checks: every encounter and callback, item/enemy ids, world reachability, 14 simulated days, save/load |
 | `tools/browser-check.js` | Headless Edge/Chrome smoke test: loads the built page, plays a scenario, reports page errors, saves screenshots |
-| `tools/scenarios/` | Browser-check scenarios: `playthrough.js` (end-to-end route), `endings.js` (every ending), `keyboard.js` (no mouse), `worlds.js`, `companions.js`, `biomes.js`, `cinematic.js`, `balance.js` (measurements, not a pass/fail check), `world.js`, `combat.js`, `ui.js` |
+| `tools/scenarios/` | Browser-check scenarios: `playthrough.js` (end-to-end route), `endings.js` (every ending), `keyboard.js` (no mouse), `worlds.js`, `companions.js`, `biomes.js`, `cinematic.js`, `layout.js` (phone HUD, `--mobile`), `events.js` (placed events), `balance.js` (measurements, not a pass/fail check), `world.js`, `combat.js`, `ui.js` |
 | `tools/harness.js` | In-page test harness (deterministic frames, pathing, bots); never bundled |
 
 ## Build and check
@@ -80,6 +93,8 @@ node tools/browser-check.js --scenario tools/scenarios/endings.js      # every l
 node tools/browser-check.js --scenario tools/scenarios/keyboard.js     # keyboard only (also --mobile)
 node tools/browser-check.js --scenario tools/scenarios/biomes.js       # each biome, weather and season (screenshots); no spawns past closed gates; draw calls < 180
 node tools/browser-check.js --scenario tools/scenarios/cinematic.js    # intro once, cutscenes, animations, ambience
+node tools/browser-check.js --mobile --scenario tools/scenarios/layout.js   # phone HUD at four landscape sizes: no overlaps, 40 px buttons
+node tools/browser-check.js --scenario tools/scenarios/events.js       # events placed in the world, met by walking up (also --mobile)
 node tools/browser-check.js --scenario tools/scenarios/balance.js      # BAL lines: travel, zombie density, cold, the bus quest, the final stand (BAL_N=10 for more stand runs)
 ```
 

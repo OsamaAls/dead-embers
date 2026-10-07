@@ -1029,7 +1029,8 @@ function eat(id) {
 /* ---------- Containers (searching = opening things in the world) ---------- */
 function containerById(id) { return WORLD.containers.find(c => c.id === id) || null; }
 /* nearest container whose tile centre is within r tiles of (x,y) */
-function containerNear(x, y, r) { let best = null, bd = r * r; for (const c of WORLD.containers) { const d = (c.x + 0.5 - x) ** 2 + (c.y + 0.5 - y) ** 2; if (d <= bd) { bd = d; best = c; } } return best; }
+/* the nearest container within r tiles; full: only ones that still have something in them */
+function containerNear(x, y, r, full) { let best = null, bd = r * r; for (const c of WORLD.containers) { const d = (c.x + 0.5 - x) ** 2 + (c.y + 0.5 - y) ** 2; if (d <= bd && (!full || containerState(c) !== 'empty')) { bd = d; best = c; } } return best; }
 /* 'full' (never searched), 'refilled' (searched long ago, some loot again) or 'empty' */
 function containerState(c) { const d = G.cont[c.id]; if (d == null) return 'full'; return G.day - d >= CONT_REFILL_DAYS ? 'refilled' : 'empty'; }
 /* real seconds to hold E. Perception makes it faster. */

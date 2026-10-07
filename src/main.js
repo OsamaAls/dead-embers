@@ -17,7 +17,7 @@ function wireHooks() {
   Hooks.hint = (t, key) => UI.hint(t, { key });
   Hooks.unlock = k => UI.onUnlock && UI.onUnlock(k);
   Hooks.spawnFight = (ids, opts) => Combat.spawnFight(ids, opts);
-  Hooks.openTrader = () => Game.Q.unshift({ type: 'trader' });
+  /* no Hooks.openTrader: a trade screen only ever opens on a trader you walked up to (places.js), the radio caravan or the camp market */
   Hooks.hordeStart = () => startHorde();
   Hooks.finalWave = () => true;
   Hooks.gateOpened = id => { if (typeof Cine !== 'undefined' && Cine.has && Cine.has('gate_' + id)) Game.Q.push({ type: 'cine', id: 'gate_' + id }); }; // a district opens: short cutscene
@@ -48,15 +48,25 @@ Game.quit = function () { saveGame(true); Game.running = false; Combat.clear(); 
 
 /* ---------- encounter queue ---------- */
 function encText(enc) { try { return fmtName(typeof enc.text === 'function' ? enc.text() : enc.text); } catch (e) { return ''; } }
+/* Story that happens at the bunker waits until you are there: nothing about "your gate" or "the radio in the corner" pops up
+   in the middle of the street. The Tollmen's demand is people at the gate you walk up to. Weather lines are a banner. */
+const HOME_SCENES = { first_night: 1, radio_found: 1, haven_coords: 1, horde_warning: 1, tollmen_demand: 1 };
+const GATE_SCENES = { tollmen_demand: { actor: 'tollman', n: 3, verb: 'Talk to the Tollman', lure: 'The Warden sends his regards.' } };
+const BANNER_SCENES = { first_frost: 1, first_snow: 1 };
+const sceneReady = q => q.type !== 'scene' || q.ready || !HOME_SCENES[q.id] || G.atShelter;
 function pump() {
   if (Game.showing || !Game.Q.length || UI.blocking() || cineOn() || Game.dead) return;
-  const q = Game.Q[0];
+  const qi = Game.Q.findIndex(sceneReady); if (qi < 0) return;
+  const q = Game.Q[qi];
   // physical encounters wait until the current fight or moment is over; story can interrupt anything but a moment
   if ((q.type === 'enc' && (Moments.active || Combat.inFight())) || (q.type !== 'end' && Moments.active)) return;
-  Game.Q.shift(); Game.showing = true;
+  if (q.type === 'scene' && GATE_SCENES[q.id] && !q.ready) { if (Places.sceneAt(q.id, GATE_SCENES[q.id])) Game.Q.splice(qi, 1); return; }
+  Game.Q.splice(qi, 1); Game.showing = true;
   const done = line => { Game.showing = false; if (line) UI.toast(line); };
   switch (q.type) {
-    case 'scene': cineThen(q.id, () => UI.scene(q.id, done)); break;
+    case 'scene':
+      if (BANNER_SCENES[q.id]) { const sc = CONTENT_().story[q.id], b = sc && sc.beats || []; UI.banner(sc ? sc.title : '', b.map(x => x.line).join(' ')); done(); break; }
+      cineThen(q.id, () => UI.scene(q.id, done)); break;
     case 'summary': UI.summary(q, done); break;
     case 'final': UI.final(done); break;
     case 'end': cineThen(q.id, () => UI.end(q.id)); break;
@@ -92,7 +102,7 @@ function interactTarget() {
   const d2 = (x, y) => (x - p.x) ** 2 + (y - p.y) ** 2;
   const drop = Combat.nearestDrop(p.x, p.y, 1.3);
   if (drop) out.push({ key: 'drop' + drop.uid, d: d2(drop.x, drop.y), at: { x: drop.x, y: drop.y, h: 0.9 }, label: `Pick up ${itemName(drop.id)}${drop.qty > 1 ? ' ×' + drop.qty : ''}`, time: 0, act: () => { Combat.pickupDrop(drop); gesture(ITEMS[drop.id] && ITEMS[drop.id].c === 'weapon' ? 'inspect' : 'pickup'); } });
-  const c = containerNear(p.x, p.y, 1.45);
+  const c = containerNear(p.x, p.y, 1.45, true); /* a searched box beside a full one never hides the full one */
   if (c) {
     const st = containerState(c), K = CONTAINERS[c.kind];
     /* a searched container says nothing: its lid hangs open */
@@ -133,6 +143,9 @@ function pickTarget(out) {
     let sc;
     if (t.d < 0) sc = -9;
     else { const a = t.at || p, dx = a.x - p.x, dy = a.y - p.y, d = Math.hypot(dx, dy); sc = Math.sqrt(t.d) - (d > 0.05 ? 0.35 * Math.max(0, (dx * fx + dy * fy) / (d * fl)) : 0.35); }
+    /* something you can do beats a "why not" line; a person calling for you (pri) beats the rubble beside them */
+    if (t.time < 0) sc += 0.6;
+    sc -= t.pri || 0;
     if (sc < bs) { bs = sc; best = t; }
     if (t.key === Game.lastTarget) { cur = t; cs = sc; }
   }
@@ -252,7 +265,7 @@ function updateInteraction(dt) {
 /* ---------- horde nights & the final stand ---------- */
 function startHorde() {
   if (Game.wave || G.hordeResult) return;
-  Game.wave = true;
+  Game.wave = true; Places.reset(); /* visitors at the gate clear off when the horde comes */
   UI.banner('Horde night', 'They are here. Hold the barricades.');
   SFX.play('scream');
   Combat.startWave(hordeWaveSize(), res => {
@@ -299,7 +312,7 @@ Game.finalRun = function (kind) {
   return false;
 };
 Game.finalWave = function () {
-  Game.wave = true;
+  Game.wave = true; Places.reset();
   const plan = finalWavePlan();
   UI.banner('The great horde', `Everything the city has left is coming. About ${plan.count} of them.`);
   placePlayer({ x: WORLD.hatch.x + 0.5, y: WORLD.hatch.y + 1.5 });

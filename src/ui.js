@@ -221,6 +221,7 @@ const UI = (() => {
     const open = { KeyI: 'pack', Tab: 'journal', KeyB: 'char', KeyM: 'map', Escape: 'menu' }[c];
     if (open) { delete K[c]; U.open(open); }
     if (c === 'KeyQ') U.swapWeapon();
+    const dn = /^Digit([1-4])$/.exec(c); if (dn) { const w = ownedWeapons()[+dn[1] - 1]; if (w) pickWeapon(w); }
   }
   function onKeyUp(e) { delete K[e.code]; if (e.code === 'KeyJ') S.atk.key = false; if (!blocking()) syncMove(); }
 
@@ -260,7 +261,9 @@ const UI = (() => {
     touchButtons();
     // HUD clicks
     D.mm.addEventListener('click', () => U.open('map'));
-    D.wpn.addEventListener('click', () => U.swapWeapon());
+    D.wpn.addEventListener('click', e => { e.stopPropagation(); toggleWsel(); });
+    el('wsel').addEventListener('click', e => { e.stopPropagation(); const b = e.target.closest('[data-w]'); if (b) pickWeapon(b.dataset.w); });
+    addEventListener('pointerdown', e => { if (S.wselOn && !(e.target.closest && e.target.closest('#wsel, #wpn'))) toggleWsel(false); }, true);
     D.cmp.addEventListener('click', () => { if (!blocking()) INPUT.companionCmd = true; });
     D.chips.addEventListener('click', e => { if (e.target.closest('.chip.ember')) U.open('char'); });
     document.querySelectorAll('.hb[data-open]').forEach(b => b.addEventListener('click', () => U.open(b.dataset.open)));
@@ -512,13 +515,40 @@ const UI = (() => {
     if (it && it.ammo) { const n = G.pack[it.ammo] || 0; ammo = n + ' ' + (it.ammo === 'shells' ? 'SH' : it.ammo === 'bolts' ? 'BLT' : 'RND'); out = n === 0; }
     const owned = Object.keys(G.pack).filter(k => ITEMS[k] && ITEMS[k].c === 'weapon').length;
     const cond = w ? Math.round(safe(() => weaponCond(w), 100)) : 100;
+    /* a gun ran dry and the fists/knife took over: say so once */
+    const sel = G.p.weapon, selIt = sel && ITEMS[sel], dry = !!(selIt && selIt.ammo && !(G.pack[selIt.ammo] > 0));
+    if (dry && !S.dry && w !== sel) toast(`Out of ${selIt.ammo === 'shells' ? 'shells' : selIt.ammo === 'bolts' ? 'bolts' : 'ammo'}: fighting with the ${name}.`, 'warn');
+    S.dry = dry;
+    if (owned > 1) safe(() => hintOnce('weapons', INPUT.touch ? `You have ${owned} weapons. Tap the weapon name to pick one.` : 'You carry more than one weapon. Q or 1-4 switches; click the weapon to pick.'));
     const key = name + ammo + owned + '|' + cond;
+    if (S.wselOn) renderWsel();
     if (S.c.wpn === key) return; S.c.wpn = key;
     D.wpn.querySelector('.n').textContent = name;
     /* condition pip: only once this weapon has started to wear */
     const c = D.wpn.querySelector('.c'); c.hidden = cond >= 100; c.classList.toggle('low', cond < 60); c.firstChild.style.width = cond + '%'; c.title = `Condition ${cond}%`;
     const a = D.wpn.querySelector('.a'); a.textContent = ammo; a.classList.toggle('out', out);
-    D.wpn.querySelector('.k').textContent = owned > 1 ? 'Q' : '';
+    D.wpn.querySelector('.k').textContent = owned > 1 ? owned + ' ▾' : '';
+  }
+  /* ---------- weapon picker: tap the weapon chip (or press 1-4) ---------- */
+  const ownedWeapons = () => sortIds(Object.keys(G.pack).filter(k => ITEMS[k] && ITEMS[k].c === 'weapon'));
+  function renderWsel() {
+    const el_ = el('wsel'); if (!el_) return;
+    const list = ownedWeapons(), cur = safe(() => weaponOf(), null);
+    const key = list.join(',') + '|' + cur + '|' + list.map(k => ITEMS[k].ammo ? (G.pack[ITEMS[k].ammo] || 0) : '').join(',');
+    if (S.c.wsel === key) return; S.c.wsel = key;
+    el_.innerHTML = list.map((k, i) => { const it = ITEMS[k], n = it.ammo ? (G.pack[it.ammo] || 0) : null;
+      return `<button data-w="${k}" class="${k === G.p.weapon ? 'on' : ''}"><span class="nb">${i + 1}</span><span class="wn">${esc(it.n)}</span>${n != null ? `<span class="wa${n ? '' : ' out'}">${n}</span>` : ''}</button>`; }).join('');
+  }
+  function toggleWsel(on) {
+    const el_ = el('wsel'); if (!el_ || !G) return;
+    if (on == null) on = !S.wselOn;
+    if (on && ownedWeapons().length < 2) { toast(INPUT.touch ? 'Only one weapon. Find more in buildings.' : 'Only one weapon. Find more in buildings.', 'dim'); on = false; }
+    S.wselOn = on; el_.hidden = !on; S.c.wsel = null; if (on) renderWsel();
+  }
+  function pickWeapon(id) {
+    if (!G || !id || !G.pack[id] || blocking()) return;
+    if (G.p.weapon !== id) { G.p.weapon = id; SFX.play('swing'); D.wpn.classList.remove('swap'); void D.wpn.offsetWidth; D.wpn.classList.add('swap'); }
+    toggleWsel(false);
   }
   function barricade() {
     const hp = typeof Combat !== 'undefined' ? Combat.barricadeHp : null;
@@ -1916,7 +1946,7 @@ const UI = (() => {
       if (!G || blocking()) return;
       const owned = sortIds(Object.keys(G.pack).filter(k => ITEMS[k] && ITEMS[k].c === 'weapon'));
       if (owned.length < 2) { if (owned.length === 1 && G.p.weapon !== owned[0]) G.p.weapon = owned[0]; return; }
-      const i = owned.indexOf(G.p.weapon); G.p.weapon = owned[(i + 1) % owned.length];
+      const i = owned.indexOf(G.p.weapon); G.p.weapon = owned[(i + 1) % owned.length]; S.c.wsel = null;
       SFX.play('swing'); D.wpn.classList.remove('swap'); void D.wpn.offsetWidth; D.wpn.classList.add('swap');
     },
     spendPoint, craft, lockOn, enemyHit,

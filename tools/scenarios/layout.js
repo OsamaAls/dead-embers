@@ -61,13 +61,22 @@ module.exports = async B => {
   await B.wait(2500); /* the camera glides after a teleport */
   const pa = await B.eval(`(function(){ const P=document.getElementById('prompt'), r=P.getBoundingClientRect(), c=window.__c, s=R.tileToScreen(c.x+0.5,c.y+0.5,1.4);
     return {anch:P.classList.contains('anch'), text:P.textContent.trim(), dx:Math.round(r.left+r.width/2-s.x), dy:Math.round(r.bottom-s.y), pe:getComputedStyle(P).pointerEvents}; })()`);
-  ok('the prompt floats over the container', pa.anch && /Search/.test(pa.text) && Math.abs(pa.dy) < 60 && pa.pe === 'auto', Object.assign({ kind: pr }, pa));
+  ok('the prompt floats over the container', pa.anch && /Search/.test(pa.text) && pa.dy < 20 && pa.dy > -260 && Math.abs(pa.dx) < 160 && pa.pe === 'auto' /* it may step up or aside to keep clear of the thumb buttons */, Object.assign({ kind: pr }, pa));
   await B.shot('layout-prompt');
   const s0 = await B.eval('G.stats.searches');
   const box = await B.eval(`(function(){ const r=document.getElementById('prompt').getBoundingClientRect(); return {x:r.left+r.width/2, y:r.top+r.height/2}; })()`);
   /* SwiftShader runs a few frames a second and the game caps a frame at 50 ms, so check the hold is filling rather than waiting it out */
   await send0(B, box, 2500);
   ok('holding the prompt searches', (await B.eval('G.stats.searches')) > s0 || (await B.eval('window.__held')) > 0, await B.eval(`(function(){ const e=document.elementFromPoint(${box.x},${box.y}); return {hit:e&&(e.id||e.className||e.tagName), box:${JSON.stringify(box)}, t:(interactTarget()||{}).label}; })()`));
+  /* the weapon picker: tap the weapon, every weapon you carry is listed, one tap picks */
+  await B.eval(`(function(){ UI.close(); give('knife',1); give('pistol',1); G.p.weapon='pistol'; return 1; })()`); await B.wait(400);
+  const chip = await B.eval(`(function(){ const r=document.getElementById('wpn').getBoundingClientRect(); return {x:r.left+r.width/2, y:r.top+r.height/2}; })()`);
+  await B.tap(chip.x, chip.y); await B.wait(500);
+  const ws = await B.eval(`(function(){ const w=document.getElementById('wsel'); const b=[...w.querySelectorAll('button')]; const k=b.find(x=>x.dataset.w==='knife'); const r=k&&k.getBoundingClientRect(); return {open:!w.hidden, n:b.length, knife:r?{x:r.left+r.width/2,y:r.top+r.height/2,h:r.height}:null, onScreen:r?r.bottom<=innerHeight&&r.top>=0:false}; })()`);
+  await B.shot('layout-weapons');
+  if (ws.knife) { await B.tap(ws.knife.x, ws.knife.y); await B.wait(400); }
+  const wpick = await B.eval(`({w:G.p.weapon, open:!document.getElementById('wsel').hidden})`);
+  ok('tap the weapon to pick another', ws.open && ws.n >= 2 && ws.knife && ws.knife.h >= 40 && ws.onScreen && wpick.w === 'knife' && !wpick.open, Object.assign(ws, wpick));
   /* portrait: the card shows and the game pauses */
   await B.viewport(390, 844); await B.wait(400);
   const port = await B.eval(`({card:getComputedStyle(document.getElementById('rotate')).display, blocking:UI.blocking()})`);

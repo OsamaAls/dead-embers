@@ -542,7 +542,7 @@
     },
     {
       id: 'sh_pipe', title: 'Burst Pipe', where: ['shelter'], weight: 9, minDay: 3,
-      text: 'A ceiling pipe has split, spraying brown water over the cots. The valve is rusted solid. Wrench it.',
+      text: 'Brown water sprays out of the bunker door: a pipe has split over the cots. The valve is rusted solid. Wrench it.',
       play: { type: 'lock', mode: 'pry', diff: 4,
         onWin: function () { xp(12); return 'The valve gives with a shriek. The spray dies to a drip.'; },
         onLose: function () { take('water', 1); addMorale(-3); return 'The wrench slips. Clean water runs to waste before it stops.'; } }

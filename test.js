@@ -307,6 +307,9 @@ try {
   /* arcs are met at home, never rolled; a bunker subject stays the same person */
   fresh(); for (let i = 0; i < 400; i++) { const e = T.pickEncounter('street'); if (e && T.placeSpec(e).home) { fail('place', 'rolled a home event ' + e.id); break; } }
   fresh(); T.recruit(); T.recruit(); const s1 = T.subject('_turning'), s2 = T.subject('_turning'); if (!s1 || s1 !== s2) fail('place', 'subject() is not stable');
+  /* no trade screen without a trader: barter events always put someone in the world, and no content opens a trader by itself */
+  for (const e of encs) if (e.play && e.play.type === 'barter' && !['survivor', 'kid', 'tollman'].includes(T.placeSpec(e).actor)) fail(e.id, 'place: a trade with nobody there');
+  if (/\bopenTrader\(/.test(contentSrc)) fail('place', 'content calls openTrader()');
 } catch (err) { fail('places', err); }
 
 if (errors.length) { console.log('FAIL (' + errors.length + ')\n' + errors.slice(0, 60).join('\n')); process.exit(1); }

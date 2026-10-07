@@ -71,7 +71,7 @@ const PLACE = {
   wind_chimes: { at: 'wall', prop: 'chimes', verb: 'Listen to the chimes', snd: 'ping' }, elm_kids_room: { at: 'inside', prop: 'rabbit', verb: 'Look at the rabbit' },
   woods_campfire: { at: 'fire', prop: 'tins', verb: 'Sit by the fire' },
   /* arcs: the person waits at home (npcHome); props and verbs per step */
-  eli_1: { actor: 'kid', verb: 'Follow the noise', lure: '', snd: 'creak' }, eli_2: { actor: 'none', prop: 'trap', verb: 'Look at the cup and spoon' },
+  eli_1: { actor: 'kid', verb: 'Go after the boy', lure: '', snd: 'creak' }, eli_2: { actor: 'none', prop: 'trap', verb: 'Look at the cup and spoon' },
   eli_3: { actor: 'kid', pose: 'sit' }, eli_4: { at: 'yard', actor: 'none', prop: 'none', name: 'Eli', verb: 'Talk to Eli' },
   ines_1: { prop: 'boards', tint: 0xd8d4c8 }, ines_2: { tint: 0xd8d4c8, verb: 'Knock for Dr. Okafor' }, ines_3: { tint: 0xd8d4c8, prop: 'vial' }, ines_4: { tint: 0xd8d4c8, prop: 'cage', verb: 'Open the drug cage' },
   marcus_1: { actor: 'tollman', pose: 'sit', lure: 'Not here to hurt you.' }, marcus_2: { actor: 'tollman', pose: 'sit' }, marcus_3: { actor: 'tollman', pose: 'sit' }, marcus_3b: { at: 'gate', actor: 'tollman' },
@@ -402,6 +402,15 @@ const Places = (() => {
   };
   const isBunker = src => src === 'shelter';
   P.busy = src => P.live.some(ev => ev.state === 'lure' && !ev.home && (isBunker(ev.src) === isBunker(src)));
+  /* a story scene that happens at a place (the Tollmen's demand at the yard gate): people stand there, E plays the scene */
+  P.sceneAt = function (id, o) {
+    if (!G || !has3D()) return false;
+    if (P.live.some(ev => ev.enc.scene === id)) return true;
+    const sc = CONTENT_().story[id], enc = { id: 'scene_' + id, title: sc ? sc.title : id, where: ['shelter'], scene: id, text: '' };
+    enc._ps = Object.assign({ at: 'gate', n: 1, pose: 'stand', engage: 'E', r: 1.8, after: null, prop: null, k: null, tint: null, keep: true, foes: null }, o);
+    const spot = placeFor(enc, G.p.x, G.p.y, {}); if (!spot) return false;
+    return !!spawn(enc, spot, { src: 'shelter' });
+  };
   /* dev / scenario helper */
   P.spawn = function (id, ctx) {
     const enc = encById(id); if (!enc || !G) return null;
@@ -418,6 +427,7 @@ const Places = (() => {
     if (!encEligible(ev.enc, null, true)) { leave(ev); return; }
     ev.state = 'engaged';
     const enc = ev.enc, p = G.p;
+    if (enc.scene) { Game.Q.unshift({ type: 'scene', id: enc.scene, ready: true }); for (const a of ev.actors) if (a.human) safe(() => a.a.anim('chat')); after(ev, null); return; }
     for (const a of ev.actors) if (a.human) { a.a.root.rotation.y = Math.atan2(p.x - a.x, p.y - a.y); safe(() => a.a.anim('chat')); }
     ev.before = { surv: G.survivors.length, dog: !!G.dog };
     safe(() => UI.say('pl' + ev.uid, null));
@@ -471,10 +481,27 @@ const Places = (() => {
   }
   const onScreen = (x, y) => safe(() => { const s = R.tileToScreen(x, y, 1); return s.on && s.x > -40 && s.y > -40 && s.x < innerWidth + 40 && s.y < innerHeight + 40; }, false);
 
+  /* ---------- the dog, when it stays home: in the yard, lying by the bunker wall, up and over to you when you come close ---------- */
+  let dogH = null;
+  function homeDog(dt) {
+    const p = G.p, r = WORLD.shelterRect, cx = (r.x0 + r.x1 + 1) / 2, cy = (r.y0 + r.y1 + 1) / 2;
+    const want = !!G.dog && !(G.companion && G.companion.kind === 'dog') && Math.hypot(p.x - cx, p.y - cy) < 25;
+    if (!want) { if (dogH) { disposeActor(dogH); dogH = null; } return; }
+    if (!dogH) { const a = safe(() => Actors.make('dog', { friendly: true, tint: 0x8a5a32 }), null); if (!a) return; R.scene.add(a.root); const h = WORLD.hatch; dogH = { a, x: h.x + 2.5, y: h.y + 1.6, hx: h.x + 2.5, hy: h.y + 1.6 }; safe(() => a.anim('crouch')); }
+    const d = Math.hypot(p.x - dogH.x, p.y - dogH.y), resting = G.dog.restUntil > G.day;
+    let tx = dogH.hx, ty = dogH.hy;
+    if (!resting && d < 6 && inShelter(p.x, p.y)) { tx = p.x + (dogH.x - p.x) / (d || 1) * 1.4; ty = p.y + (dogH.y - p.y) / (d || 1) * 1.4; }
+    const dx = tx - dogH.x, dy = ty - dogH.y, dd = Math.hypot(dx, dy); let spd = 0;
+    if (dd > 0.2) { const st = Math.min(dd, 2.2 * dt), nx = dogH.x + dx / dd * st, ny = dogH.y + dy / dd * st; if (!solidAt(nx, ny)) { dogH.x = nx; dogH.y = ny; spd = 2.2; } dogH.a.root.rotation.y = Math.atan2(dx, dy); }
+    else if (d < 8) dogH.a.root.rotation.y = Math.atan2(p.x - dogH.x, p.y - dogH.y);
+    safe(() => dogH.a.anim(spd ? 'walk' : d < 6 && !resting ? 'idle' : 'crouch'));
+    dogH.a.root.position.set(dogH.x * TILE, 0, dogH.y * TILE); safe(() => dogH.a.update(dt, spd));
+  }
   /* ---------- per frame ---------- */
   P.update = function (dt) {
     if (!G || !has3D()) return;
     const p = G.p;
+    homeDog(dt);
     gateNote -= dt;
     /* arc people at their homes, polled twice a second like the bosses */
     homeT -= dt;
@@ -517,7 +544,7 @@ const Places = (() => {
         /* missed: it drifts off when you go away for a while, or the moment passes */
         if (d > (ev.home ? 28 : 34)) ev.far += dt; else ev.far = 0;
         /* people at home just go back inside when you leave; they're there again next time you pass */
-        const stale = (!ev.home && ev.t > 300) || ev.far > (ev.home ? 6 : 20) || (ev.t > 1 && !encEligible(ev.enc, null, true));
+        const stale = !s.keep && ((!ev.home && ev.t > 300) || ev.far > (ev.home ? 6 : 20) || (ev.t > 1 && !encEligible(ev.enc, null, true)));
         if (stale) { if (onScreen(ev.x, ev.y)) leave(ev); else { remove(ev); continue; } }
       } else if (ev.state === 'after') {
         let any = false;
@@ -536,9 +563,14 @@ const Places = (() => {
       for (const a of ev.actors) { a.a.root.position.set(a.x * TILE, 0, a.y * TILE); safe(() => a.a.update(dt, ev.arrive || (ev.state === 'after' && !a.keep) ? 1.6 : 0)); }
     }
   };
-  /* E targets for the events standing nearby */
+  /* E targets for the events standing nearby (and the dog at home) */
   P.targets = function (p, d2) {
     const out = [];
+    if (dogH && G.dog && d2(dogH.x, dogH.y) < 1.7 * 1.7) {
+      const n = G.dog.name, take = !G.companion && companionReady('dog').ok;
+      out.push({ key: 'homedog', d: d2(dogH.x, dogH.y) + 0.05, at: { x: dogH.x, y: dogH.y, h: 1.2 }, label: take ? `Take ${n} on runs` : `Pet ${n}`, time: 0,
+        act: () => { if (take) { setCompanion('dog'); safe(() => SFX.play('good')); } else { safe(() => SFX.play('ui')); if (G.flags.dog_pet !== G.day) { G.flags.dog_pet = G.day; addMorale(1); } safe(() => UI.toast(`${n} leans into your hand.`, 'dim')); } } });
+    }
     for (const ev of P.live) {
       if (ev.state !== 'lure' || ev.arrive || ev.spec.engage !== 'E') continue;
       let bx = ev.x, by = ev.y, bd = d2(ev.x, ev.y);
@@ -546,7 +578,7 @@ const Places = (() => {
       if (bd > 1.9 * 1.9) continue;
       const verb = String(ev.spec.verb || 'Look').replace('{s}', ev.who && ev.who.name ? ev.who.name : 'them');
       /* someone calling for you wins over the rubble they are sitting next to */
-      out.push({ key: 'pl' + ev.uid, d: 0.02 + bd * 0.1, at: { x: bx, y: by, h: ev.actors.some(a => a.human) ? 2.3 : 1.3 }, label: verb, time: 0, act: () => engage(ev) });
+      out.push({ key: 'pl' + ev.uid, d: 0.02 + bd * 0.1, pri: 0.8, at: { x: bx, y: by, h: ev.actors.some(a => a.human) ? 2.3 : 1.3 }, label: verb, time: 0, act: () => engage(ev) });
     }
     return out;
   };
@@ -563,6 +595,6 @@ const Places = (() => {
     return out;
   };
   P.pins = () => P.live.filter(ev => ev.state === 'lure').map(ev => ({ x: ev.x, y: ev.y, z: ev.actors.some(a => a.z) }));
-  P.reset = function () { for (const ev of P.live.slice()) remove(ev); P.live.length = 0; homeT = 0; };
+  P.reset = function () { for (const ev of P.live.slice()) remove(ev); P.live.length = 0; homeT = 0; if (dogH) { disposeActor(dogH); dogH = null; } };
   return P;
 })();

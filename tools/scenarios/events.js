@@ -67,7 +67,7 @@ module.exports = async B => {
   await ev(`tidy(); 1`);
 
   /* people standing about stay inside the draw-call budget */
-  await step('draw calls stay under 180 with three people out', `G.day = 5; G.hour = 10; const e = Places.spawn('ruin_wedding'); sim(0.3); goto(e.x, e.y + 3, 1.5, 30); sim(0.5); R.render(); const calls = R.renderer.info.render.calls;
+  await step('draw calls stay under 180 with three people out', `G.day = 5; G.hour = 10; G.isNight = false; const e = Places.spawn('ruin_wedding'); sim(0.3); goto(e.x, e.y + 3, 1.5, 30); sim(0.5); R.render(); const calls = R.renderer.info.render.calls;
     return {calls, actors: e.actors.length}`, 'r.calls < 180 && r.actors===3');
   await B.shot('ev-04-wedding');
   if (fails) throw new Error(fails + ' event step(s) failed');

@@ -153,7 +153,20 @@ body.lowhp #edge{opacity:1;animation:edgep 1.25s ease-in-out infinite}
 #wpn .c{width:30px;height:4px;background:var(--line2)}
 #wpn .c i{display:block;height:100%;background:var(--ember2)}
 #wpn .c.low i{background:#ff6a55}
-#wpn .k{font:600 10px var(--mono);color:var(--mute)}
+#wpn .k{font:600 11px var(--mono);color:var(--ember2);border:1px solid rgba(255,176,103,.45);padding:2px 5px}
+#wpn .k:empty{display:none}
+/* weapon picker: every weapon you carry, one tap (or 1-4) to pick */
+#wsel{position:absolute;right:0;bottom:calc(100% + 6px);display:flex;flex-direction:column;gap:4px;pointer-events:auto;min-width:100%}
+#wsel button{display:flex;align-items:center;gap:9px;min-height:44px;padding:6px 12px;background:rgba(14,12,10,.9);border:1px solid var(--line2);text-align:left;white-space:nowrap}
+#wsel button.on{border-color:var(--ember);background:rgba(58,38,24,.92)}
+#wsel button:hover{border-color:var(--ember)}
+#wsel .nb{font:600 11px var(--mono);color:var(--soot);background:var(--dim);width:18px;height:18px;display:grid;place-items:center;flex:none}
+#wsel button.on .nb{background:var(--ember)}
+#wsel .wn{font:800 15px/1 var(--display);letter-spacing:.07em;text-transform:uppercase;flex:1}
+#wsel .wa{font:600 12px var(--mono);color:var(--ember2)}
+#wsel .wa.out{color:#ff6a55}
+body.touch #wsel .nb{display:none}
+body.phone #wsel{top:calc(100% + 6px);bottom:auto}
 #wpn.swap{animation:objnew .6s}
 #barri{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--sab) + 92px);width:min(320px,70vw);text-align:center}
 #barri .lb{font:800 14px/1 var(--display);letter-spacing:.1em;text-transform:uppercase;color:var(--bone);margin-bottom:5px;text-shadow:0 1px 2px #000}
@@ -681,7 +694,7 @@ body.phone #dlg .ch button{min-height:40px;padding:6px 12px}
     </div>
   </div>
   <div id="notes"><div id="hint"></div><div id="toasts"></div></div>
-  <div class="hud-br"><div id="wpn"><span class="n"></span><span class="c" hidden><i></i></span><span class="a"></span><span class="k k-hide"></span></div></div>
+  <div class="hud-br"><div id="wpn" role="button" aria-label="Weapon: tap to choose"><span class="n"></span><span class="c" hidden><i></i></span><span class="a"></span><span class="k"></span></div><div id="wsel" hidden></div></div>
   <div id="barri" hidden><div class="lb">Barricade <span class="pc"></span></div><div class="tr"><div class="gh"></div><div class="fl"></div></div></div>
   <div id="prompt" hidden><span class="key"><svg class="ring" width="40" height="40"><rect class="tk" x="2" y="2" width="36" height="36" rx="5" pathLength="100"/><rect class="pg" x="2" y="2" width="36" height="36" rx="5" pathLength="100"/></svg><span class="kt">E</span></span><span class="tx"></span></div>
 </div>

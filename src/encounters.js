@@ -45,7 +45,7 @@ window.ENCOUNTERS = [
   },
   {
     id: 'corpse_pile', title: 'The Pile', where: ['travel', 'street', 'hospital', 'depot'], weight: 9,
-    text: 'A heap of bodies behind a fence. Flies. Something in the pile twitches. Not the wind.',
+    text: 'A heap of bodies by the road, and the dead crouched over it. Flies. Something in the pile twitches. Not the wind.',
     play: { type: 'horde', foes: ['walker', 'walker'],
       onWin: () => 'Now the pile stays still. Pockets: ' + list(give('cigs', 2), give('cloth', 1), give('bandage', 1)) + '.',
       onLose: () => { setStatus('sick', 4); return 'You retch and stumble off, empty-handed.'; } },
@@ -189,7 +189,7 @@ window.ENCOUNTERS = [
   },
   {
     id: 'hospital_cage', title: 'The Drug Cage', where: ['hospital'], weight: 7,
-    text: 'A pharmacy cage in the basement, padlocked. The shelves inside are not empty.',
+    text: 'A pharmacy cage in the back room, padlocked. The shelves inside are not empty.',
     play: { type: 'lock', mode: 'pick', diff: 5,
       onWin: () => { xp(12); return 'The padlock drops. ' + list(give('antibiotics', 1), give('painkillers', 2), give('bandage', 2)) + '.'; },
       onLose: () => { addNoise(2); fight(['walker', 'walker']); return 'The pick snaps in the lock. Footsteps in the corridor.'; } },
@@ -295,7 +295,7 @@ window.ENCOUNTERS = [
   },
   {
     id: 'lost_kids', title: 'Two Small Faces', where: ['travel', 'street', 'apartments', 'supermarket'], weight: 6, minDay: 2,
-    text: 'Two kids behind a bus shelter, nine and twelve maybe. Empty backpack. They haven\'t eaten in days.',
+    text: 'Two kids huddled behind a wreck, nine and twelve maybe. Empty backpack. They haven\'t eaten in days.',
     choices: [
       { label: 'Share your food', req: () => has('canned') || has('snack'), reqText: 'Needs food',
         success: () => { if (!take('snack', 1)) take('canned', 1); xp(15); addMorale(8); recruit({ name: 'Mina', trait: 'scared', skills: { scav: 1 } }); return 'They eat in silence. "Can we come with you?" You can\'t say no.'; } },
@@ -430,7 +430,7 @@ window.ENCOUNTERS = [
   },
   {
     id: 'guard_dog', title: 'The Guard Dog', where: ['street', 'apartments', 'farm', 'travel'], weight: 7, minDay: 4, once: true,
-    text: 'A shepherd dog lies across a body in a doorway. It growls, weak but steady. It hasn\'t eaten in days.',
+    text: 'A shepherd dog lies across a body by the road. It growls, weak but steady. It hasn\'t eaten in days.',
     choices: [
       { label: 'Feed it', req: () => has('rawmeat') || has('canned'), reqText: 'Needs meat or canned food',
         success: () => { if (!take('rawmeat', 1)) take('canned', 1); const had = !!G.dog; adoptDog('Shep'); addMorale(8); xp(10); return 'It eats, noses the body one last time, then falls in at your heel.' + (had ? ' It trots off toward the bunker to meet the others.' : ' You call it Shep.'); } },
@@ -444,7 +444,7 @@ window.ENCOUNTERS = [
   {
     id: 'stray_pump', title: 'Stray at the Pump', where: ['gas', 'street', 'suburbs', 'park', 'travel'], weight: 9, minDay: 2,
     cond: () => !G.dog && (G.flags.stray_fed || 0) < 3 && G.flags.stray_day !== G.day,
-    text: () => (G.flags.stray_fed || 0) === 0 ? 'A thin brown dog watches you from under a dead fuel pump. It does not run. It does not come closer either.'
+    text: () => (G.flags.stray_fed || 0) === 0 ? 'A thin brown dog watches you from under the old hand pump. It does not run. It does not come closer either.'
       : (G.flags.stray_fed || 0) === 1 ? 'The brown stray again. It stands up when it sees you, tail low, waiting.' : 'The stray trots out to meet you this time. It sits. It has decided something.',
     choices: [
       { label: 'Share some food', req: () => has('canned') || has('snack') || has('rawmeat'), reqText: 'Needs food',

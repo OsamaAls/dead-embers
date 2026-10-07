@@ -14,7 +14,7 @@
     {
       id: 'eli_1', title: 'Small Footsteps', where: ['apartments'], weight: 30, once: true,
       cond: () => !flag('eli_1'),
-      text: 'You set your pack down for a minute. A can is gone. Something small and fast clatters up the stairwell.',
+      text: 'A boy on the Tower Blocks steps, a can of yours under his coat. He freezes, then bolts for the stairwell.',
       choices: [
         { label: 'Chase the thief', check: { attr: 'agi', diff: 5 },
           success: () => { mark('eli_1'); setFlag('eli_scared', true); xp(8); return 'A boy of ten, all elbows, clutching your can. He sees your face and vanishes into the wall.'; },
@@ -86,7 +86,7 @@
     {
       id: 'ines_2', title: 'Ines\'s List', where: ['travel', 'any'], weight: 30, once: true,
       cond: () => flag('ines_1') && !flag('ines_2') && later('ines_1_day', 1) && has('chem', 3) && has('parts', 2),
-      text: 'Your pack clinks with everything Dr. Okafor asked for. The hospital is a short detour. A cure is a big bet.',
+      text: 'Dr. Okafor eyes your pack from the hospital door. It clinks with everything she asked for. A cure is a big bet.',
       choices: [
         { label: 'Deliver everything', success: () => { take('chem', 3); take('parts', 2); mark('ines_2'); passTime(2); xp(15); return 'She counts twice, then hugs you. "Four months since I touched another person."'; } },
         { label: 'Haggle, keep some back', check: { attr: 'cha', diff: 5 },
@@ -125,7 +125,7 @@
       id: 'marcus_1', title: 'A Tollman in the Culvert', where: ['travel'], weight: 30, minDay: 5, once: true,
       cond: () => !flag('marcus_1'),
       who: 'Marcus Hale',
-      text: '"Not here to hurt you. Marcus Hale. Tollmen lieutenant. Was." He\'s bleeding into a culvert, pistol on his knee.',
+      text: '"Not here to hurt you. Marcus Hale. Tollmen lieutenant. Was." He\'s bleeding in the culvert under the bridge, pistol on his knee.',
       choices: [
         { label: 'Hear him out', check: { attr: 'cha', diff: 4 },
           success: () => { mark('marcus_1'); xp(12); return '"I saw something last week I can\'t unsee. I want out." That\'s all, for now.'; },
@@ -204,7 +204,7 @@
     {
       id: 'choir_3', title: 'What the Choir Keeps', where: ['street', 'any'], weight: 34, night: true, once: true,
       cond: () => flag('choir_2') && (flag('choir_inside') || flag('choir_spy')) && !flag('choir_3') && later('choir_2_day', 1),
-      text: 'Under the church, captives in chains sing to keep the dead calm. A woman looks up and mouths: "Please."',
+      text: 'In the cellar of the shop they call a church, captives in chains sing to keep the dead calm. A woman looks up and mouths: "Please."',
       choices: [
         { label: 'Break them out', success: () => { mark('choir_3'); return FG(['raider', 'raider'], { onWin: () => {
             recruit({ name: 'Nadia', trait: 'grateful', skills: { scav: 2, farm: 1 } });
