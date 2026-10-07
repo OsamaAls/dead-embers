@@ -124,7 +124,7 @@ Boss `ENEMIES` entries borrow a kind's `shape` with a bigger `scale`, a `look` (
   - `gateCheck()` runs hourly and from `storyCheck`. `openDistrict(id)` sets `open_<id>` and calls `Hooks.gateOpened(id)` if set.
   - `districtOpen(biome)` tells you whether a biome is reachable. Nothing spawns in a closed district: `findSpot` (ambient, reinforcements), `Moments.spotNear` (encounter enemies) and `waveSpawnPoint` all skip it; `biomes.js` checks it.
 - **Weather.** `G.weather` is clear, rain, fog or snow, persisting 4–10 h and weighted by season. `G.storm` marks the last-night snowstorm, and `G.snowCover` runs 0..1.
-- **Modifiers** (combat reads them): `hearMul` (rain ×0.6), `sightMul` (fog ×0.6), `zSpeedMul` (snow ×0.85), `moveMul`, `coldK` (outdoor snow without a `coat` or `nearFire`: stamina drains and regenerates slowly), `inBush` and `zMix` (zombie mix per biome).
+- **Modifiers** (combat reads them): `hearMul` (rain ×0.6), `sightMul` (fog ×0.6), `zSpeedMul` (snow ×0.85), `moveMul`, `coldK` (outdoor snow without a `coat` or `nearFire`: 1, the storm 1.5; stamina regenerates 45% slower and only up to `coldCap(k)` = maxSta x (1 - 0.4k), 60% / 40%), `inBush` and `zMix` (zombie mix per biome).
 - **Season** (`seasonNow()`, `G.season`) follows the act: autumn → late (radio built) → winter (bus quest).
 
 ### Endings
@@ -282,7 +282,7 @@ It wires Hooks, runs the game loop, advances time (1 real second = 1 game minute
    fights, build, screamer and rescue moments, a decision, sleep to day 2, a horde night, the Haven ending). Prints `STEP name: ok|FAIL` and exits 1 on any FAIL.
    Other scenarios: `worlds.js` (saved worlds, keys only, with a reload), `companions.js` (dog incl. fetch, helper, talk, siphon, water, cook, door, props), `endings.js`, `keyboard.js`,
    `biomes.js` (every biome/weather/season shot; also no spawns across closed gates and the busiest view under 180 draw calls), `cinematic.js`,
-   `balance.js` (not pass/fail: prints `BAL` lines for travel, zombie density per biome by day and night, winter cold with and without a coat, the bus quest and the final stand; `BAL_N=10`), `tools/scenarios/world.js` (city/lighting shots), `combat.js` (actor lineup, fights), `ui.js` (every panel, minigame and moment).
+   `balance.js` (not pass/fail: prints `BAL` lines for travel, zombie density per biome by day and night, winter cold with and without a coat, the bus quest and the final stand on day 20; `BAL_N=10`, `BAL_DAY`). `companions.js` pins its world seed, `tools/scenarios/world.js` (city/lighting shots), `combat.js` (actor lineup, fights), `ui.js` (every panel, minigame and moment).
 - `tools/harness.js` is the in-page harness those scenarios use (never bundled). In any running page: `fetch('tools/harness.js').then(r=>r.text()).then(eval)`, then
   `sim(sec, ctl)` steps the game deterministically at 20 fps without drawing, `goto(x,y)` walks there by BFS, `fightBot(ids, gun)`, `searchNearest()`, `holdE(sec)`, `state()`.
   Use it in the Browser pane too: a hidden pane pauses requestAnimationFrame, so drive the loop with `sim()` instead of waiting.
