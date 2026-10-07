@@ -34,7 +34,11 @@ A 3D zombie survival RPG that runs in the browser. You walk a ruined city, fight
   - With the keyboard only, lock-on picks the target. F cycles targets, Shift+F clears the lock.
   - The game switches between the two on its own, and every screen works with the keyboard alone.
 - Hit an unaware zombie for triple damage.
-- Pack: I. Journal: Tab. Character: B. Map: M. Swap weapon: Q. Companion stay / follow: H. Dog, fetch: R. Menu: Esc.
+- **Weapons** (there are eight: knife, lead pipe, nail bat, machete, fire axe, crossbow, pistol, shotgun).
+  - Click or tap the weapon name to see every weapon you carry, then pick one.
+  - Keys 1–4 pick directly. Q cycles.
+  - The Ex-Soldier starts with a pistol and a knife.
+- Pack: I. Journal: Tab. Character: B. Map: M. Companion stay / follow: H. Dog, fetch: R. Menu: Esc.
 - Saves: several worlds side by side. Continue, Worlds (load or delete; fallen and finished worlds stay as memorials) and New world on the title; Save now and Save as new world in the menu (Esc).
 - Zoom: wheel.
 - **On phones: played sideways.**
@@ -76,7 +80,7 @@ Everything about this game is driven from this repo's issues.
 | `build.js` | Bundles everything into `index.html`, `Dead Embers.html` and `artifact/dead-embers.html` |
 | `test.js` | Headless checks: every encounter and callback, item/enemy ids, world reachability, 14 simulated days, save/load |
 | `tools/browser-check.js` | Headless Edge/Chrome smoke test: loads the built page, plays a scenario, reports page errors, saves screenshots |
-| `tools/scenarios/` | Browser-check scenarios: `playthrough.js` (end-to-end route), `endings.js` (every ending), `keyboard.js` (no mouse), `worlds.js`, `companions.js`, `biomes.js`, `cinematic.js`, `layout.js` (phone HUD, `--mobile`), `events.js` (placed events), `balance.js` (measurements, not a pass/fail check), `world.js`, `combat.js`, `ui.js` |
+| `tools/scenarios/` | Browser-check scenarios: `playthrough.js` (end-to-end route), `endings.js` (every ending), `keyboard.js` (no mouse), `worlds.js`, `companions.js`, `biomes.js`, `cinematic.js`, `layout.js` (phone HUD, `--mobile`), `events.js` (placed events), `firstdays.js` (everything a new player sees in days 1–2, `--mobile`), `balance.js` (measurements, not a pass/fail check), `world.js`, `combat.js`, `ui.js` |
 | `tools/harness.js` | In-page test harness (deterministic frames, pathing, bots); never bundled |
 
 ## Build and check
@@ -95,9 +99,10 @@ node tools/browser-check.js --scenario tools/scenarios/biomes.js       # each bi
 node tools/browser-check.js --scenario tools/scenarios/cinematic.js    # intro once, cutscenes, animations, ambience
 node tools/browser-check.js --mobile --scenario tools/scenarios/layout.js   # phone HUD at four landscape sizes: no overlaps, 40 px buttons
 node tools/browser-check.js --scenario tools/scenarios/events.js       # events placed in the world, met by walking up (also --mobile)
+node tools/browser-check.js --mobile --scenario tools/scenarios/firstdays.js   # the first days as a script: every objective has a how, no keyboard words on touch, no popups from nowhere
 node tools/browser-check.js --scenario tools/scenarios/balance.js      # BAL lines: travel, zombie density, cold, the bus quest, the final stand (BAL_N=10 for more stand runs)
 ```
 
-Each headless check takes several minutes (much longer on a slow laptop) because the browser renders in software. Run them one at a time.
+Each headless check takes several minutes (much longer on a slow laptop) because the browser renders in software. Run them one at a time. A check that stops making progress fails after 30 minutes (`CHECK_TIMEOUT_MIN`).
 
 `test.js` checks the rules and every piece of content headless. `browser-check.js` loads the built page in headless Edge or Chrome, reports page errors and saves screenshots. The playthrough scenario plays the whole core route (search, fights, building, moments, a decision, sleep, a horde night, an ending) and fails on any broken step. `tools/harness.js` is the in-page test harness it uses; see `src/API.md` §4.

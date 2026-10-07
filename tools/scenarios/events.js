@@ -66,6 +66,22 @@ module.exports = async B => {
     G.encTimer = 1e9; return {dlg, placed: placed && placed.id, kind: placed && placed.spec.at, q: Game.Q.map(x => x.type)}`, '!r.dlg && (r.placed || r.q.includes("enc"))');
   await ev(`tidy(); 1`);
 
+  /* a trader stands on the road with a cart; the trade screen opens only on E */
+  await step('a merchant is someone you walk up to', `G.day = 3; G.hour = 10; G.isNight = false; const placed = Places.offer(encById('wandering_trader'), { src: 'field' }); sim(0.5);
+    const e = Places.live.find(x => x.id === 'wandering_trader'); const before = { panel: UI.state.panel, mom: Moments.active };
+    const r = meetEvent ? null : null; let label = null, opened = false;
+    if (e) { const a = e.actors[0]; goto(a.x, a.y + 0.9, 0.4, 30); sim(0.3); const t = interactTarget(); label = t && t.label; kd('KeyE'); ku('KeyE'); sim(0.3); opened = !!UI.state.panel || Moments.active; }
+    return {placed, actors: e && e.actors.length, props: e && e.props.length, before, label, opened}`, "r.placed && r.actors>=1 && r.props>=1 && !r.before.panel && !r.before.mom && /^Trade with/.test(r.label) && r.opened");
+  await ev(`tidy(); 1`);
+  /* the Tollmen's demand waits until you are home, then stands at the gate */
+  await step('the Tollmen come to the gate, not to the street', `G.day = 5; G.flags.tollmen = false; delete G.seenScenes.tollmen_demand; const q = nearestPoi('street', G.p.x, G.p.y); goto(q.x + 0.5, q.y + 2, 1, 60);
+    storyCheck(); sim(1); const away = { dlg: !!UI.state.dlg, waiting: Game.Q.some(x => x.id === 'tollmen_demand') };
+    home(); for (let i = 0; i < 30 && !Places.live.some(x => x.enc.scene === 'tollmen_demand'); i++) { unblock(4); sim(0.5); } /* earlier story at home plays first */
+    const e = Places.live.find(x => x.enc.scene === 'tollmen_demand'); let label = null, dlg = false;
+    if (e) { for (let i = 0; i < 20 && e.arrive; i++) sim(0.5); const a = e.actors[0]; goto(a.x, a.y - 0.9, 0.4, 30); sim(0.3); const t = interactTarget(); label = t && t.label; kd('KeyE'); ku('KeyE'); sim(0.5); dlg = !!UI.state.dlg || (typeof Cine !== 'undefined' && Cine.active); }
+    return {away, atGate: !!e && e.y > WORLD.shelterRect.y1, actors: e && e.actors.length, label, dlg}`, "!r.away.dlg && r.away.waiting && r.atGate && r.actors===3 && r.label==='Talk to the Tollman' && r.dlg");
+  await ev(`tidy(); 1`);
+
   /* people standing about stay inside the draw-call budget */
   await step('draw calls stay under 180 with three people out', `G.day = 5; G.hour = 10; G.isNight = false; const e = Places.spawn('ruin_wedding'); sim(0.3); goto(e.x, e.y + 3, 1.5, 30); sim(0.5); R.render(); const calls = R.renderer.info.render.calls;
     return {calls, actors: e.actors.length}`, 'r.calls < 180 && r.actors===3');

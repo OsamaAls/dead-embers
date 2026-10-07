@@ -144,7 +144,7 @@ module.exports = async B => {
   ok('menu + controls with keys', help && back && !(await panel()), { help, back });
   ok('no mouse aim after keyboard play', await ev('INPUT.mouseAim===false'));
   // weapons: 1-4 pick one directly, Q cycles
-  await ev(`(function(){ give('pipe',1); give('knife',1); return 1; })()`);
+  await ev(`(function(){ G.pack.pipe = 1; G.pack.knife = 1; return 1; })()`); // straight into the pack (give() stores things at the bunker)
   const wl = await ev(`(function(){ return Object.keys(G.pack).filter(k=>ITEMS[k]&&ITEMS[k].c==='weapon').length; })()`);
   await press('Digit2', 1, 200); const w2 = await ev('G.p.weapon');
   await press('Digit1', 1, 200); const w1 = await ev('G.p.weapon');

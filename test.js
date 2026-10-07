@@ -275,6 +275,9 @@ try {
   const rb = T.radioBroadcast(); if (!rb.lines.length || rb.lines.some(l => typeof l !== 'string')) fail('radio', 'broadcast');
 } catch (err) { fail('companions', err); }
 
+/* ---- no control characters in the sources (a stray backspace once broke the touch wording of two hints) ---- */
+for (const f of fs.readdirSync(path.join(__dirname, 'src'))) { const t = fs.readFileSync(path.join(__dirname, 'src', f), 'utf8'); const m = /[\x00-\x08\x0b\x0c\x0e-\x1f]/.exec(t); if (m) fail('source', `${f}: control character ${m[0].charCodeAt(0)} at ${m.index}`); }
+
 /* ---- placed events (places.js): every event has a sane spec and a place to stand in every world (all gates open) ---- */
 try {
   const KINDS = /^(road|car|wall|body|pump|water|fire|field|trail|planks|bridge|deco|poi|door|inside|tollgate|gate|fence|hatch|yard|follow|here)(:|$)/;

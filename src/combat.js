@@ -195,7 +195,7 @@ const Combat = (function () {
     const prof = weaponProfile();
     if (prof.id !== PS.lastProf) { PS.lastProf = prof.id; pl.setCarry(prof.id); }
     pl.aiming = !!prof.ranged;
-    if (prof.ranged) hintOnce('gun', 'Mouse aims. Gunfire draws them.');
+    if (prof.ranged && C.inFight()) hintOnce('gun', 'Mouse aims. Gunfire draws them.'); /* taught when there is something to shoot */
     PS.cd -= dt; PS.staDelay -= dt; PS.tiredT -= dt;
     if (INPUT.attackPressed) { PS.buf = 0.25; INPUT.attackPressed = false; if (C.grabbed) C.grabMash++; }
     else PS.buf -= dt;

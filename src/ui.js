@@ -519,7 +519,7 @@ const UI = (() => {
     const sel = G.p.weapon, selIt = sel && ITEMS[sel], dry = !!(selIt && selIt.ammo && !(G.pack[selIt.ammo] > 0));
     if (dry && !S.dry && w !== sel) toast(`Out of ${selIt.ammo === 'shells' ? 'shells' : selIt.ammo === 'bolts' ? 'bolts' : 'ammo'}: fighting with the ${name}.`, 'warn');
     S.dry = dry;
-    if (owned > 1) safe(() => hintOnce('weapons', INPUT.touch ? `You have ${owned} weapons. Tap the weapon name to pick one.` : 'You carry more than one weapon. Q or 1-4 switches; click the weapon to pick.'));
+    if (owned > 1 && typeof Combat !== 'undefined' && Combat.inFight()) safe(() => hintOnce('weapons', INPUT.touch ? `You have ${owned} weapons. Tap the weapon name to pick one.` : 'You carry more than one weapon. Q or 1-4 switches; click the weapon to pick.'));
     const key = name + ammo + owned + '|' + cond;
     if (S.wselOn) renderWsel();
     if (S.c.wpn === key) return; S.c.wpn = key;
@@ -831,14 +831,14 @@ const UI = (() => {
   function fade(d) { d.classList.add('out'); setTimeout(() => d.remove(), 420); }
   /* hints are written for keyboard; on touch name the on-screen buttons instead */
   const TOUCH_WORDS = [[/Click or J to attack\. Space to dodge\./, 'Tap ATTACK. DODGE rolls clear.'], [/Mouse aims\./, 'ATTACK aims at the nearest one.'],
-    [/C to crouch\./, 'CROUCH to sneak.'], [/Mash attack/, 'Mash ATTACK'], [/[Hh]old E/g, m => m[0] + 'old USE'], [/\(I\)/, '(PACK)'], [/\(B\)/, '(CHAR)'],
+    [/\bC to crouch\./, 'CROUCH to sneak.'], [/Mash attack/, 'Mash ATTACK'], [/\b[Hh]old E\b/g, m => m[0] + 'old USE'], [/\(I\)/, '(PACK)'], [/\(B\)/, '(CHAR)'],
     [/H: stay \/ follow\./, 'Tap their name to make them stay or follow.'], [/R: send them to fetch\./, 'Tap FETCH to send them.'], [/\bE again\b/, 'USE again'], [/\bpress E\b/gi, 'tap USE']];
   function touchWords(t) { for (const [re, to] of TOUCH_WORDS) t = t.replace(re, to); return t; }
   /* ---------- notices: teaching hints and "New: X" unlock cards, one at a time ----------
      A card shows only while nothing modal is open (its clock stops behind dialogues, panels and cutscenes). During a fight only
      fight lessons (and keyless lines from moments and companions) show; the rest wait for a calm moment. A queued lesson the
      player has already done is dropped. An unlock and the hint that comes with it make one card. */
-  const FIGHT_HINTS = { combat: 1, crouch: 1, sneak: 1, grab: 1, gun: 1, revive: 1, bottle: 1, horde_now: 1 };
+  const FIGHT_HINTS = { combat: 1, crouch: 1, sneak: 1, grab: 1, gun: 1, revive: 1, bottle: 1, horde_now: 1, weapons: 1 };
   const HINT_DONE = {
     search: () => G.stats.searches > 0, first_loot: () => !!G.atShelter, points: () => !(G.p.points > 0),
     build: () => Object.keys(G.buildings || {}).some(k => G.buildings[k] > 0), move: () => false,
@@ -847,12 +847,14 @@ const UI = (() => {
     if (!text || !D.hint) return; o = o || {};
     if (INPUT.touch) text = touchWords(text);
     if ((S.hintCur && S.hintCur.text === text) || S.hintQ.some(h => h.text === text)) return;
-    const u = S.unlockOpen; /* the hint that the same unlock() call fires right after it joins its card */
-    if (u && !u.text) { u.text = text; u.key = o.key || null; return; }
+    const u = S.unlockOpen; /* the hint that belongs to an unlock (same key: needs, build, fetch, ...) joins its card */
+    if (u && !u.text && o.key && o.key === u.ukey) { u.text = text; u.key = o.key; return; }
     S.hintQ.push({ text, key: o.key || null });
   }
-  function unlockCard(label) {
-    const c = { title: 'New: ' + label, text: '', unlock: true, key: null }; S.hintQ.push(c); SFX.play('good');
+  function unlockCard(label, ukey) {
+    const title = 'New: ' + label; S.cards = S.cards || {};
+    if (S.cards[title]) return; S.cards[title] = 1; /* journal and map share a label: one card */
+    const c = { title, text: '', unlock: true, key: null, ukey }; S.hintQ.push(c); SFX.play('good');
     S.unlockOpen = c; Promise.resolve().then(() => { if (S.unlockOpen === c) S.unlockOpen = null; });
   }
   const calmFor = h => !h.key || FIGHT_HINTS[h.key];
@@ -910,7 +912,7 @@ const UI = (() => {
   function onUnlock(key) {
     if (key === 'build' && typeof World3D !== 'undefined' && World3D.refreshShelter) safe(() => World3D.refreshShelter()); // the build outlines appear now, not after the next sleep
     const l = UNLOCK_LABEL[key]; if (!l) return;
-    unlockCard(l);
+    unlockCard(l, key);
     if (key === 'journal' && D.mm.hidden === false) { D.mm.classList.remove('reveal'); void D.mm.offsetWidth; D.mm.classList.add('reveal'); }
   }
   function timer(label, seconds) {

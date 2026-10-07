@@ -262,6 +262,13 @@ Boss `ENEMIES` entries borrow a kind's `shape` with a bigger `scale`, a `look` (
   - With `at:{x,y,h}` it floats over the thing and follows it; on a phone it keeps clear of the button arc.
   - On touch the prompt itself is a button.
 - **`UI.say(key, x, y, text|null)`**: a line someone in the world calls out.
+- **Weapon picker.**
+  - Tap or click `#wpn` to open `#wsel`, which lists every weapon carried; one tap picks.
+  - Digit1–4 pick directly. Q (`UI.swapWeapon`) cycles.
+  - The chip shows how many you carry.
+  - The `weapons` hint teaches it in the first fight with two weapons.
+  - A gun running dry toasts what you fight with now.
+- **Touch wording.** `touchWords` rewrites hints, toasts and objective how-lines (`hold E` → `hold USE`, `C to crouch` → `CROUCH`, …). test.js rejects control characters in `src/`.
 - `UI.dmgNum(x,y,text,cls)` for floating numbers at tile coords. `UI.flash(kind)`. `UI.vignette()` reacts to low HP, infection and grabs. `UI.levelUp()`.
 - `UI.dialogue({ who, lines:[...], choices:[{label, note, disabled, onPick}] })` is the short speaker box, 1–2 lines at a time and 2–4 replies. Stat replies show e.g. "CHA 62%".
 - `UI.encounter(enc, done(resultLine))` shows a choice encounter as a dialogue (with checks and req), then a result line, then `done`.
@@ -313,6 +320,12 @@ Boss `ENEMIES` entries borrow a kind's `shape` with a bigger `scale`, a `look` (
   - Newly built shelter structures rise out of the ground.
   - `World3D.natureNear(x, y, r)`, `refreshGates()` and `busMesh`.
 
+### Story that waits for home
+In `main.js`, `pump()` holds the `HOME_SCENES` (`first_night`, `radio_found`, `haven_coords`, `horde_warning`, `tollmen_demand`) until `G.atShelter`.
+- **`tollmen_demand`** (`GATE_SCENES`): three Tollmen stand at the yard gate (`Places.sceneAt`). E plays the scene.
+- **`first_frost` and `first_snow`** (`BANNER_SCENES`): a banner, not a dialogue.
+- **Nothing opens a trade screen by itself.** There is no `Hooks.openTrader`. Barter events always put a trader in the world (test.js checks this).
+
 ### `main.js`: boot + loop + glue
 It wires Hooks, runs the game loop, advances time (1 real second = 1 game minute outside, faster indoors at the shelter when sleeping), handles interaction (containers, drops, hatch, gate, build markers, bus), the encounter queue, horde nights, death and saving.
 Interaction targets are `{key, d, at:{x,y,h}, label, time (0 tap, >0 hold, -1 info), hl, act}`. `pickTarget` favours the one you face and keeps the current one unless another is clearly better.
@@ -347,11 +360,17 @@ Interaction targets are `{key, d, at:{x,y,h}, label, time (0 tap, >0 hold, -1 in
    `biomes.js` (every biome/weather/season shot; also no spawns across closed gates and the busiest view under 180 draw calls), `cinematic.js`,
    `layout.js` (run with `--mobile`): every HUD piece at four landscape phone sizes, with checks for overlaps, 40 px buttons, the prompt floating on its object and portrait pausing.
    `events.js` (placed events): the bitten woman in a doorway, the dead on the road, a safe in the searched building, the gate dog, the stray at the pump, a yard happening, a random roll being placed, and draw calls.
-   `--mobile` is a landscape phone, 844x390. Portrait shows the "turn your phone" card.
+   `firstdays.js` (`--mobile`) is an Ex-Soldier following the objective through day one and into day two. It logs every objective, prompt, hint, banner, dialogue, toast and placed event as `NOTE` lines, and fails when:
+   - an objective has no how-line;
+   - a touch text names a key;
+   - a dialogue opens on the street without an E press;
+   - a trade screen opens by itself.
+
+   `--mobile` is a landscape phone, 844x390. Portrait shows the "turn your phone" card. Any check fails after 30 minutes without finishing (`CHECK_TIMEOUT_MIN`).
    `balance.js` (not pass/fail: prints `BAL` lines for travel, zombie density per biome by day and night, winter cold with and without a coat, the bus quest and the final stand on day 20; `BAL_N=10`, `BAL_DAY`). `companions.js` pins its world seed, `tools/scenarios/world.js` (city/lighting shots), `combat.js` (actor lineup, fights), `ui.js` (every panel, minigame and moment).
 - `tools/harness.js` is the in-page harness those scenarios use (never bundled). In any running page: `fetch('tools/harness.js').then(r=>r.text()).then(eval)`, then
   `sim(sec, ctl)` steps the game deterministically at 20 fps without drawing, `goto(x,y)` walks there by BFS, `fightBot(ids, gun)`, `searchNearest()`, `holdE(sec)`, `state()`,
-  `meetEvent(id, ctx)` (place an event, walk up, press E), `placedNow()`.
+  `meetEvent(id, ctx)` (place an event, walk up, press E), `placedNow()`, `noteStart()` + `notesLog` (what a player sees, in order), `followObjective(maxS)` (a bot that does what the objective says).
   Use it in the Browser pane too: a hidden pane pauses requestAnimationFrame, so drive the loop with `sim()` instead of waiting.
 - Dev console: `__skipTo(2)` (radio built) and `__skipTo(3)` (last night) jump the story forward.
 - Scenario conventions: `G.encTimer = 1e9` turns random encounters off: field rolls, container searches, and people waiting at home. The lock/pry minigame is ticked from `UI.update`, so it runs under `sim()`.

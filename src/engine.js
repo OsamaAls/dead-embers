@@ -1297,12 +1297,12 @@ function objectiveInfo() {
     if (!need.length) return { text: 'Build the Shortwave Radio.', how: 'Walk to its outline in the yard and hold E.', target: slotCentre('radio') };
     const where = { radio_coil: ['apartments', 'electronics'], radio_antenna: ['radiotower'], radio_cell: ['police', 'electronics'] }[need[0]];
     const tgt = where.map(near).sort((a, b) => ((a.x - me.x) ** 2 + (a.y - me.y) ** 2) - ((b.x - me.x) ** 2 + (b.y - me.y) ** 2))[0];
-    return { text: `Find the ${itemName(need[0])}.`, how: `Search ${where.map(t => LOCS[t].n).join(' or ')}.`, target: tgt };
+    return { text: `Find the ${itemName(need[0])}.`, how: `Search ${where.map(t => LOCS[t].n).join(' or ')}.`.replace(/\.\.$/, '.'), target: tgt };
   }
   if (G.hour >= 19 || G.hour < 6) return { text: 'Night. Sleep in the bunker.', how: 'Hold E at the hatch, then Rest.', target: home };
   const nu = nearestUnvisited();
-  if (nu) return { text: `Scavenge ${nu.label}.`, target: nu };
-  return { text: 'Scavenge, build, find people.', target: null };
+  if (nu) return { text: `Scavenge ${nu.label}.`, how: 'Food, water and building materials. Hold E on shelves and crates.', target: nu };
+  return { text: 'Scavenge, build, find people.', how: 'Every building refills after a few days.', target: null };
 }
 function objective() { return objectiveInfo().text; }
 /* "Find water": FreshMart's shelves first (the target moves from its door to the nearest unsearched shelf once you are inside);

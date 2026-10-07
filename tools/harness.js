@@ -4,7 +4,7 @@ window.__T = 1e6;
 /* sim(sec, ctl): run sec seconds of game at 20 fps without drawing (ctl(i) may return 'stop'); the last frame is drawn. */
 /* frame() re-queues itself with requestAnimationFrame; stub it while stepping or every simulated frame leaves a real render queued behind. */
 window.sim = (sec, ctl) => { const n = Math.round(sec * 20), draw = R.render, raf = window.requestAnimationFrame; R.render = () => { }; window.requestAnimationFrame = () => 0; let i = 0;
-  try { for (; i < n; i++) { if (ctl && ctl(i) === 'stop') break; __T += 50; frame(__T); } } finally { R.render = draw; window.requestAnimationFrame = raf; }
+  try { for (; i < n; i++) { if (ctl && ctl(i) === 'stop') break; __T += 50; frame(__T); if (window.__noting && i % 2 === 0) noteTick(); } } finally { R.render = draw; window.requestAnimationFrame = raf; }
   try { R.render(); } catch (e) { } return i / 20; };
 window.kd = c => dispatchEvent(new KeyboardEvent('keydown', { code: c })); window.ku = c => dispatchEvent(new KeyboardEvent('keyup', { code: c }));
 window.skipDlg = () => { if (UI.blocking()) { kd('Space'); ku('Space'); } };
@@ -72,5 +72,46 @@ window.meetEvent = (id, ctx) => {
   }
   Object.assign(out, { dlg: !!UI.state.dlg, mg: !!UI.state.mg, mom: Moments.active, state: ev.state });
   return out;
+};
+/* what a new player sees, in order: noteStart() then play; notesLog holds "D1 07:12 KIND: text" lines for objectives (with their
+   how line), prompts, hints, banners, dialogues, toasts and panels. Polled every other simulated frame (and by noteTick()). */
+window.noteStart = () => { window.notesLog = []; window.__nl = {}; window.__noting = true; noteTick(); };
+window.noteTick = () => {
+  if (!G || !window.notesLog) return;
+  const pad = n => String(n).padStart(2, '0'), T = `D${G.day} ${pad(G.hour)}:${pad(Math.floor(G.minute))}`, txt = e => e ? e.innerText.replace(/\s+/g, ' ').trim() : '';
+  const chk = (k, v) => { if (v && __nl[k] !== v) notesLog.push(`${T} ${k}: ${v}`); __nl[k] = v; };
+  /* what the HUD shows (touch wording included), not the engine's text */
+  const ob = document.getElementById('obj'), oh = document.getElementById('objhow');
+  chk('OBJ', ob.hidden ? '' : txt(ob.querySelector('.tx')) + (oh && !oh.hidden && txt(oh) ? '  [how: ' + txt(oh) + ']' : '  [no how]'));
+  const pr = document.getElementById('prompt'); chk('PROMPT', pr.hidden ? '' : txt(pr));
+  const h = document.getElementById('hint'); chk('HINT', h.classList.contains('on') ? txt(h) : '');
+  const b = document.getElementById('banner'); chk('BANNER', b.classList.contains('on') ? txt(b) : '');
+  const d = document.getElementById('dlg'); chk('DIALOG', d.hidden ? '' : txt(d).slice(0, 110));
+  chk('PANEL', UI.state.panel || '');
+  for (const t of document.querySelectorAll('#toasts .toast:not([data-seen])')) { t.dataset.seen = 1; notesLog.push(`${T} TOAST: ${txt(t)}`); }
+  for (const e of Places.live) if (!e._noted) { e._noted = 1; notesLog.push(`${T} PLACED: ${e.id} (${e.spec.at}${e.home ? ', home' : ''}) ${e.spec.verb || ''}`); }
+};
+window.safe0 = (f, d) => { try { return f(); } catch (e) { return d; } };
+/* followObjective(maxS): a simple player that does what the objective says. Walks to the target; at a building it goes in and
+   searches what is there; at a yard outline it holds E; at night it goes home and sleeps. Returns a short log of what it did. */
+window.followObjective = (maxS) => {
+  const log = []; const t0 = __T;
+  for (let k = 0; k < 40 && (__T - t0) / 1000 < (maxS || 600); k++) {
+    unblock(10); const o = objectiveInfo(), tg = o.target; if (!tg) { log.push('no target: ' + o.text); break; }
+    if (/Sleep|Night/.test(o.text)) { goto(WORLD.hatch.x + 0.5, WORLD.hatch.y + 1.2, 0.5, 120); sim(0.3); kd('KeyE'); ku('KeyE'); sim(0.4); const sb = [...document.querySelectorAll('#pnl button, #pnl .btn')].find(b => /sleep/i.test(b.textContent)); if (sb) sb.click(); sim(0.5); unblock(30); log.push('slept'); continue; }
+    if (G.hour >= 19 || G.hour < 6) { G.hour = 21; }
+    const path0 = path(tg.x, tg.y + 0.6) ? [tg.x, tg.y + 0.6] : path(tg.x, tg.y) ? [tg.x, tg.y] : null;
+    if (!path0) { log.push('no path: ' + o.text); break; }
+    goto(path0[0], path0[1], 0.6, 120); unblock(10);
+    const t = interactTarget();
+    if (t && /^build|bus/.test(t.key) && t.time > 0) { holdE(t.time + 1.5); log.push('built: ' + t.label); continue; }
+    if (t && t.time === 0 && /hatch/.test(t.key)) { log.push('home'); sim(1); continue; }
+    /* a building: go in and search the nearest full containers in it */
+    const bi = buildingAt(tg.x, tg.y - 1.2); let n = 0;
+    for (let i = 0; i < 3; i++) { const c = WORLD.containers.filter(q => containerState(q) !== 'empty' && (bi < 0 || buildingAt(q.x + 0.5, q.y + 0.5) === bi)).sort((a, b) => Math.hypot(a.x - G.p.x, a.y - G.p.y) - Math.hypot(b.x - G.p.x, b.y - G.p.y))[0]; if (!c) break; const r = searchNearest(); if (r.ok) n++; if (objectiveInfo().text !== o.text) break; }
+    log.push(`searched ${n} for: ${o.text}`);
+    if (!n && objectiveInfo().text === o.text) { sim(2); }
+  }
+  return log;
 };
 1;

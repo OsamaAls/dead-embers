@@ -69,7 +69,7 @@ module.exports = async B => {
   await send0(B, box, 2500);
   ok('holding the prompt searches', (await B.eval('G.stats.searches')) > s0 || (await B.eval('window.__held')) > 0, await B.eval(`(function(){ const e=document.elementFromPoint(${box.x},${box.y}); return {hit:e&&(e.id||e.className||e.tagName), box:${JSON.stringify(box)}, t:(interactTarget()||{}).label}; })()`));
   /* the weapon picker: tap the weapon, every weapon you carry is listed, one tap picks */
-  await B.eval(`(function(){ UI.close(); give('knife',1); give('pistol',1); G.p.weapon='pistol'; return 1; })()`); await B.wait(400);
+  await B.eval(`(function(){ UI.close(); G.pack.knife = 1; G.pack.pistol = 1; G.p.weapon='pistol'; return 1; })()`); await B.wait(400);
   const chip = await B.eval(`(function(){ const r=document.getElementById('wpn').getBoundingClientRect(); return {x:r.left+r.width/2, y:r.top+r.height/2}; })()`);
   await B.tap(chip.x, chip.y); await B.wait(500);
   const ws = await B.eval(`(function(){ const w=document.getElementById('wsel'); const b=[...w.querySelectorAll('button')]; const k=b.find(x=>x.dataset.w==='knife'); const r=k&&k.getBoundingClientRect(); return {open:!w.hidden, n:b.length, knife:r?{x:r.left+r.width/2,y:r.top+r.height/2,h:r.height}:null, onScreen:r?r.bottom<=innerHeight&&r.top>=0:false}; })()`);

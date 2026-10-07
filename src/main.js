@@ -126,6 +126,7 @@ function interactTarget() {
       if (bl(k) >= B.max) continue;
       const s = slotCentre(k), dd = d2(s.x, s.y); if (dd > 1.7 * 1.7) continue;
       const chk = canBuild(k), cost = buildCost(k);
+      if (!chk.ok && dd > 0.9 * 0.9) continue; /* "why not" only when you stand right on the outline, so crossing the yard stays quiet */
       const costTxt = cost ? Object.keys(cost).map(r => `${cost[r]} ${itemName(r)}`).join(', ') : '';
       out.push({ key: 'build' + k, d: dd, at: { x: s.x, y: s.y, h: 1.4 }, label: chk.ok ? `Build ${bl(k) ? bName(k) + ' ' + (bl(k) + 1) : B.n} · ${costTxt}` : `${B.n}: ${chk.why} (${costTxt})`, time: chk.ok ? 2.5 : -1, hl: ['slot', k],
         act: () => { if (build(k)) { World3D.refreshShelter(); SFX.play('build'); } } }); // build() logs "Built X." (one toast)

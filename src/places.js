@@ -507,8 +507,8 @@ const Places = (() => {
     homeT -= dt;
     if (homeT <= 0) {
       homeT = 0.5;
-      /* at most two of them around you, and none before the first day's loop (water, home, a bed) is done */
-      const ready = G.day >= 2 || isUnlocked('build');
+      /* at most two of them around you, and none on day one */
+      const ready = G.day >= 2; /* day one is for water, home and a bed */
       const homeNear = P.live.filter(ev => ev.home && ev.state === 'lure' && Math.hypot(ev.x - p.x, ev.y - p.y) < 26).length >= 2;
       if (ready && !(G.encTimer >= 1e6) && !Moments.active && !homeNear) for (const h of homeEventsNear(p.x, p.y, 20)) {
         if (P.live.some(ev => ev.home === h.group || ev.id === h.enc.id)) continue;
