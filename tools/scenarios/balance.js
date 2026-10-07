@@ -40,8 +40,11 @@ module.exports = async B => {
 
   /* 3. winter cold: stamina after an idle hour outside in the snow (coat / no coat), and by a fire */
   await log('cold', `fresh(); G.flags.q_bus = true; G.hordeDay = G.day + 10; const p = poiByLabel('Bus Depot'), out = {};
+    /* open ground near the depot: outdoors, not in the yard, no fire within 4 tiles (the cold would not count there) */
+    let spot = null; for (let r = 2; r < 14 && !spot; r++) for (let a = 0; a < 24 && !spot; a++) { const x = Math.floor(p.x + Math.cos(a / 24 * 6.283) * r) + 0.5, y = Math.floor(p.y + Math.sin(a / 24 * 6.283) * r) + 0.5;
+      if (!solidAt(x, y) && !indoors(x, y) && !inShelter(x, y) && !nearFire(x, y, 4) && !!path(x, y)) spot = { x, y }; }
     for (const coat of [false, true]) {
-      clearFoes(); standOn(p); if (coat) G.pack.coat = 1; else delete G.pack.coat; G.p.sta = G.p.maxSta; const t0 = G.hour;
+      clearFoes(); if (spot) { G.p.x = spot.x; G.p.y = spot.y; G.atShelter = false; } else standOn(p); if (coat) G.pack.coat = 1; else delete G.pack.coat; G.p.sta = G.p.maxSta; const t0 = G.hour;
       sim(60, () => { G.weather = 'snow'; G.snowCover = 0.8; G.storm = false; G.encTimer = 1e9; G.p.hp = G.p.maxHp; clearFoes(); if (UI.blocking()) unblock(4); });
       out[coat ? 'coat' : 'noCoat'] = { sta: Math.round(G.p.sta), max: G.p.maxSta, coldK: coldK(G.p.x, G.p.y) };
     } return out;`);
@@ -67,7 +70,8 @@ module.exports = async B => {
           ? `G.buildings.walls = 3; G.buildings.tower = 1; while (G.survivors.length < 6) recruit(); G.survivors.forEach((s, i) => { s.job = i < 4 ? (i ? 'guard' : 'tower') : 'idle'; s.skills.combat = 3; }); G.pack.shotgun = 1; G.pack.shells = 60; G.p.weapon = 'shotgun';`
           : `G.buildings.walls = 1; while (G.survivors.length < 4) recruit(); G.survivors.forEach((s, i) => { s.job = i < 2 ? 'guard' : 'idle'; s.skills.combat = 2; }); G.pack.pistol = 1; G.pack.ammo = 30; G.pack.machete = 1; G.p.weapon = 'pistol';`}
         World3D.refreshShelter(); __skipTo(3); sim(0.3); const plan = finalWavePlan();
-        let got = null; sim(15, j => { const b = dlgButtons().find(b => /Hold the bunker/i.test(b.textContent)); if (!b && dlgButtons().length > 1 && j % 6 === 3) { const o = dlgButtons(); o[o.length - 1].click(); return; } // another dialogue first (a shelter event): get it out of the way if (b) { got = b.textContent; b.click(); return 'stop'; } if (UI.blocking() && j % 6 === 0) { kd('Space'); ku('Space'); } }); sim(0.5);
+        /* another dialogue can come first (a shelter event): its last option clears it */
+        let got = null; sim(15, j => { const b = dlgButtons().find(b => /Hold the bunker/i.test(b.textContent)); if (!b && dlgButtons().length > 1 && j % 6 === 3) { const o = dlgButtons(); o[o.length - 1].click(); return; } if (b) { got = b.textContent; b.click(); return 'stop'; } if (UI.blocking() && j % 6 === 0) { kd('Space'); ku('Space'); } }); sim(0.5);
         for (let k = 0; k < 10 && !Combat.wave && UI.blocking(); k++) unblock(4);
         const d = Combat.wave ? defendBot(320) : null; sim(2); for (let k = 0; k < 6 && UI.blocking() && !G.endScene; k++) { skipDlg(); sim(0.5); }
         return { picked: !!got, wave: !!d, D: plan.D, need: plan.need, count: plan.count, end: G.endScene || null, hp: Math.round(G.p.hp), secs: d && d.secs }; })()`);

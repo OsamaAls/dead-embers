@@ -1,4 +1,5 @@
 /* Companions and world interactions: node tools/browser-check.js --scenario tools/scenarios/companions.js [--mobile] [--shots dir]
+   The world is pinned (seed from Math.random = 0.424242) so props, wrecks, water and fires sit in the same places every run; fights stay random.
    Dog: adopted via the story flag path, follows on a run, sniffs out an unsearched container, growls at aware zombies, a bite stuns.
    Helper: a survivor follows and fights, carries +8 kg, is downed and revived with hold E. Talk to a survivor and assign a job.
    Siphon a wreck, fill a bottle at the river, read a wall, crows on a body, search it, pump clean water, rest in a bed,
@@ -24,7 +25,7 @@ module.exports = async B => {
     window.openNb = (t) => [[0, 1], [1, 0], [-1, 0], [0, -1]].map(([a, b]) => [t.x + a, t.y + b]).find(([x, y]) => !solidAt(x + 0.5, y + 0.5) && path(x + 0.5, y + 0.5));
     window.label = () => { const t = interactTarget(); return t ? t.label : null; }; 1`);
 
-  await step('new world', `Game.newGame('Tester','soldier'); sim(0.2); let n=0; while((UI.blocking()||Game.Q.length)&&n<14){ skipDlg(); sim(0.5); n++; } calm(); G.day=3; return {running:Game.running, blocking:UI.blocking()}`, 'r.running && !r.blocking');
+  await step('new world', `const r0=Math.random; let first=true; Math.random=()=>first?(first=false,0.424242):r0(); try { Game.newGame('Tester','soldier'); } finally { Math.random=r0; } sim(0.2); let n=0; while((UI.blocking()||Game.Q.length)&&n<14){ skipDlg(); sim(0.5); n++; } calm(); G.day=3; return {running:Game.running, blocking:UI.blocking(), seed:G.seed}`, 'r.running && !r.blocking');
 
   /* ---------- the dog ---------- */
   await step('adopt the dog (Biscuit, teodor_4 path)', `setFlag('dog_biscuit'); adoptDog('Biscuit'); sim(0.4); const c=Combat.companion; return {kind:c&&c.kind, name:c&&c.name, flag:!!G.flags.dog_adopted, chip:!document.getElementById('cmp').hidden}`, "r.kind==='dog' && r.name==='Biscuit' && r.flag && r.chip");
@@ -73,7 +74,8 @@ module.exports = async B => {
   /* ---------- world props: notes, bodies (with crows), pumps, beds ---------- */
   await ev(`window.openAt = (x, y) => typeof districtOpen !== 'function' || districtOpen(biomeAt(x + 0.5, y + 0.5));
     window.nearestProp = (list, ok) => list.filter(o => openAt(o.x, o.y) && (!ok || ok(o))).sort((a, b) => Math.hypot(a.x - G.p.x, a.y - G.p.y) - Math.hypot(b.x - G.p.x, b.y - G.p.y))[0]; 1`);
-  await step('read writing on a wall', `calm(); const alone=o=>!(WORLD.fires||[]).some(f=>Math.hypot(f.x-o.x-0.5,f.y-o.y-0.5)<2.5) && !containerNear(o.x+0.5,o.y+0.5,2); const n=nearestProp(WORLD.notes, o=>alone(o)&&!!path(o.x+0.5,o.y+0.5)) || nearestProp(WORLD.notes, o=>!!path(o.x+0.5,o.y+0.5)); goto(n.x+0.5,n.y+0.5,0.3,150); // a note with nothing else to use beside it (E picks the nearest thing) calm(); const lb=label(); const j0=G.journal.length; kd('KeyE'); ku('KeyE'); sim(0.3);
+  /* a note with nothing else to use beside it (E picks the nearest thing) */
+  await step('read writing on a wall', `calm(); const alone=o=>!(WORLD.fires||[]).some(f=>Math.hypot(f.x-o.x-0.5,f.y-o.y-0.5)<2.5) && !containerNear(o.x+0.5,o.y+0.5,2); const n=nearestProp(WORLD.notes, o=>alone(o)&&!!path(o.x+0.5,o.y+0.5)) || nearestProp(WORLD.notes, o=>!!path(o.x+0.5,o.y+0.5)); goto(n.x+0.5,n.y+0.5,0.3,150); calm(); const lb=label(); const j0=G.journal.length; kd('KeyE'); ku('KeyE'); sim(0.3);
     return {label:lb, place:n.place||null, read:!!(G.notesRead&&G.notesRead[n.x+','+n.y]), journal:G.journal.length-j0, title:G.journal[0].title}`, "/Read the writing/.test(r.label) && r.read && r.journal===1 && r.title==='Written on a wall'");
   await B.shot('c08a-note');
   await step('crows settle on a body by day, lift off as you come close', `calm(); const b=nearestProp(WORLD.bodies, o=>!o.in && !(G.bodies&&G.bodies[o.x+','+o.y]) && !!path(o.x+0.5,o.y+0.5)); window.__body=b;
