@@ -204,7 +204,7 @@ body.lowhp #edge{opacity:1;animation:edgep 1.25s ease-in-out infinite}
 /* ---------- touch controls ---------- */
 #touch{position:absolute;inset:0;pointer-events:none;display:none}
 body.touch #touch{display:block}
-body.blocked #touch,body.blocked #hud .hbtns{visibility:hidden}
+body.blocked #touch,body.blocked #hud .hbtns,body.blocked #hint{visibility:hidden}
 #joy{position:absolute;width:120px;height:120px;margin:-60px 0 0 -60px;border:1px solid rgba(235,225,206,.18);border-radius:50%;background:radial-gradient(circle,rgba(0,0,0,.05),rgba(0,0,0,.3));opacity:.55;transition:opacity .2s}
 #joy.on{opacity:1}
 #joy i{position:absolute;left:50%;top:50%;width:48px;height:48px;margin:-24px 0 0 -24px;border-radius:50%;background:rgba(235,225,206,.18);border:1px solid rgba(235,225,206,.4)}
@@ -561,8 +561,71 @@ body.touch .hb .lb,body.touch .hb .hk{display:none}
 @media (max-height:520px) and (orientation:landscape){
   #title .tag{margin:10px 0 14px}
   #dlg .ln{min-height:0}
-  #t-pack{display:none}
 }
+/* ---------- touch: buttons appear only when they do something ---------- */
+#t-pack{display:none!important}
+#t-use:not(.ready),#t-tgt:not(.ready){display:none}
+body.touch .cmp{pointer-events:auto;cursor:pointer}
+body.touch .cmp .md::after{content:attr(data-act);margin-left:6px;padding:2px 5px;border:1px solid rgba(255,176,103,.5);color:var(--ember2)}
+#t-comp{display:none!important}
+/* ---------- phones are played sideways ---------- */
+#rotate{position:absolute;inset:0;z-index:90;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;background:var(--soot);text-align:center}
+body.touch.portrait #rotate{display:flex}
+#rotate svg{width:68px;height:68px;fill:none;stroke:var(--ember2);stroke-width:1.5;stroke-linejoin:round;animation:turn 2.6s ease-in-out infinite}
+@keyframes turn{0%,25%{transform:rotate(0)}55%,100%{transform:rotate(-90deg)}}
+#rotate b{font:800 28px/1 var(--display);letter-spacing:.1em;text-transform:uppercase}
+#rotate span{color:var(--dim);font-size:15px;max-width:26ch}
+/* phone in landscape: status top-left, objective and notices top-centre, map and menu top-right with the weapon under them,
+   the joystick owns the left half, and the action buttons sit in an arc around ATTACK under the right thumb */
+body.phone{--gut:10px}
+body.phone .hud-tl{top:calc(var(--sat) + 8px);left:calc(var(--sal) + 10px);width:150px;gap:3px}
+body.phone .bar{grid-template-columns:12px 1fr 24px;gap:5px;font-size:11px}
+body.phone .bar .ic{width:12px;height:12px}
+body.phone .bar .tr{height:6px}
+body.phone .clock,body.phone .wx,body.phone .chip{font-size:11px}
+body.phone .chip{padding:2px 4px;letter-spacing:.03em}
+body.phone .chips .chip:nth-child(n+3){display:none}
+body.phone .cmp{min-height:40px;padding:6px 7px;font-size:11px}
+body.phone .cmp .md{font-size:10px}
+body.phone .hud-tc{top:calc(var(--sat) + 8px);left:50%;right:auto;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 2 * (var(--sal) + 214px))}
+body.phone #obj{font-size:13px;padding:4px 10px 4px 6px;white-space:nowrap;align-self:center}
+body.phone #obj .tx{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.phone #banner{position:absolute;top:calc(var(--objh,30px) + 6px);left:50%;transform:translate(-50%,-6px);width:max-content;max-width:100%;margin:0;background:rgba(12,10,8,.94)}
+body.phone #banner.on{transform:translate(-50%,0)}
+body.phone #banner .t{font-size:17px}
+body.phone #banner .l{font-size:13px}
+body.phone .hud-tr{top:calc(var(--sat) + 8px);right:calc(var(--sar) + 10px)}
+body.phone #mm{width:80px;height:80px}
+body.phone .hb{width:44px;height:44px}
+body.phone .hud-br{top:calc(var(--sat) + 14px + var(--trh,44px));bottom:auto;right:calc(var(--sar) + 10px)}
+body.phone #wpn{min-height:40px;padding:5px 10px;gap:8px}
+body.phone #wpn .n{font-size:15px}
+/* notices (the teaching hint, then at most two toasts) stack in one column under the objective; the banner covers them briefly */
+#notes{display:contents}
+body.phone #notes{display:flex;flex-direction:column;align-items:center;gap:4px;position:absolute;top:calc(var(--sat) + 14px + var(--objh,30px));left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 2 * (var(--sal) + 214px));pointer-events:none;transition:opacity .3s}
+body.phone #toasts,body.phone #toasts.nomap{position:static;align-items:center;max-width:100%}
+body.phone #toasts .toast{font-size:12px;padding:4px 9px}
+body.phone #toasts .toast:nth-last-child(n+3){display:none}
+body.phone #hud.bannering #notes{opacity:0}
+body.phone #hint{position:static;transform:none;max-width:100%;font-size:13px;padding:6px 12px}
+body.phone #hint:not(.on){display:none}
+body.phone #hint.on{animation:tin .25s ease-out}
+body.phone .cmp .md{font-size:0}
+body.phone .cmp .md::after{font-size:10px}
+body.phone #barri{bottom:calc(var(--sab) + 70px);width:min(260px,calc(100vw - 2 * (var(--sal) + 240px)))}
+body.phone #prompt{bottom:calc(var(--sab) + 70px);max-width:calc(100vw - 2 * (var(--sal) + 230px))}
+body.phone #t-atk{width:80px;height:80px;right:calc(var(--sar) + 20px);bottom:calc(var(--sab) + 20px)}
+body.phone #t-dodge{width:56px;height:56px;right:calc(var(--sar) + 132px);bottom:calc(var(--sab) + 32px)}
+body.phone #t-use{width:64px;height:64px;right:calc(var(--sar) + 102px);bottom:calc(var(--sab) + 102px)}
+body.phone #t-crouch{width:48px;height:48px;right:calc(var(--sar) + 30px);bottom:calc(var(--sab) + 118px)}
+body.phone #t-tgt{width:50px;height:50px;right:calc(var(--sar) + 200px);bottom:calc(var(--sab) + 35px)}
+body.phone #t-throw{width:50px;height:50px;right:calc(var(--sar) + 178px);bottom:calc(var(--sab) + 117px)}
+body.phone #t-fetch{left:calc(var(--sal) + 10px);top:calc(var(--sat) + 12px + var(--tlh,130px));bottom:auto;width:auto;height:40px;padding:0 14px;border-radius:0}
+body.phone #dlg{bottom:calc(var(--sab) + 8px);padding:10px 14px}
+body.phone #dlg .ln{font-size:15px}
+body.phone #dlg .ch{max-height:calc(100vh - 150px)}
+body.phone #dlg .ch button{min-height:40px;padding:6px 12px}
+@media (max-height:350px){body.phone #mm{width:64px;height:64px}}
 </style>
 <div id="app">
 <div id="view"></div>
@@ -600,11 +663,10 @@ body.touch .hb .lb,body.touch .hb .hk{display:none}
       <button class="hb" data-open="menu" aria-label="Menu (Esc)"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span class="lb">Menu</span><b class="hk">Esc</b></button>
     </div>
   </div>
-  <div id="toasts"></div>
+  <div id="notes"><div id="hint"></div><div id="toasts"></div></div>
   <div class="hud-br"><div id="wpn"><span class="n"></span><span class="c" hidden><i></i></span><span class="a"></span><span class="k k-hide"></span></div></div>
   <div id="barri" hidden><div class="lb">Barricade <span class="pc"></span></div><div class="tr"><div class="gh"></div><div class="fl"></div></div></div>
   <div id="prompt" hidden><span class="key"><svg class="ring" width="40" height="40"><rect class="tk" x="2" y="2" width="36" height="36" rx="5" pathLength="100"/><rect class="pg" x="2" y="2" width="36" height="36" rx="5" pathLength="100"/></svg><span class="kt">E</span></span><span class="tx"></span></div>
-  <div id="hint"></div>
 </div>
 <div id="lvl" hidden></div>
 <div id="touch">
@@ -624,5 +686,6 @@ body.touch .hb .lb,body.touch .hb .hk{display:none}
 <div id="mg" hidden></div>
 <div id="end" hidden></div>
 <div id="title" hidden></div>
+<div id="rotate" aria-live="polite"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="1.5"/><path d="M10.5 18.5h3"/></svg><b>Turn your phone</b><span>Dead Embers plays sideways.</span></div>
 </div>
 <!--SCRIPTS-->

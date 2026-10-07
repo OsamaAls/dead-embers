@@ -145,7 +145,7 @@ const UI = (() => {
   const iname = id => typeof itemName === 'function' ? itemName(id) : id;
 
   /* ---------- blocking / input ---------- */
-  function blocking() { return !!(S.dlg || S.panel || S.mg || S.title || S.end || (typeof Cine !== 'undefined' && Cine.active)); }
+  function blocking() { return !!(S.dlg || S.panel || S.mg || S.title || S.end || S.portrait || (typeof Cine !== 'undefined' && Cine.active)); }
   function clearInput() {
     for (const k in K) delete K[k];
     INPUT.mx = INPUT.my = 0; INPUT.sprint = INPUT.attack = INPUT.interact = false;
@@ -167,6 +167,25 @@ const UI = (() => {
   function setTouch(v) {
     if (INPUT.touch === v) return; INPUT.touch = v; document.body.classList.toggle('touch', v); S.prKey = '';
     if (v) { INPUT.mouseAim = false; INPUT.aimX = INPUT.aimY = null; setKbd(false); }
+    phoneLayout();
+  }
+  /* phones play sideways: body.phone is the compact landscape layout, body.portrait shows the "turn your phone" card (and pauses).
+     --tlh / --trh carry the status block's and the map column's heights so the pieces under them never overlap. */
+  function phoneLayout() {
+    const b = document.body, port = INPUT.touch && innerHeight > innerWidth, phone = INPUT.touch && !port && innerHeight <= 520;
+    if (S.portrait !== port) { S.portrait = port; b.classList.toggle('portrait', port); syncBlock(); }
+    if (S.phone !== phone) { S.phone = phone; b.classList.toggle('phone', phone); S.c.objh = null; topLayout(); restJoy(); }
+    if (!phone || !D.hud) return;
+    const tl = document.querySelector('.hud-tl'), tr = document.querySelector('.hud-tr');
+    const th = (tl ? tl.offsetHeight : 130) + 'px', rh = (tr ? tr.offsetHeight : 44) + 'px';
+    if (S.c.tlh !== th) { S.c.tlh = th; D.hud.style.setProperty('--tlh', th); el('touch').style.setProperty('--tlh', th); }
+    if (S.c.trh !== rh) { S.c.trh = rh; D.hud.style.setProperty('--trh', rh); }
+  }
+  /* on a phone the first tap on a title button asks for fullscreen and a landscape lock (Android; iOS ignores both) */
+  function goFullscreen() {
+    if (S.fsTried || !INPUT.touch) return; S.fsTried = true;
+    const de = document.documentElement, rf = de.requestFullscreen || de.webkitRequestFullscreen;
+    try { const p = rf && rf.call(de, { navigationUI: 'hide' }); if (p && p.then) p.then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => { })).catch(() => { }); } catch (e) { }
   }
   const running = () => typeof Game !== 'undefined' && Game.running && G && !Game.dead;
   /* aim mode: the mouse aims while it is in use; keyboard-only play (mouse idle 2.5 s, then a move/attack key) drops the stale cursor */
@@ -242,16 +261,19 @@ const UI = (() => {
     // HUD clicks
     D.mm.addEventListener('click', () => U.open('map'));
     D.wpn.addEventListener('click', () => U.swapWeapon());
+    D.cmp.addEventListener('click', () => { if (!blocking()) INPUT.companionCmd = true; });
     D.chips.addEventListener('click', e => { if (e.target.closest('.chip.ember')) U.open('char'); });
     document.querySelectorAll('.hb[data-open]').forEach(b => b.addEventListener('click', () => U.open(b.dataset.open)));
     D.pnl.addEventListener('click', panelClick);
     D.pnl.addEventListener('change', panelChange);
     restJoy();
-    addEventListener('resize', () => { restJoy(); S.c.objh = null; topLayout(); });
+    addEventListener('resize', () => { phoneLayout(); restJoy(); S.c.objh = null; topLayout(); });
+    addEventListener('pointerup', e => { if (e.pointerType === 'touch' && e.target.closest && e.target.closest('#title button')) goFullscreen(); }, true);
+    phoneLayout();
   }
 
   /* ---------- touch: floating joystick on the left half, buttons on the right, pinch zoom ---------- */
-  function restJoy() { if (S.joy) return; const j = D.joy; if (!j) return; j.style.left = '96px'; j.style.top = (innerHeight - 120) + 'px'; j.classList.remove('on', 'sprint'); j.firstChild.style.transform = ''; }
+  function restJoy() { if (S.joy) return; const j = D.joy; if (!j) return; j.style.left = (S.phone ? 90 : 96) + 'px'; j.style.top = (innerHeight - (S.phone ? 98 : 120)) + 'px'; j.classList.remove('on', 'sprint'); j.firstChild.style.transform = ''; }
   function viewDown(e) {
     if (e.pointerType === 'mouse') {
       if (e.button === 0 && running() && !blocking()) { mouseActive(e.clientX, e.clientY); INPUT.attackPressed = true; S.atk.mouse = true; syncMove(); }
@@ -368,6 +390,9 @@ const UI = (() => {
     if (S.c.nomap !== D.mm.hidden) { S.c.nomap = D.mm.hidden; D.toasts.classList.toggle('nomap', D.mm.hidden); }
     // touch use-button readiness
     const useB = el('t-use'); if (useB) { const r = !!(S.mpr || S.pr.t) && /E\s/.test((S.mpr || S.pr).t || ''); if (S.c.useR !== r) { S.c.useR = r; useB.classList.toggle('ready', r); } }
+    // touch: TARGET only when there is more than one of them close enough to switch between
+    const tg = el('t-tgt'); if (tg && INPUT.touch) { let n = 0; if (typeof Combat !== 'undefined') for (const e of Combat.enemies) if (!e.dead && !e.gone && Math.hypot(e.x - p.x, e.y - p.y) < 10) n++; const r = n > 1; if (S.c.tgtR !== r) { S.c.tgtR = r; tg.classList.toggle('ready', r); } }
+    if (S.phone) { S.layT = (S.layT || 0) - dt; if (S.layT <= 0) { S.layT = 0.25; phoneLayout(); } }
     // touch: THROW only when there is something to throw
     const thr = el('t-throw'); if (thr) { const v = !!(G.pack && G.pack.bottle > 0); if (S.c.thr !== v) { S.c.thr = v; thr.hidden = !v; el('touch').classList.toggle('throw', v); } } // THROW takes the PACK slot (pack stays in the top bar)
     // low HP: pulsing red edge under 30%
@@ -709,7 +734,7 @@ const UI = (() => {
   const toastLife = (text, cls) => cls === 'story' ? 5200 + Math.min(2600, text.length * 30) : 2300 + Math.min(1700, text.length * 18);
   function toast(text, cls) {
     if (!text || !D.toasts) return;
-    text = String(text);
+    text = String(text); if (INPUT.touch) text = touchWords(text);
     const live = [...D.toasts.children].filter(t => !t.classList.contains('out'));
     const same = live.find(t => t.dataset.t === text);
     if (same) {
@@ -727,7 +752,8 @@ const UI = (() => {
   function fade(d) { d.classList.add('out'); setTimeout(() => d.remove(), 420); }
   /* hints are written for keyboard; on touch name the on-screen buttons instead */
   const TOUCH_WORDS = [[/Click or J to attack\. Space to dodge\./, 'Tap ATTACK. DODGE rolls clear.'], [/Mouse aims\./, 'ATTACK aims at the nearest one.'],
-    [/C to crouch\./, 'CROUCH to sneak.'], [/Mash attack/, 'Mash ATTACK'], [/[Hh]old E/g, m => m[0] + 'old USE'], [/\(I\)/, '(PACK)'], [/\(B\)/, '(CHAR)']];
+    [/C to crouch\./, 'CROUCH to sneak.'], [/Mash attack/, 'Mash ATTACK'], [/[Hh]old E/g, m => m[0] + 'old USE'], [/\(I\)/, '(PACK)'], [/\(B\)/, '(CHAR)'],
+    [/H: stay \/ follow\./, 'Tap their name to make them stay or follow.'], [/R: send them to fetch\./, 'Tap FETCH to send them.'], [/\bE again\b/, 'USE again'], [/\bpress E\b/gi, 'tap USE']];
   function touchWords(t) { for (const [re, to] of TOUCH_WORDS) t = t.replace(re, to); return t; }
   function hint(text) {
     if (!text || !D.hint) return;
@@ -744,8 +770,8 @@ const UI = (() => {
     if (!D.banner) return;
     D.banner.querySelector('.t').textContent = title || '';
     D.banner.querySelector('.l').textContent = line ? firstSentence(fmt(line), 130) : '';
-    D.banner.classList.add('on'); clearTimeout(S.bannerT);
-    S.bannerT = setTimeout(() => D.banner.classList.remove('on'), 4600);
+    D.banner.classList.add('on'); D.hud.classList.add('bannering'); clearTimeout(S.bannerT);
+    S.bannerT = setTimeout(() => { D.banner.classList.remove('on'); D.hud.classList.remove('bannering'); }, 4600);
   }
   function flash(kind) {
     const f = D.flash; if (!f) return;
@@ -1441,12 +1467,16 @@ const UI = (() => {
     const info = safe(() => companionInfo(), null), f = info ? cl(info.hp / info.maxHp, 0, 1) : 0;
     const mode = c.mode === 'downed' ? 'Down' : c.mode === 'stay' ? 'Staying' : 'Following';
     if (tb) { if (tb.hidden) tb.hidden = false; const lb = c.mode === 'stay' ? 'Follow' : 'Stay'; if (tb.textContent !== lb) tb.textContent = lb; }
-    const fb = el('t-fetch'), canF = c.kind === 'dog' && safe(() => isUnlocked('fetch'), false); if (fb && fb.hidden === canF) fb.hidden = !canF;
-    const key = c.kind + c.name + mode + Math.round(f * 60) + !!c.fetch;
+    /* FETCH shows only when the dog could go right now: rested, not already out, and something to raid within reach */
+    const fb = el('t-fetch');
+    if (fb) { S.fetchT = (S.fetchT || 0) - 1; if (S.fetchT <= 0) { S.fetchT = 15; S.canF = c.kind === 'dog' && c.mode !== 'downed' && !c.fetch && !safe(() => fetchBlock(), 'x') && !!safe(() => fetchTarget(G.p.x, G.p.y), null); } if (fb.hidden === S.canF) fb.hidden = !S.canF; }
+    const act = c.mode === 'downed' ? '' : c.mode === 'stay' ? 'Follow' : 'Stay';
+    const key = c.kind + c.name + mode + Math.round(f * 60) + !!c.fetch + act;
     if (S.c.cmp === key) return; S.c.cmp = key;
     box.hidden = false;
     box.querySelector('.nm').innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${COMP_IC[c.kind] || COMP_IC.survivor}"/></svg>${esc(c.name)}`;
     box.querySelector('.md').textContent = mode + (INPUT.touch ? '' : ' · H') + (c.fetch ? ' · fetching' : '');
+    box.querySelector('.md').dataset.act = act; box.setAttribute('aria-label', act ? `${c.name}: tap to ${act.toLowerCase()}` : c.name);
     box.querySelector('.fl').style.transform = `scaleX(${f})`;
     box.classList.toggle('low', f < 0.35); box.classList.toggle('down', c.mode === 'downed');
   }

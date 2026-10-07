@@ -16,7 +16,8 @@ const port = 9300 + Math.floor(Math.random() * 500);
 /* sweep profiles that killed or interrupted runs left behind (an hour old or more; each is ~60 MB) */
 try { for (const d of fs.readdirSync(os.tmpdir())) { if (!d.startsWith('de-prof-')) continue; const f = path.join(os.tmpdir(), d); if (Date.now() - fs.statSync(f).mtimeMs > 3600e3) fs.rmSync(f, { recursive: true, force: true }); } } catch (e) { }
 const prof = fs.mkdtempSync(path.join(os.tmpdir(), 'de-prof-'));
-const [vw, vh] = mobile ? [390, 844] : [1280, 800];
+/* phones are played sideways (portrait shows a "turn your phone" card), so --mobile is a landscape phone */
+const [vw, vh] = mobile ? [844, 390] : [1280, 800];
 const proc = spawn(exe, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${prof}`, '--no-first-run', '--no-default-browser-check',
   '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--allow-file-access-from-files', `--window-size=${vw},${vh}`, 'about:blank'], { stdio: 'ignore' });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -41,6 +42,8 @@ const B = {
   async key(code, ms) { await B.keyDown(code); await sleep(ms || 60); await B.keyUp(code); },
   async click(x, y) { for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }); },
   async tap(x, y) { await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await sleep(80); await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); },
+  /* resize the emulated phone (touch, mobile metrics) to w x h */
+  async viewport(w, h) { await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 2, mobile: true }); await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }); await sleep(300); },
   wait: sleep,
   async shot(name) { fs.mkdirSync(shotDir, { recursive: true }); const r = await send('Page.captureScreenshot', { format: 'png' }); const f = path.join(shotDir, name + (mobile ? '-mobile' : '') + '.png'); fs.writeFileSync(f, Buffer.from(r.data, 'base64')); console.log('shot', f); return f; },
   log: (...a) => console.log(...a),
