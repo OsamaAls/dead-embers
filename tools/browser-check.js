@@ -13,6 +13,8 @@ const exe = BROWSERS.find(p => fs.existsSync(p));
 if (!exe) { console.log('No Chrome/Edge found; skipping browser check.'); process.exit(0); }
 const page = 'file:///' + path.resolve(__dirname, '..', 'index.html').replace(/\\/g, '/').replace(/ /g, '%20');
 const port = 9300 + Math.floor(Math.random() * 500);
+/* sweep profiles that killed or interrupted runs left behind (an hour old or more; each is ~60 MB) */
+try { for (const d of fs.readdirSync(os.tmpdir())) { if (!d.startsWith('de-prof-')) continue; const f = path.join(os.tmpdir(), d); if (Date.now() - fs.statSync(f).mtimeMs > 3600e3) fs.rmSync(f, { recursive: true, force: true }); } } catch (e) { }
 const prof = fs.mkdtempSync(path.join(os.tmpdir(), 'de-prof-'));
 const [vw, vh] = mobile ? [390, 844] : [1280, 800];
 const proc = spawn(exe, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${prof}`, '--no-first-run', '--no-default-browser-check',
