@@ -120,7 +120,8 @@ const Moments = (() => {
     c.done = true; cleanup(c); M.active = false; M.cur = null; M.target = null;
     try { c.done_(''); } catch (e) { }
   };
-  M.start = function (enc, done) {
+  /* place (from places.js): {x, y, actor?} where the event stands; the moment plays out there instead of around the player */
+  M.start = function (enc, done, place) {
     if (M.cur) M.abort();
     const pl = (enc && enc.play) || {};
     const c = M.cur = { enc, pl, type: pl.type, t: 0, done: false, done_: done || (() => { }) };
@@ -130,16 +131,17 @@ const Moments = (() => {
       switch (pl.type) {
         case 'horde': {
           const foes = (pl.foes && pl.foes.length ? pl.foes : ['walker', 'walker', 'walker']).filter(id => ENEMIES[id]);
-          c.enemies = spawnNear(foes, null, null, { onWin: () => { fin(true); return ''; }, onFlee: () => { fin(false); return ''; }, onLose: () => { M.abort(); return ''; } });
+          c.enemies = spawnNear(foes, place ? place.x : null, place ? place.y : null, { onWin: () => { fin(true); return ''; }, onFlee: () => { fin(false); return ''; }, onLose: () => { M.abort(); return ''; } }, 0.4, 2.4);
           if (!foes.length) fin(true);
           break;
         }
         case 'rescue': {
           c.who = pl.who || 'Survivor'; c.hp = 100; c.tick = 0;
           const dm = distMap(p.x, p.y);
-          const s = spotNear(p.x, p.y, 6, 9, { dm, outdoor: true, noShelter: true, maxPath: 22 }) || spotNear(p.x, p.y, 4, 11, { dm, noShelter: true }) || { x: p.x + 5, y: p.y };
+          const s = place || spotNear(p.x, p.y, 6, 9, { dm, outdoor: true, noShelter: true, maxPath: 22 }) || spotNear(p.x, p.y, 4, 11, { dm, noShelter: true }) || { x: p.x + 5, y: p.y };
           c.sx = s.x; c.sy = s.y;
-          if (typeof Actors !== 'undefined' && Actors.make && has3D()) {
+          if (place && place.actor) { c.actor = place.actor; safe(() => c.actor.anim('idle')); }
+          else if (typeof Actors !== 'undefined' && Actors.make && has3D()) {
             c.actor = safe(() => Actors.make('survivor'), null);
             if (c.actor && c.actor.root) { R.scene.add(c.actor.root); c.actor.root.position.set(s.x * TILE, 0, s.y * TILE); safe(() => c.actor.anim && c.actor.anim('idle')); }
           }
@@ -154,7 +156,7 @@ const Moments = (() => {
         case 'screamer': {
           c.time = pl.time || 6;
           const dm = distMap(p.x, p.y);
-          const s = spotNear(p.x, p.y, 7, 9, { dm, noShelter: true, maxPath: 16 });
+          const s = place || spotNear(p.x, p.y, 7, 9, { dm, noShelter: true, maxPath: 16 });
           c.enemies = spawnNear(['screamer'], s ? s.x : null, s ? s.y : null, { onWin: () => { fin(true); return ''; }, onFlee: () => '', onLose: () => { M.abort(); return ''; } }, 0, 0.6);
           c.scr = c.enemies[0] || null; c.sx = s ? s.x : p.x; c.sy = s ? s.y : p.y;
           c.ring = ring(c.sx, c.sy, 0.9, 0xcf3b2c, 0.16);

@@ -842,7 +842,7 @@ function tickHour(opts) {
   checkUnlocks();
   if (G.hour === 20) storyCheck();
   weatherTick(); gateCheck();
-  if (G.hour === 22 && G.atShelter && G.day > 1 && !G.hordeNight && chance(0.35)) { const ev = pickEncounter('shelter'); if (ev) Hooks.queue({ type: 'enc', enc: ev }); }
+  if (G.hour === 22 && G.atShelter && G.day > 1 && !G.hordeNight && chance(0.35)) { const ev = pickEncounter('shelter'); if (ev) Hooks.queue({ type: 'enc', enc: ev, at: 'shelter' }); }
   if (G.hour === 21 && G.hordeNight && !G.hordeResult && !opts.sleep) { if (G.atShelter && Hooks.hordeStart) Hooks.hordeStart(hordeStrength()); }
   if (G.hour === 6) dailyTick();
 }
@@ -1005,7 +1005,7 @@ function dailyTick() {
   let radio = null; const C = CONTENT_();
   if (G.flags.radio_built && C.radio.length) radio = C.radio[(G.day - 1) % C.radio.length];
   Hooks.queue({ type: 'summary', lines: R, radio, day: G.day });
-  if (saveAt && G.day > 1 && C.shelterEvents.length && chance(0.45)) { const ev = pickEncounter('shelter'); if (ev) Hooks.queue({ type: 'enc', enc: ev }); }
+  if (saveAt && G.day > 1 && C.shelterEvents.length && chance(0.45)) { const ev = pickEncounter('shelter'); if (ev) Hooks.queue({ type: 'enc', enc: ev, at: 'shelter' }); }
   companionDaily(P);
   storyCheck();
   if (G.p.morale <= 0) { G.endScene = 'abandoned'; Hooks.queue({ type: 'end', id: 'abandoned' }); }
@@ -1089,7 +1089,7 @@ function fieldEncounterRoll(dtSec) {
   if (G.encTimer > 0) return null;
   G.encTimer = rnd(80, 140);
   if (!chance(0.7)) return null;
-  const e = pickEncounter(districtAt(G.p.x, G.p.y));
+  const d = districtAt(G.p.x, G.p.y), e = pickEncounter(d === 'shelter' ? 'street' : d); /* the streets round the yard roll street events */
   if (e) G.stats.encounters++;
   return e;
 }
@@ -1116,6 +1116,8 @@ function pickEncounter(type) {
     // mix location-specific with travel/any; boost exact matches
     pool = pool.concat(all.filter(e => (e.where || []).includes('travel') && !pool.includes(e) && encEligible(e, 'travel')));
   }
+  /* people who wait at a home (arcs, the stray) are met there, not rolled */
+  if (typeof placeSpec === 'function') pool = pool.filter(e => !placeSpec(e).home);
   if (!pool.length) return null;
   return wpick(pool, e => (e.weight || 10) * ((e.where || []).includes(type) ? 2 : 1) * (G.seenEnc[e.id] ? 0.5 : 1));
 }

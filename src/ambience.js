@@ -265,6 +265,8 @@ const Ambience = (() => {
         if (d < 8 && (e.state === 'chase' || e.state === 'search' || e.state === 'sus')) out.emit.push({ key: 's:' + e.uid, src: 'shuffle', reason: `${e.id} moving at ${d.toFixed(1)}`, x: e.x, y: e.y, gain: 0.3 * att(d, 8), every: [0.9, 1.8] });
       }
     }
+    /* placed events (places.js): a dog growling under the pump, the dead moaning round the corner, a radio crackling */
+    if (typeof Places !== 'undefined' && Places.emitters) for (const e of Places.emitters(px, py)) out.emit.push(e);
     /* survivors at the bunker: murmurs and work, from where they stand */
     const sr = WORLD.shelterRect, nearYard = sr && px > sr.x0 - 5 && px < sr.x1 + 6 && py > sr.y0 - 5 && py < sr.y1 + 6;
     if (C_ && nearYard && C_.survivors.length) {

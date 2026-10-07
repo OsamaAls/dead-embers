@@ -661,6 +661,11 @@ const UI = (() => {
       x.fillStyle = '#d8402e';
       for (const e of Combat.enemies) { if (!e || e.dead || typeof e.x !== 'number') continue; if (Math.hypot(e.x - p.x, e.y - p.y) > rr) continue; const [ex, ey] = tp(e.x, e.y); x.fillRect(ex - 1.5, ey - 1.5, 3, 3); }
     }
+    // something happening out there (places.js): an amber diamond, the dead a dull red one
+    if (typeof Places !== 'undefined' && Places.pins) for (const q of Places.pins()) {
+      const [qx, qy] = tp(q.x, q.y); if (!full && (qx < 2 || qy < 2 || qx > size - 2 || qy > size - 2)) continue;
+      x.fillStyle = q.z ? '#a8442e' : '#ffb067'; x.beginPath(); x.moveTo(qx, qy - 3.5); x.lineTo(qx + 3.5, qy); x.lineTo(qx, qy + 3.5); x.lineTo(qx - 3.5, qy); x.closePath(); x.fill();
+    }
     // objective
     const o = curObjective().target;
     if (o) {
@@ -732,6 +737,13 @@ const UI = (() => {
     const f = frac == null ? 1 : cl(frac, 0, 1), q = Math.round(f * 200);
     if (b.q !== q) { b.q = q; const i = b.el.firstChild; i.style.transform = `scaleX(${f})`; b.el.classList.toggle('lo', frac != null && f < 0.35); }
     if (b.label !== label) { b.label = label; b.el.lastChild.textContent = label || ''; }
+  }
+  /* a line someone in the world calls out, floating over them (places.js); text null removes it */
+  function sayLine(key, x, y, text) {
+    let b = S.wbars['say:' + key];
+    if (x == null || !text) { if (b) { b.el.remove(); delete S.wbars['say:' + key]; } return; }
+    if (!b) b = S.wbars['say:' + key] = makeBar('say');
+    if (has3D()) placeBar(b, x, y, 3.0, null, text);
   }
   function worldBar(key, x, y, frac, label) {
     let b = S.wbars[key];
@@ -1895,7 +1907,7 @@ const UI = (() => {
   const U = {
     get modal() { return blocking(); },
     init, update, blocking,
-    toast, hint, banner, flash, levelUp, onUnlock, timer, dmgNum, worldBar, vignette, journalPing,
+    toast, hint, banner, flash, levelUp, onUnlock, timer, dmgNum, worldBar, say: sayLine, vignette, journalPing,
     prompt(t, p, at) { S.pr.t = t || null; S.pr.p = p == null ? null : p; S.pr.at = t && at ? at : null; },
     momentPrompt(t, p) { S.mpr = t ? { t, p: p == null ? null : p } : null; },
     dialogue, encounter, scene, summary, final, end,

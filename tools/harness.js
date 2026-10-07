@@ -53,4 +53,24 @@ window.defendBot = (maxS) => { const t0 = __T; let minHp = G.p.hp;
     if (Combat.grabbed && i % 2) INPUT.attackPressed = true;
     if (gun && !(G.pack.ammo || G.pack.shells) && G.pack.machete) G.p.weapon = 'machete'; });
   INPUT.mx = INPUT.my = 0; return { secs: t, minHp: Math.round(minHp), hp: Math.round(G.p.hp) }; };
+/* placed events (places.js): meetEvent(id, ctx) puts the event in the world, walks up to it and presses E (or just walks close
+   for the dead and hazards). Returns {placed, at, kind, label, dlg, mg, mom, state}. placedNow() lists what stands in the world. */
+window.placedNow = () => Places.live.map(e => ({ id: e.id, state: e.state, src: e.src, home: e.home || null, x: +e.x.toFixed(1), y: +e.y.toFixed(1), actors: e.actors.length, props: e.props.length }));
+window.meetEvent = (id, ctx) => {
+  unblock(); const ev = Places.spawn(id, ctx); if (!ev) return { placed: false };
+  const out = { placed: true, at: [+ev.x.toFixed(1), +ev.y.toFixed(1)], kind: ev.spec.at, d0: +Math.hypot(ev.x - G.p.x, ev.y - G.p.y).toFixed(1) };
+  sim(0.6); /* gate visitors walk up first */
+  for (let i = 0; i < 20 && ev.arrive; i++) sim(0.5);
+  if (ev.spec.engage !== 'E') { const pts = path(ev.x, ev.y); if (pts) go(pts, Math.max(0.5, ev.spec.r - 1.5), 40); sim(0.4); }
+  else {
+    const tx = ev.actors.length ? ev.actors[0].x : ev.x, ty = ev.actors.length ? ev.actors[0].y : ev.y;
+    const sides = [[0, 1], [1, 0], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]].map(([a, b]) => [tx + a * 0.9, ty + b * 0.9]).filter(([x, y]) => !solidAt(x, y) && path(x, y));
+    sides.sort((a, b) => Math.hypot(a[0] - G.p.x, a[1] - G.p.y) - Math.hypot(b[0] - G.p.x, b[1] - G.p.y));
+    if (sides[0]) goto(sides[0][0], sides[0][1], 0.3, 60);
+    sim(0.3); const t = interactTarget(); out.label = t && t.label;
+    kd('KeyE'); ku('KeyE'); sim(0.3);
+  }
+  Object.assign(out, { dlg: !!UI.state.dlg, mg: !!UI.state.mg, mom: Moments.active, state: ev.state });
+  return out;
+};
 1;

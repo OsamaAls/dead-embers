@@ -413,8 +413,7 @@
       id: 'sh_turning', title: 'The Hidden Bite', where: ['shelter'], weight: 8, minDay: 5, once: true, night: true,
       cond: function () { return G.survivors.length > 0; },
       text: function () {
-        var s = randomSurvivor();
-        G.flags._turning = s;
+        var s = subject('_turning');
         return sName(s) + ' kept one sleeve down all week. Tonight: a soaked rag on the floor, glassy eyes in the corner.';
       },
       choices: [
@@ -458,8 +457,7 @@
       id: 'sh_theft', title: 'Missing Supplies', where: ['shelter'], weight: 9, minDay: 4,
       cond: function () { return G.survivors.length > 0; },
       text: function () {
-        var s = randomSurvivor();
-        G.flags._thief = s;
+        var s = subject('_thief');
         return 'Cans and smokes gone from the shelf. Nobody saw a thing. ' + sName(s) + ' is chewing very slowly.';
       },
       choices: [
@@ -532,8 +530,7 @@
       id: 'sh_birthday', title: 'A Birthday', where: ['shelter'], weight: 6, minDay: 5,
       cond: function () { return G.survivors.length > 0; },
       text: function () {
-        var s = randomSurvivor();
-        G.flags._bday = s;
+        var s = subject('_bday');
         return sName(s) + ' mentions, like an apology, that it\'s their birthday. Nobody has marked one in fourteen months.';
       },
       choices: [

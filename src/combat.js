@@ -998,7 +998,8 @@ const Combat = (function () {
     wasHome = home;
     const h = WORLD.hatch;
     C.survivors.forEach((s, i) => {
-      const tg = survTarget(s, i);
+      /* places.js holds someone a bunker happening is about (s.hold = {x, y, pose}) until it is dealt with */
+      const tg = s.hold ? { x: s.hold.x, y: s.hold.y, work: false } : survTarget(s, i);
       let spd = 0, tx, ty;
       if (tg) { tx = tg.x; ty = tg.y; }
       else {
@@ -1019,7 +1020,7 @@ const Combat = (function () {
       } else {
         /* idle neighbours talk to each other */
         const mate = !tg && C.survivors.find(o => o !== s && dist(o.x, o.y, s.x, s.y) < 1.6);
-        s.a.anim(mate ? 'chat' : 'idle');
+        s.a.anim(s.hold && s.hold.pose === 'sit' ? 'crouch' : mate ? 'chat' : 'idle');
         if (mate) s.face = turn(s.face, Math.atan2(mate.x - s.x, mate.y - s.y), dt * 4);
         if (tg) s.face = turn(s.face, s.job === 'guard' ? Math.atan2(s.x - (WORLD.shelterRect.x0 + WORLD.shelterRect.x1 + 1) / 2, s.y - (WORLD.shelterRect.y0 + WORLD.shelterRect.y1 + 1) / 2) : 0, dt * 4);
       }
@@ -1396,7 +1397,8 @@ const Combat = (function () {
       const anchor = findSpot(c.x, c.y, 8, 12, { avoidView: !opts.at, reach: true, offscreen: false }) || findSpot(c.x, c.y, 5, 14, {}) || { x: c.x + 8, y: c.y };
       ids.forEach((id, i) => {
         let x = anchor.x, y = anchor.y;
-        if (i) { const s = findSpot(anchor.x, anchor.y, 0.8, 2.4, { shelterOK: false }); if (s) { x = s.x; y = s.y; } }
+        if (opts.spots && opts.spots[i]) { x = opts.spots[i].x; y = opts.spots[i].y; } /* places.js: the people you talked to become the fight */
+        else if (i) { const s = findSpot(anchor.x, anchor.y, 0.8, 2.4, { shelterOK: false }); if (s) { x = s.x; y = s.y; } }
         const e = spawnAt(id, x, y, { screamTime: opts.screamTime }); if (!e) return;
         e.group = gr; becomeAware(e, true); e.alertT = 0;
         gr.list.push(e);

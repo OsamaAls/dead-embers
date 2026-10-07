@@ -26,7 +26,7 @@ function wireHooks() {
 /* ---------- start / continue ---------- */
 function startWorld() {
   World3D.build(); World3D.refreshShelter();
-  Combat.reset();
+  Combat.reset(); Places.reset();
   R.follow(G.p.x, G.p.y, G.p.face || 0, true);
   Game.running = true; Game.dead = false; Game.Q = []; Game.showing = false; Game.wave = false; Game.timeAcc = 0; Game.final = null;
   G.atShelter = inShelter(G.p.x, G.p.y); G.isNight = isNight();
@@ -44,7 +44,7 @@ Game.newGame = function (name, bg, attrs, worldName) {
 Game.continueGame = function () { if (!loadGame()) return false; startWorld(); return true; };
 /* load one saved world from the title's Worlds list (ended worlds are memorials and do not load) */
 Game.loadWorld = function (id) { if (!loadWorld(id)) return false; startWorld(); return true; };
-Game.quit = function () { saveGame(true); Game.running = false; Combat.clear(); UI.title(); };
+Game.quit = function () { saveGame(true); Game.running = false; Combat.clear(); Places.reset(); UI.title(); };
 
 /* ---------- encounter queue ---------- */
 function encText(enc) { try { return fmtName(typeof enc.text === 'function' ? enc.text() : enc.text); } catch (e) { return ''; } }
@@ -62,14 +62,15 @@ function pump() {
     case 'end': cineThen(q.id, () => UI.end(q.id)); break;
     case 'cine': cineThen(q.id, () => done()); break;
     case 'trader': UI.barter(null, done); break;
-    case 'enc': runEncounter(q.enc, done); break;
+    case 'enc': if (q.at === 'shelter') { done(); Places.offer(q.enc, { src: 'shelter' }); } else runEncounter(q.enc, done, q.place); break;
     default: done();
   }
 }
 const cineOn = () => typeof Cine !== 'undefined' && Cine.active;
 /* play CUTSCENES[id] once per world (Cine marks G.seenCine), then go on */
 function cineThen(id, then) { if (typeof Cine !== 'undefined' && Cine.has && Cine.has(id)) Cine.cutscene(id, then); else then(); }
-function runEncounter(enc, done) {
+/* place (optional, from places.js): where it happens and the person already standing there */
+function runEncounter(enc, done, place) {
   G.seenEnc[enc.id] = true;
   if (enc.play) {
     UI.banner(enc.title, encText(enc));
@@ -79,7 +80,7 @@ function runEncounter(enc, done) {
       const pl = enc.play, win = pl.onWin;
       e2 = Object.assign({}, enc, { play: Object.assign({}, pl, { onWin: () => { const r = win ? win() : ''; Game.Q.unshift({ type: 'cine', id: 'first_rescue' }); return r; } }) });
     }
-    Moments.start(e2, line => { if (line) UI.toast(line); });
+    Moments.start(e2, line => { if (line) UI.toast(line); if (place && done) done(''); }, place);
     return;
   }
   UI.encounter(enc, done);
@@ -108,6 +109,7 @@ function interactTarget() {
     else out.push({ key: 'bus', d: d2(b.x + 0.5, b.y + 0.5), at: ab, label: 'Bus: needs Engine Parts + 6 Fuel', time: -1 });
   }
   for (const t of extraTargets(p, d2)) out.push(t);
+  for (const t of Places.targets(p, d2)) out.push(t);
   if (G.atShelter && isUnlocked('build')) {
     for (const k in BUILDINGS) {
       const B = BUILDINGS[k]; if (B.hidden && !(k === 'radio' && G.flags.q_radio)) continue;
@@ -146,7 +148,7 @@ function openContainer(c) {
   for (const l of warn) UI.toast(l, 'warn');
   if (!r.empty && !r.loot.length) UI.toast('Nothing useful.', 'dim');
   if (r.lore) UI.toast(r.lore.short ? `${r.lore.title}: ${r.lore.short}` : `Note found: ${r.lore.title} (journal)`, 'story');
-  if (r.enc) Game.Q.push({ type: 'enc', enc: r.enc });
+  if (r.enc) Places.offer(r.enc, { src: 'search', bi: buildingAt(c.x + 0.5, c.y + 0.5), x: c.x + 0.5, y: c.y + 0.5 });
   /* a helper with an eye for scavenging finds a little extra when they are close */
   const cc = Combat.companion;
   if (cc && cc.kind === 'survivor' && cc.mode !== 'downed' && !r.empty && Math.hypot(cc.x - G.p.x, cc.y - G.p.y) < 4) { const b = companionScavBonus(c); if (b) UI.toast(cc.name + ' turns up ' + b.replace(/^\+\d+ /, ''), 'loot'); }
@@ -209,7 +211,7 @@ function extraTargets(p, d2) {
     const bed = propNear(WORLD.beds, p.x, p.y, 1.4), spot = bed;
     if (spot) out.push({ key: 'rest', d: d2(spot.x + 0.5, spot.y + 0.5) + 0.1, at: { x: spot.x + 0.5, y: spot.y + 0.5, h: 1.1 }, label: bed ? (bed.kind === 'couch' ? 'Rest on the couch an hour' : bed.kind === 'cot' ? 'Rest on the cot an hour' : 'Sleep in the bed an hour') : 'Rest here an hour', time: 1.5,
       hl: bed ? ['point', pt(bed.x, bed.y)] : undefined,
-      act: () => { UI.flash('sleep'); const enc = restOutside(); heal(6); UI.toast('An hour of shallow sleep. +6 HP', 'dim'); if (enc) { UI.toast('Something wakes you.', 'warn'); Game.Q.push({ type: 'enc', enc }); } } });
+      act: () => { UI.flash('sleep'); const enc = restOutside(); heal(6); UI.toast('An hour of shallow sleep. +6 HP', 'dim'); if (enc && Places.offer(enc, { src: 'rest' })) UI.toast('Something wakes you. Look around.', 'warn'); } });
   }
   if (G.atShelter && bl('radio')) { const r = slotCentre('radio'), dd = d2(r.x, r.y); if (dd < 1.6 * 1.6) out.push({ key: 'radio', d: dd, at: { x: r.x, y: r.y, h: 1.6 }, label: 'Listen to the radio', time: 0, act: () => UI.radio() }); }
   const note = propNear(WORLD.notes, p.x, p.y, 1.4);
@@ -334,7 +336,9 @@ function frame(t) {
       Game.timeAcc += dt * TIME_SCALE;
       if (Game.timeAcc >= 1) { const m = Math.floor(Game.timeAcc); Game.timeAcc -= m; advance(m); }
       revealAround(G.p.x, G.p.y, 7);
-      if (!Moments.active && !Combat.inFight() && !Game.Q.length) { const e = fieldEncounterRoll(dt); if (e) Game.Q.push({ type: 'enc', enc: e }); }
+      /* a rolled event is put somewhere ahead of you (places.js); if it has nowhere to be, try again a little sooner */
+      if (!Moments.active && !Combat.inFight() && !Game.Q.length && !Places.busy('field')) { const e = fieldEncounterRoll(dt); if (e && !Places.offer(e, { src: 'field' })) G.encTimer = rnd(20, 40); }
+      Places.update(dt);
       updateInteraction(dt);
       if (G.hordeNight && !G.hordeResult && !Game.wave && G.atShelter && (G.hour >= 21 || G.hour < 5)) startHorde();
       Game.saveTimer += dt; if (Game.saveTimer > 60 && !Combat.inFight()) { Game.saveTimer = 0; saveGame(true); }

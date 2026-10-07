@@ -10,7 +10,7 @@ const ctx = {
 };
 ctx.window = ctx; ctx.globalThis = ctx;
 vm.createContext(ctx);
-const src = ['data.js', 'content.js', 'encounters.js', 'arcs.js', 'engine.js'].map(f => fs.readFileSync(path.join(__dirname, 'src', f), 'utf8')).join('\n;\n');
+const src = ['data.js', 'content.js', 'encounters.js', 'arcs.js', 'engine.js', 'places.js'].map(f => fs.readFileSync(path.join(__dirname, 'src', f), 'utf8')).join('\n;\n');
 vm.runInContext(src + `
 ;window.__T = { get G() { return G; }, get WORLD() { return WORLD; }, Hooks, PENDING, newGame, dailyTick, allEncounters, advance, ITEMS, ENEMIES, LOCS, CONTAINERS, W, H, SOLID, genWorld,
   searchContainer, containerState, objectiveInfo, finalOptions, chooseFinal, saveGame, loadGame, onKill, resolveHorde, weaponProfile, enemyHitsPlayer, give,
@@ -18,7 +18,8 @@ vm.runInContext(src + `
   serialize, listWorlds, loadWorld, deleteWorld, forkWorld, markEnded, hasSave, lastWorldId, recruit, adoptDog, setCompanion, clearCompanion, companionInfo,
   companionHurt, companionCarry, carryCap, hordeWaveSize, barDoor, unbarDoor, doorBlocked, hitDoorBar, siphonCar, fillBottle, cookAt, cookOption, radioBroadcast,
   maybeRequest, requestOf, deliverRequest, chatSurvivor, giftSurvivor, survivorMood, setJob, jobChoices, T_DOOR, T_CAR,
-  coldCap, weaponCond, wearWeapon, repairCost, repairWeapon, playerHitDamage, actNow, bossHere, bossMet, BOSS_LAIR, buildingAt, endingEpilogue, pickup };`, ctx);
+  coldCap, weaponCond, wearWeapon, repairCost, repairWeapon, playerHitDamage, actNow, bossHere, bossMet, BOSS_LAIR, buildingAt, endingEpilogue, pickup,
+  placeSpec, placeFor, npcHome, homeEventsNear, subject, pickEncounter, encById };`, ctx);
 const T = ctx.__T;
 const queued = [];
 T.Hooks.queue = q => queued.push(q);
@@ -273,6 +274,40 @@ try {
   T.G.pack.rawmeat = 1; if (!/Meal/.test(T.cookAt())) fail('cook', 'meat');
   const rb = T.radioBroadcast(); if (!rb.lines.length || rb.lines.some(l => typeof l !== 'string')) fail('radio', 'broadcast');
 } catch (err) { fail('companions', err); }
+
+/* ---- placed events (places.js): every event has a sane spec and a place to stand in every world (all gates open) ---- */
+try {
+  const KINDS = /^(road|car|wall|body|pump|water|fire|field|trail|planks|bridge|deco|poi|door|inside|tollgate|gate|fence|hatch|yard|follow|here)(:|$)/;
+  const miss = {};
+  for (let run = 0; run < 5; run++) {
+    fresh(); for (const g of Object.values(T.GATE_OF)) T.G.flags['open_' + g] = true;
+    const pois = Object.values(T.WORLD.pois), h = T.WORLD.hatch;
+    for (const e of encs) {
+      const s = T.placeSpec(e);
+      if (run === 0) {
+        if (!KINDS.test(s.at || '') && !s.home) fail(e.id, 'place: bad at ' + s.at);
+        if (!['E', 'near', 'zone'].includes(s.engage)) fail(e.id, 'place: bad engage ' + s.engage);
+        if (s.engage === 'E' && (typeof s.verb !== 'string' || !s.verb)) fail(e.id, 'place: no verb');
+        if (s.actor === 'zombies' && !(s.foes || []).every(id => T.ENEMIES[id])) fail(e.id, 'place: bad foes');
+      }
+      if (s.at === 'here') continue;
+      let ok;
+      if (s.home) ok = !!T.npcHome(s.home);
+      else {
+        const w = (e.where || []).filter(t => t !== 'any' && t !== 'travel');
+        const q = /^(gate|yard|fence|hatch)$/.test(s.at) ? null : pois.find(p => w.includes(p.type)) || pois.find(p => p.type === 'street');
+        T.G.p.x = q ? q.x + 0.5 : h.x + 0.5; T.G.p.y = q ? q.y + 1.5 : h.y + 1.5; T.G.p.face = Math.random() * 6.28;
+        if (q && T.WORLD.tiles[Math.floor(T.G.p.y) * T.W + Math.floor(T.G.p.x)] === undefined) continue;
+        ok = !!T.placeFor(e, T.G.p.x, T.G.p.y, {});
+      }
+      if (!ok) miss[e.id] = (miss[e.id] || 0) + 1;
+    }
+  }
+  for (const id in miss) if (miss[id] > 1) fail(id, `place: nowhere to stand in ${miss[id]}/5 worlds (${T.placeSpec(T.encById(id)).at})`);
+  /* arcs are met at home, never rolled; a bunker subject stays the same person */
+  fresh(); for (let i = 0; i < 400; i++) { const e = T.pickEncounter('street'); if (e && T.placeSpec(e).home) { fail('place', 'rolled a home event ' + e.id); break; } }
+  fresh(); T.recruit(); T.recruit(); const s1 = T.subject('_turning'), s2 = T.subject('_turning'); if (!s1 || s1 !== s2) fail('place', 'subject() is not stable');
+} catch (err) { fail('places', err); }
 
 if (errors.length) { console.log('FAIL (' + errors.length + ')\n' + errors.slice(0, 60).join('\n')); process.exit(1); }
 console.log(`OK: ${encs.length} encounters, ${T.WORLD.containers.length} containers, ${T.W}x${T.H} map, 25 seeds reachable (gates closed + open), 14 days simulated, saved worlds + companions ok.`);
