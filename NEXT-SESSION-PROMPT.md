@@ -42,6 +42,61 @@ Phases:
   - README, API.md and the scheduled task's SKILL.md are updated.
   - The suite runner (`de-checks/run.ps1`) includes the new checks.
 
+### Round 2, the same day (Osama's second message), committed and pushed
+- [x] **No popups without a source.**
+  - The "merchant dialogue with no merchant" was the live build's barter moments. Traders now stand in the world with a cart, and the trade screen opens only on E.
+  - `Hooks.openTrader` is gone.
+  - Story about home waits until you are at the bunker (`HOME_SCENES` in main.js).
+  - The Tollmen's demand is three Tollmen at the yard gate (`Places.sceneAt`).
+  - Frost and snow narration is a banner.
+- [x] **Weapons.**
+  - The Ex-Soldier also starts with a knife.
+  - Tap or click the weapon chip for a list of every weapon you carry; one tap picks.
+  - Keys 1–4 pick directly; Q cycles.
+  - The hint comes in the first fight; running a gun dry says what you fight with now.
+- [x] **Clarity pass.**
+  - `tools/scenarios/firstdays.js` (`--mobile`) logs everything a new player sees. Harness: `noteStart`/`notesLog`, `followObjective`.
+  - Fixed three stray backspace characters in ui.js that broke the touch wording ("Hold E" and "C to crouch" on phones). test.js now rejects control characters.
+- [x] **browser-check watchdog** (`CHECK_TIMEOUT_MIN`, default 30). A layout run once hung for 1.5 h on a touch ack.
+
+**Unfinished when the session was stopped.** Run these first, one at a time:
+```
+pwsh -File C:\Users\computerh\de-checks\run.ps1 keyboard endings companions layout events events-mobile firstdays ui
+```
+Status of each:
+- **keyboard:** its new weapon step failed because `give()` stores items at the bunker. Fixed to `G.pack.x = 1`; not re-run yet.
+- **endings:** "stand" failed once. The previous ending's end card arrived late (the machine was busy) and covered the next run. Probably a flake: re-run it. If it fails again, make `fresh()` in endings.js wait until `#end` is hidden.
+- **firstdays:** new and never run headless yet. Expect to tune its bot or assertions.
+- **Passed on the latest builds:** default, mobile, playthrough, companions (before the clarity commit), layout, events, events-mobile, biomes, cinematic, worlds and ui.
+
+## Next tasks (Osama, 2026-10-07, end of session)
+1. **Main menu: add Settings and Credits, plus anything else the title screen should have.**
+   - **Settings** (title and in-game menu):
+     - sound and ambience volume (already in the in-game menu; move or share them);
+     - camera zoom default;
+     - reduced motion / screen shake;
+     - text size;
+     - show hints (on/off);
+     - touch-control size or left-handed swap (phones);
+     - optionally a graphics quality toggle (render.js already lowers quality on touch). Ties into issue #2, phone FPS.
+     - Persist in localStorage.
+   - **Credits:**
+     - the game: Osama, built with Claude;
+     - Three.js (MIT, `vendor/THREE-LICENSE`);
+     - fonts: Big Shoulders Stencil, Barlow, IBM Plex Mono (Google Fonts, OFL);
+     - "no music; synth sound".
+   - **Other sensible title items:** How to play (the controls card, phone version included), Continue / Worlds / New world (exist), Help.
+   - Keep it keyboard-navigable (`data-nav`), and phone-landscape friendly.
+2. **The "Watch the intro" button is too prominent.**
+   - Today it is a full-width title button (`ui.js` title, `data-t="intro"`), and a menu row (`data-a="intro"`).
+   - Make it a small side option: a quiet text link or icon in a corner of the title (e.g. next to the version), or inside Settings / Extras ("Replay the intro").
+   - Remove it from the main button stack.
+3. **Then:**
+   - re-run the full suite, including `layout` and `keyboard` for the new title screens;
+   - update README (title screen), API.md (`UI.title` steps), and `C:\Users\computerh\.claude\scheduled-tasks\dead-embers-github-input\SKILL.md` if checks change;
+   - push and confirm the Pages build.
+4. **Ask Osama how the phone build feels** (see "Still to do" item 0 below).
+
 ## If a session gets cut off
 The computer may restart or lose internet mid-session (another session shares it). Commit every step locally as soon as it's done and keep a short progress log at the top of this file in the same commit. `git log --oneline origin/main..main` shows what isn't pushed yet.
 
