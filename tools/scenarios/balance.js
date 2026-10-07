@@ -8,7 +8,7 @@
    Prints one "BAL ..." line per measurement. */
 const fs = require('fs'), path = require('path');
 module.exports = async B => {
-  const ev = s => B.eval(s), N = +(process.env.BAL_N || 6);
+  const ev = s => B.eval(s), N = +(process.env.BAL_N || 6), DAY = +(process.env.BAL_DAY || 20); // the last night comes 12 days after the radio: about day 20 in a normal run
   for (let i = 0; i < 120 && !(await ev(`typeof Game!=='undefined' && !!(R && R.renderer && R.scene)`)); i++) await B.wait(500);
   await ev(fs.readFileSync(path.join(__dirname, '..', 'harness.js'), 'utf8'));
   await ev(`localStorage.setItem('deadembers_seen_intro','1'); 1`);
@@ -69,7 +69,7 @@ module.exports = async B => {
         ${kind === 'ready'
           ? `G.buildings.walls = 3; G.buildings.tower = 1; while (G.survivors.length < 6) recruit(); G.survivors.forEach((s, i) => { s.job = i < 4 ? (i ? 'guard' : 'tower') : 'idle'; s.skills.combat = 3; }); G.pack.shotgun = 1; G.pack.shells = 60; G.p.weapon = 'shotgun';`
           : `G.buildings.walls = 1; while (G.survivors.length < 4) recruit(); G.survivors.forEach((s, i) => { s.job = i < 2 ? 'guard' : 'idle'; s.skills.combat = 2; }); G.pack.pistol = 1; G.pack.ammo = 30; G.pack.machete = 1; G.p.weapon = 'pistol';`}
-        World3D.refreshShelter(); __skipTo(3); sim(0.3); const plan = finalWavePlan();
+        G.day = ${DAY}; World3D.refreshShelter(); __skipTo(3); sim(0.3); const plan = finalWavePlan();
         /* another dialogue can come first (a shelter event): its last option clears it */
         let got = null; sim(15, j => { const b = dlgButtons().find(b => /Hold the bunker/i.test(b.textContent)); if (!b && dlgButtons().length > 1 && j % 6 === 3) { const o = dlgButtons(); o[o.length - 1].click(); return; } if (b) { got = b.textContent; b.click(); return 'stop'; } if (UI.blocking() && j % 6 === 0) { kd('Space'); ku('Space'); } }); sim(0.5);
         for (let k = 0; k < 10 && !Combat.wave && UI.blocking(); k++) unblock(4);
@@ -78,7 +78,7 @@ module.exports = async B => {
       if (r.end === 'end_stand') won++;
       rows.push(`${r.end === 'end_stand' ? 'W' : 'L'}(${r.D}/${r.need},${r.count}z,${r.secs}s${r.wave ? '' : ',no wave' + (r.picked ? '' : ' (choice not found)') + ',end ' + r.end})`);
     }
-    B.log(`BAL stand ${kind}: won ${won}/${N} ${rows.join(' ')}`);
+    B.log(`BAL stand ${kind} (day ${DAY}): won ${won}/${N} ${rows.join(' ')}`);
   };
   await stand('ready');
   await stand('weak');

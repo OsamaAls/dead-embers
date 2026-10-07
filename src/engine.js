@@ -1331,8 +1331,8 @@ function standNeed() { return 60 + G.day * 2.5; }
 /* The real-time last stand: defense shrinks the horde and thickens the barricade, so the menu number means something. */
 function finalWavePlan() {
   const D = defense() + G.survivors.length * 4, need = standNeed();
-  const k = clamp(need / Math.max(1, D), 0.75, 1.6);
-  return { count: clamp(Math.round(hordeWaveSize() * 1.5 * k), 12, 40), bonus: Math.round(D), surges: 3, D: Math.round(D), need: Math.round(need) };
+  const k = clamp(need / Math.max(1, D), 0.75, 1.8);
+  return { count: clamp(Math.round(hordeWaveSize() * 1.5 * k), 12, 50), bonus: Math.round(D), surges: 3, D: Math.round(D), need: Math.round(need) };
 }
 /* Okafor's formula: from her drug cage (ines_formula) or from working beside her at the bunker (ines_joined); needs the radio */
 const canCure = () => !!(G.flags.radio_built && (G.flags.ines_formula || G.flags.ines_joined) && count('antibiotics') >= 3);
