@@ -73,7 +73,7 @@ module.exports = async B => {
   /* ---------- world props: notes, bodies (with crows), pumps, beds ---------- */
   await ev(`window.openAt = (x, y) => typeof districtOpen !== 'function' || districtOpen(biomeAt(x + 0.5, y + 0.5));
     window.nearestProp = (list, ok) => list.filter(o => openAt(o.x, o.y) && (!ok || ok(o))).sort((a, b) => Math.hypot(a.x - G.p.x, a.y - G.p.y) - Math.hypot(b.x - G.p.x, b.y - G.p.y))[0]; 1`);
-  await step('read writing on a wall', `calm(); const n=nearestProp(WORLD.notes, o=>!!path(o.x+0.5,o.y+0.5)); goto(n.x+0.5,n.y+0.5,0.3,150); calm(); const lb=label(); const j0=G.journal.length; kd('KeyE'); ku('KeyE'); sim(0.3);
+  await step('read writing on a wall', `calm(); const alone=o=>!(WORLD.fires||[]).some(f=>Math.hypot(f.x-o.x-0.5,f.y-o.y-0.5)<2.5) && !containerNear(o.x+0.5,o.y+0.5,2); const n=nearestProp(WORLD.notes, o=>alone(o)&&!!path(o.x+0.5,o.y+0.5)) || nearestProp(WORLD.notes, o=>!!path(o.x+0.5,o.y+0.5)); goto(n.x+0.5,n.y+0.5,0.3,150); // a note with nothing else to use beside it (E picks the nearest thing) calm(); const lb=label(); const j0=G.journal.length; kd('KeyE'); ku('KeyE'); sim(0.3);
     return {label:lb, place:n.place||null, read:!!(G.notesRead&&G.notesRead[n.x+','+n.y]), journal:G.journal.length-j0, title:G.journal[0].title}`, "/Read the writing/.test(r.label) && r.read && r.journal===1 && r.title==='Written on a wall'");
   await B.shot('c08a-note');
   await step('crows settle on a body by day, lift off as you come close', `calm(); const b=nearestProp(WORLD.bodies, o=>!o.in && !(G.bodies&&G.bodies[o.x+','+o.y]) && !!path(o.x+0.5,o.y+0.5)); window.__body=b;
