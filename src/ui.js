@@ -98,7 +98,7 @@ const SFX = (() => {
 const UI = (() => {
   const S = {
     dlg: null, panel: null, panelTab: {}, mg: null, title: false, end: false, hudShown: false,
-    pr: { t: null, p: null }, mpr: null, prKey: '', hintQ: [], hintOn: false, hintT: 0, bannerT: 0,
+    pr: { t: null, p: null }, mpr: null, prKey: '', hintQ: [], hintCur: null, hintGap: 0, bannerT: 0,
     c: {}, dn: [], timer: null, wbars: {}, mmT: 0, fogT: 0, objText: '', joy: null, pinch: {}, crouchT: false,
     atk: { mouse: false, key: false, touch: false }, barMax: 0,
     nav: {}, mouseT: -99, mx0: null, my0: null, lock: null, ehit: {}, ebars: {}, barLast: null, tsel: 0,
@@ -382,6 +382,7 @@ const UI = (() => {
       D.timer.classList.toggle('urgent', t < 3);
     }
     renderPrompt();
+    tickHints(dt);
     // minimap
     const mmOn = safe(() => isUnlocked('journal') || isUnlocked('map') || G.day >= 2, false);
     if (mmOn && D.mm.hidden) { D.mm.hidden = false; D.mm.classList.add('reveal'); }
@@ -581,7 +582,7 @@ const UI = (() => {
     if (S.prW == null || S.c.prwKey !== S.prKey) { S.c.prwKey = S.prKey; S.prW = P.offsetWidth; S.prH = P.offsetHeight; }
     const vw = innerWidth, vh = innerHeight, w = S.prW, h = S.prH, m = 8;
     let x = pt.x - w / 2, y = pt.y - h - 10;
-    const top = S.phone ? 50 : 64;
+    const top = S.phone ? (parseFloat(S.c.objh) || 30) + 34 : 64; /* below the objective and its notices */
     if (y < top) y = pt.y + 18;
     x = cl(x, m, vw - w - m); y = cl(y, top, vh - h - m);
     if (S.phone || INPUT.touch) {
@@ -791,16 +792,56 @@ const UI = (() => {
     [/C to crouch\./, 'CROUCH to sneak.'], [/Mash attack/, 'Mash ATTACK'], [/[Hh]old E/g, m => m[0] + 'old USE'], [/\(I\)/, '(PACK)'], [/\(B\)/, '(CHAR)'],
     [/H: stay \/ follow\./, 'Tap their name to make them stay or follow.'], [/R: send them to fetch\./, 'Tap FETCH to send them.'], [/\bE again\b/, 'USE again'], [/\bpress E\b/gi, 'tap USE']];
   function touchWords(t) { for (const [re, to] of TOUCH_WORDS) t = t.replace(re, to); return t; }
-  function hint(text) {
-    if (!text || !D.hint) return;
+  /* ---------- notices: teaching hints and "New: X" unlock cards, one at a time ----------
+     A card shows only while nothing modal is open (its clock stops behind dialogues, panels and cutscenes). During a fight only
+     fight lessons (and keyless lines from moments and companions) show; the rest wait for a calm moment. A queued lesson the
+     player has already done is dropped. An unlock and the hint that comes with it make one card. */
+  const FIGHT_HINTS = { combat: 1, crouch: 1, sneak: 1, grab: 1, gun: 1, revive: 1, bottle: 1, horde_now: 1 };
+  const HINT_DONE = {
+    search: () => G.stats.searches > 0, first_loot: () => !!G.atShelter, points: () => !(G.p.points > 0),
+    build: () => Object.keys(G.buildings || {}).some(k => G.buildings[k] > 0), move: () => false,
+  };
+  function hint(text, o) {
+    if (!text || !D.hint) return; o = o || {};
     if (INPUT.touch) text = touchWords(text);
-    if (S.hintCur === text || S.hintQ.includes(text)) return;
-    S.hintQ.push(text); if (!S.hintOn) nextHint();
+    if ((S.hintCur && S.hintCur.text === text) || S.hintQ.some(h => h.text === text)) return;
+    const u = S.unlockOpen; /* the hint that the same unlock() call fires right after it joins its card */
+    if (u && !u.text) { u.text = text; u.key = o.key || null; return; }
+    S.hintQ.push({ text, key: o.key || null });
   }
-  function nextHint() {
-    const t = S.hintQ.shift(); if (!t) { S.hintOn = false; S.hintCur = null; return; }
-    S.hintOn = true; S.hintCur = t; D.hint.textContent = t; D.hint.classList.add('on');
-    clearTimeout(S.hintT); S.hintT = setTimeout(() => { D.hint.classList.remove('on'); setTimeout(nextHint, 450); }, 3800 + Math.min(2500, t.length * 22));
+  function unlockCard(label) {
+    const c = { title: 'New: ' + label, text: '', unlock: true, key: null }; S.hintQ.push(c); SFX.play('good');
+    S.unlockOpen = c; Promise.resolve().then(() => { if (S.unlockOpen === c) S.unlockOpen = null; });
+  }
+  const calmFor = h => !h.key || FIGHT_HINTS[h.key];
+  function tickHints(dt) {
+    if (!D.hint) return;
+    const fight = typeof Combat !== 'undefined' && Combat.inFight && safe(() => Combat.inFight(), false), free = !blocking();
+    const cur = S.hintCur;
+    if (cur) {
+      const show = free && (!fight || calmFor(cur));
+      if (D.hint.classList.contains('on') !== show) D.hint.classList.toggle('on', show);
+      if (!show) return;
+      cur.t -= dt;
+      const stale = cur.key && HINT_DONE[cur.key] && cur.shown > 1.2 && safe(HINT_DONE[cur.key], false);
+      cur.shown = (cur.shown || 0) + dt;
+      if (cur.t <= 0 || stale) { D.hint.classList.remove('on'); S.hintCur = null; S.hintGap = 0.45; }
+      return;
+    }
+    if (S.hintGap > 0) { S.hintGap -= dt; return; }
+    if (!free) return;
+    for (let i = 0; i < S.hintQ.length; i++) {
+      const h = S.hintQ[i], done = h.key && HINT_DONE[h.key];
+      if (done && safe(done, false)) { S.hintQ.splice(i--, 1); continue; }
+      if (fight && !calmFor(h)) continue;
+      S.hintQ.splice(i, 1);
+      const len = (h.title || '').length + h.text.length;
+      h.t = 3.8 + Math.min(2.5, len * 0.022) + (h.title ? 0.8 : 0);
+      S.hintCur = h;
+      D.hint.innerHTML = (h.title ? `<b>${esc(h.title)}</b>` : '') + esc(h.text);
+      D.hint.classList.toggle('new', !!h.title); D.hint.classList.add('on');
+      return;
+    }
   }
   function banner(title, line) {
     if (!D.banner) return;
@@ -827,7 +868,7 @@ const UI = (() => {
   function onUnlock(key) {
     if (key === 'build' && typeof World3D !== 'undefined' && World3D.refreshShelter) safe(() => World3D.refreshShelter()); // the build outlines appear now, not after the next sleep
     const l = UNLOCK_LABEL[key]; if (!l) return;
-    toast('New: ' + l, 'good'); SFX.play('good');
+    unlockCard(l);
     if (key === 'journal' && D.mm.hidden === false) { D.mm.classList.remove('reveal'); void D.mm.offsetWidth; D.mm.classList.add('reveal'); }
   }
   function timer(label, seconds) {
@@ -1184,7 +1225,10 @@ const UI = (() => {
     if (/^(Digit|Numpad)[1-6]$/.test(c)) { const b = navActs(cur)[+c.slice(-1) - 1]; if (b && !b.disabled) b.click(); else SFX.play('bad'); }
   }
 
+  /* a new journal entry lights the Log button instead of toasting; opening the journal clears it */
+  function journalPing() { const b = document.querySelector('.hb[data-open="journal"]'); if (b) b.classList.add('ping'); }
   function open(panel) {
+    if (panel === 'journal') { const b = document.querySelector('.hb[data-open="journal"]'); if (b) b.classList.remove('ping'); }
     if (S.dlg || S.mg || S.title || S.end) return;
     if (S.panel === panel) { closePanel(); return; }
     if (S.panel) closePanel(true);
@@ -1851,7 +1895,7 @@ const UI = (() => {
   const U = {
     get modal() { return blocking(); },
     init, update, blocking,
-    toast, hint, banner, flash, levelUp, onUnlock, timer, dmgNum, worldBar, vignette,
+    toast, hint, banner, flash, levelUp, onUnlock, timer, dmgNum, worldBar, vignette, journalPing,
     prompt(t, p, at) { S.pr.t = t || null; S.pr.p = p == null ? null : p; S.pr.at = t && at ? at : null; },
     momentPrompt(t, p) { S.mpr = t ? { t, p: p == null ? null : p } : null; },
     dialogue, encounter, scene, summary, final, end,

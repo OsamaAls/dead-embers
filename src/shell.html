@@ -131,6 +131,8 @@ body.lowhp #edge{opacity:1;animation:edgep 1.25s ease-in-out infinite}
 .hb .hk{font:600 10px/1 var(--mono);color:var(--bone);min-width:17px;height:17px;padding:0 3px;display:inline-grid;place-items:center;border:1px solid var(--line2);border-bottom-width:2px;background:rgba(0,0,0,.4);letter-spacing:0}
 #hb-char.pts{border-color:var(--ember);color:var(--ember2)}
 #hb-char.pts svg{filter:drop-shadow(0 0 4px var(--ember))}
+.hb.ping{border-color:var(--story);color:var(--story);position:relative}
+.hb.ping::after{content:'';position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:var(--story);box-shadow:0 0 6px var(--story)}
 #toasts{position:absolute;top:calc(var(--sat) + var(--gut) + 182px);right:calc(var(--sar) + var(--gut));display:flex;flex-direction:column;gap:4px;align-items:flex-end;pointer-events:none;max-width:min(320px,58vw)}
 #toasts.nomap{top:calc(var(--sat) + var(--gut) + 42px)}
 .toast{--tc:var(--mute);display:flex;align-items:baseline;gap:8px;font:500 13px/1.3 var(--body);padding:5px 10px;background:rgba(12,10,8,.86);border:1px solid rgba(92,77,62,.55);animation:tin .25s ease-out;transition:opacity .4s,transform .4s}
@@ -184,6 +186,8 @@ body.touch #prompt.on{border-color:var(--ember);background:rgba(58,38,24,.95)}
 
 #hint{position:absolute;left:50%;top:62%;transform:translate(-50%,8px);padding:9px 18px;background:rgba(12,10,8,.88);border:1px solid rgba(232,116,44,.35);font:500 15px/1.35 var(--body);color:var(--bone);text-align:center;max-width:min(520px,calc(100vw - 32px));opacity:0;transition:opacity .35s,transform .35s;pointer-events:none}
 #hint.on{opacity:1;transform:translate(-50%,0)}
+#hint b{display:block;font:800 15px/1.1 var(--display);letter-spacing:.09em;text-transform:uppercase;color:var(--good);margin-bottom:3px}
+#hint.new{border-color:rgba(156,196,106,.5)}
 #wmark{position:absolute;left:0;top:0;pointer-events:none;will-change:transform}
 #wmark .dia{width:14px;height:14px;border:2px solid var(--ember);background:rgba(232,116,44,.25);transform:translate(-50%,-50%) rotate(45deg);box-shadow:0 0 10px var(--emberglow)}
 #wmark .dl{position:absolute;left:0;top:12px;transform:translateX(-50%);font:600 10px var(--mono);color:var(--ember2);text-shadow:0 1px 2px #000;white-space:nowrap}

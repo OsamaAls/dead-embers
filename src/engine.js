@@ -851,7 +851,7 @@ function tickHour(opts) {
 /* Keys: needs (hunger/thirst HUD), build, craft, people, horde, radio, journal, map. UI reads G.unlocks[k]. */
 function unlock(k) { if (!G || G.unlocks[k]) return false; G.unlocks[k] = G.day; Hooks.unlock && Hooks.unlock(k); return true; }
 function isUnlocked(k) { return !!(G && G.unlocks[k]); }
-function hintOnce(key, text) { if (!G || G.hints[key]) return false; G.hints[key] = 1; Hooks.hint && Hooks.hint(text); return true; }
+function hintOnce(key, text) { if (!G || G.hints[key]) return false; G.hints[key] = 1; Hooks.hint && Hooks.hint(text, key); return true; }
 function checkUnlocks() {
   const p = G.p;
   if (p.hunger < 62 || p.thirst < 58) { if (unlock('needs')) hintOnce('needs', 'Hunger and thirst are dropping. Eat and drink from your pack (I).'); }
@@ -1084,6 +1084,7 @@ function restOutside() { advance(60); rest(12 + Math.round(A('end'))); return ch
 /* Called by main loop as real time passes outside the shelter. Returns an encounter or null. */
 function fieldEncounterRoll(dtSec) {
   if (G.atShelter) return null;
+  if (G.day === 1 && !isUnlocked('build')) return null; // day one: nothing jumps out until the first loot has been brought home
   G.encTimer -= dtSec * (1 + G.noise * 0.08);
   if (G.encTimer > 0) return null;
   G.encTimer = rnd(80, 140);

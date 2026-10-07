@@ -7,13 +7,14 @@ const Game = {
 };
 
 function wireHooks() {
-  Hooks.log = (msg, cls) => { if (cls === 'story' || cls === 'good' && /Level up|joined|Built|Found the/.test(msg)) UI.toast(msg, cls); };
+  /* "Journal: X" doesn't toast; the Log button lights up until the journal is opened */
+  Hooks.log = (msg, cls) => { if (/^Journal: /.test(msg)) { UI.journalPing && UI.journalPing(); return; } if (cls === 'story' || cls === 'good' && /Level up|joined|Built|Found the/.test(msg)) UI.toast(msg, cls); };
   Hooks.queue = q => Game.Q.push(q);
   Hooks.onDeath = () => { Game.dead = true; };
   Hooks.flash = k => UI.flash(k);
   Hooks.levelUp = () => { UI.levelUp(); SFX.play('levelup'); gesture('cheer'); World3D.burst && World3D.burst(G.p.x, G.p.y, 0xe8742c, 18, 1.2); };
   Hooks.toast = (t, c) => UI.toast(t, c);
-  Hooks.hint = t => UI.hint(t);
+  Hooks.hint = (t, key) => UI.hint(t, { key });
   Hooks.unlock = k => UI.onUnlock && UI.onUnlock(k);
   Hooks.spawnFight = (ids, opts) => Combat.spawnFight(ids, opts);
   Hooks.openTrader = () => Game.Q.unshift({ type: 'trader' });
@@ -115,7 +116,7 @@ function interactTarget() {
       const chk = canBuild(k), cost = buildCost(k);
       const costTxt = cost ? Object.keys(cost).map(r => `${cost[r]} ${itemName(r)}`).join(', ') : '';
       out.push({ key: 'build' + k, d: dd, at: { x: s.x, y: s.y, h: 1.4 }, label: chk.ok ? `Build ${bl(k) ? bName(k) + ' ' + (bl(k) + 1) : B.n} · ${costTxt}` : `${B.n}: ${chk.why} (${costTxt})`, time: chk.ok ? 2.5 : -1, hl: ['slot', k],
-        act: () => { if (build(k)) { World3D.refreshShelter(); SFX.play('build'); UI.toast(`Built ${bName(k)}`, 'good'); } } });
+        act: () => { if (build(k)) { World3D.refreshShelter(); SFX.play('build'); } } }); // build() logs "Built X." (one toast)
     }
   }
   return pickTarget(out);
@@ -139,7 +140,10 @@ function openContainer(c) {
   const r = searchContainer(c);
   World3D.setContainerOpened(c.id, true); SFX.play('open'); Combat.noise(G.p.x, G.p.y, 3);
   if (r.empty) UI.toast('Nothing left.', 'dim');
-  for (const l of r.loot) UI.toast(l, /left behind|pack full/.test(l) ? 'warn' : 'loot');
+  /* one toast for what you found, a separate one only for what didn't fit */
+  const warn = r.loot.filter(l => /left behind|pack full/.test(l)), got = r.loot.filter(l => !warn.includes(l));
+  if (got.length) UI.toast(got.join(' · '), 'loot');
+  for (const l of warn) UI.toast(l, 'warn');
   if (!r.empty && !r.loot.length) UI.toast('Nothing useful.', 'dim');
   if (r.lore) UI.toast(r.lore.short ? `${r.lore.title}: ${r.lore.short}` : `Note found: ${r.lore.title} (journal)`, 'story');
   if (r.enc) Game.Q.push({ type: 'enc', enc: r.enc });

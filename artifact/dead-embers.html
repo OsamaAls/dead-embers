@@ -131,6 +131,8 @@ body.lowhp #edge{opacity:1;animation:edgep 1.25s ease-in-out infinite}
 .hb .hk{font:600 10px/1 var(--mono);color:var(--bone);min-width:17px;height:17px;padding:0 3px;display:inline-grid;place-items:center;border:1px solid var(--line2);border-bottom-width:2px;background:rgba(0,0,0,.4);letter-spacing:0}
 #hb-char.pts{border-color:var(--ember);color:var(--ember2)}
 #hb-char.pts svg{filter:drop-shadow(0 0 4px var(--ember))}
+.hb.ping{border-color:var(--story);color:var(--story);position:relative}
+.hb.ping::after{content:'';position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:var(--story);box-shadow:0 0 6px var(--story)}
 #toasts{position:absolute;top:calc(var(--sat) + var(--gut) + 182px);right:calc(var(--sar) + var(--gut));display:flex;flex-direction:column;gap:4px;align-items:flex-end;pointer-events:none;max-width:min(320px,58vw)}
 #toasts.nomap{top:calc(var(--sat) + var(--gut) + 42px)}
 .toast{--tc:var(--mute);display:flex;align-items:baseline;gap:8px;font:500 13px/1.3 var(--body);padding:5px 10px;background:rgba(12,10,8,.86);border:1px solid rgba(92,77,62,.55);animation:tin .25s ease-out;transition:opacity .4s,transform .4s}
@@ -184,6 +186,8 @@ body.touch #prompt.on{border-color:var(--ember);background:rgba(58,38,24,.95)}
 
 #hint{position:absolute;left:50%;top:62%;transform:translate(-50%,8px);padding:9px 18px;background:rgba(12,10,8,.88);border:1px solid rgba(232,116,44,.35);font:500 15px/1.35 var(--body);color:var(--bone);text-align:center;max-width:min(520px,calc(100vw - 32px));opacity:0;transition:opacity .35s,transform .35s;pointer-events:none}
 #hint.on{opacity:1;transform:translate(-50%,0)}
+#hint b{display:block;font:800 15px/1.1 var(--display);letter-spacing:.09em;text-transform:uppercase;color:var(--good);margin-bottom:3px}
+#hint.new{border-color:rgba(156,196,106,.5)}
 #wmark{position:absolute;left:0;top:0;pointer-events:none;will-change:transform}
 #wmark .dia{width:14px;height:14px;border:2px solid var(--ember);background:rgba(232,116,44,.25);transform:translate(-50%,-50%) rotate(45deg);box-shadow:0 0 10px var(--emberglow)}
 #wmark .dl{position:absolute;left:0;top:12px;transform:translateX(-50%);font:600 10px var(--mono);color:var(--ember2);text-shadow:0 1px 2px #000;white-space:nowrap}
@@ -3744,7 +3748,7 @@ function tickHour(opts) {
 /* Keys: needs (hunger/thirst HUD), build, craft, people, horde, radio, journal, map. UI reads G.unlocks[k]. */
 function unlock(k) { if (!G || G.unlocks[k]) return false; G.unlocks[k] = G.day; Hooks.unlock && Hooks.unlock(k); return true; }
 function isUnlocked(k) { return !!(G && G.unlocks[k]); }
-function hintOnce(key, text) { if (!G || G.hints[key]) return false; G.hints[key] = 1; Hooks.hint && Hooks.hint(text); return true; }
+function hintOnce(key, text) { if (!G || G.hints[key]) return false; G.hints[key] = 1; Hooks.hint && Hooks.hint(text, key); return true; }
 function checkUnlocks() {
   const p = G.p;
   if (p.hunger < 62 || p.thirst < 58) { if (unlock('needs')) hintOnce('needs', 'Hunger and thirst are dropping. Eat and drink from your pack (I).'); }
@@ -3977,6 +3981,7 @@ function restOutside() { advance(60); rest(12 + Math.round(A('end'))); return ch
 /* Called by main loop as real time passes outside the shelter. Returns an encounter or null. */
 function fieldEncounterRoll(dtSec) {
   if (G.atShelter) return null;
+  if (G.day === 1 && !isUnlocked('build')) return null; // day one: nothing jumps out until the first loot has been brought home
   G.encTimer -= dtSec * (1 + G.noise * 0.08);
   if (G.encTimer > 0) return null;
   G.encTimer = rnd(80, 140);
@@ -10512,7 +10517,7 @@ const SFX = (() => {
 const UI = (() => {
   const S = {
     dlg: null, panel: null, panelTab: {}, mg: null, title: false, end: false, hudShown: false,
-    pr: { t: null, p: null }, mpr: null, prKey: '', hintQ: [], hintOn: false, hintT: 0, bannerT: 0,
+    pr: { t: null, p: null }, mpr: null, prKey: '', hintQ: [], hintCur: null, hintGap: 0, bannerT: 0,
     c: {}, dn: [], timer: null, wbars: {}, mmT: 0, fogT: 0, objText: '', joy: null, pinch: {}, crouchT: false,
     atk: { mouse: false, key: false, touch: false }, barMax: 0,
     nav: {}, mouseT: -99, mx0: null, my0: null, lock: null, ehit: {}, ebars: {}, barLast: null, tsel: 0,
@@ -10796,6 +10801,7 @@ const UI = (() => {
       D.timer.classList.toggle('urgent', t < 3);
     }
     renderPrompt();
+    tickHints(dt);
     // minimap
     const mmOn = safe(() => isUnlocked('journal') || isUnlocked('map') || G.day >= 2, false);
     if (mmOn && D.mm.hidden) { D.mm.hidden = false; D.mm.classList.add('reveal'); }
@@ -10995,7 +11001,7 @@ const UI = (() => {
     if (S.prW == null || S.c.prwKey !== S.prKey) { S.c.prwKey = S.prKey; S.prW = P.offsetWidth; S.prH = P.offsetHeight; }
     const vw = innerWidth, vh = innerHeight, w = S.prW, h = S.prH, m = 8;
     let x = pt.x - w / 2, y = pt.y - h - 10;
-    const top = S.phone ? 50 : 64;
+    const top = S.phone ? (parseFloat(S.c.objh) || 30) + 34 : 64; /* below the objective and its notices */
     if (y < top) y = pt.y + 18;
     x = cl(x, m, vw - w - m); y = cl(y, top, vh - h - m);
     if (S.phone || INPUT.touch) {
@@ -11205,16 +11211,56 @@ const UI = (() => {
     [/C to crouch\./, 'CROUCH to sneak.'], [/Mash attack/, 'Mash ATTACK'], [/[Hh]old E/g, m => m[0] + 'old USE'], [/\(I\)/, '(PACK)'], [/\(B\)/, '(CHAR)'],
     [/H: stay \/ follow\./, 'Tap their name to make them stay or follow.'], [/R: send them to fetch\./, 'Tap FETCH to send them.'], [/\bE again\b/, 'USE again'], [/\bpress E\b/gi, 'tap USE']];
   function touchWords(t) { for (const [re, to] of TOUCH_WORDS) t = t.replace(re, to); return t; }
-  function hint(text) {
-    if (!text || !D.hint) return;
+  /* ---------- notices: teaching hints and "New: X" unlock cards, one at a time ----------
+     A card shows only while nothing modal is open (its clock stops behind dialogues, panels and cutscenes). During a fight only
+     fight lessons (and keyless lines from moments and companions) show; the rest wait for a calm moment. A queued lesson the
+     player has already done is dropped. An unlock and the hint that comes with it make one card. */
+  const FIGHT_HINTS = { combat: 1, crouch: 1, sneak: 1, grab: 1, gun: 1, revive: 1, bottle: 1, horde_now: 1 };
+  const HINT_DONE = {
+    search: () => G.stats.searches > 0, first_loot: () => !!G.atShelter, points: () => !(G.p.points > 0),
+    build: () => Object.keys(G.buildings || {}).some(k => G.buildings[k] > 0), move: () => false,
+  };
+  function hint(text, o) {
+    if (!text || !D.hint) return; o = o || {};
     if (INPUT.touch) text = touchWords(text);
-    if (S.hintCur === text || S.hintQ.includes(text)) return;
-    S.hintQ.push(text); if (!S.hintOn) nextHint();
+    if ((S.hintCur && S.hintCur.text === text) || S.hintQ.some(h => h.text === text)) return;
+    const u = S.unlockOpen; /* the hint that the same unlock() call fires right after it joins its card */
+    if (u && !u.text) { u.text = text; u.key = o.key || null; return; }
+    S.hintQ.push({ text, key: o.key || null });
   }
-  function nextHint() {
-    const t = S.hintQ.shift(); if (!t) { S.hintOn = false; S.hintCur = null; return; }
-    S.hintOn = true; S.hintCur = t; D.hint.textContent = t; D.hint.classList.add('on');
-    clearTimeout(S.hintT); S.hintT = setTimeout(() => { D.hint.classList.remove('on'); setTimeout(nextHint, 450); }, 3800 + Math.min(2500, t.length * 22));
+  function unlockCard(label) {
+    const c = { title: 'New: ' + label, text: '', unlock: true, key: null }; S.hintQ.push(c); SFX.play('good');
+    S.unlockOpen = c; Promise.resolve().then(() => { if (S.unlockOpen === c) S.unlockOpen = null; });
+  }
+  const calmFor = h => !h.key || FIGHT_HINTS[h.key];
+  function tickHints(dt) {
+    if (!D.hint) return;
+    const fight = typeof Combat !== 'undefined' && Combat.inFight && safe(() => Combat.inFight(), false), free = !blocking();
+    const cur = S.hintCur;
+    if (cur) {
+      const show = free && (!fight || calmFor(cur));
+      if (D.hint.classList.contains('on') !== show) D.hint.classList.toggle('on', show);
+      if (!show) return;
+      cur.t -= dt;
+      const stale = cur.key && HINT_DONE[cur.key] && cur.shown > 1.2 && safe(HINT_DONE[cur.key], false);
+      cur.shown = (cur.shown || 0) + dt;
+      if (cur.t <= 0 || stale) { D.hint.classList.remove('on'); S.hintCur = null; S.hintGap = 0.45; }
+      return;
+    }
+    if (S.hintGap > 0) { S.hintGap -= dt; return; }
+    if (!free) return;
+    for (let i = 0; i < S.hintQ.length; i++) {
+      const h = S.hintQ[i], done = h.key && HINT_DONE[h.key];
+      if (done && safe(done, false)) { S.hintQ.splice(i--, 1); continue; }
+      if (fight && !calmFor(h)) continue;
+      S.hintQ.splice(i, 1);
+      const len = (h.title || '').length + h.text.length;
+      h.t = 3.8 + Math.min(2.5, len * 0.022) + (h.title ? 0.8 : 0);
+      S.hintCur = h;
+      D.hint.innerHTML = (h.title ? `<b>${esc(h.title)}</b>` : '') + esc(h.text);
+      D.hint.classList.toggle('new', !!h.title); D.hint.classList.add('on');
+      return;
+    }
   }
   function banner(title, line) {
     if (!D.banner) return;
@@ -11241,7 +11287,7 @@ const UI = (() => {
   function onUnlock(key) {
     if (key === 'build' && typeof World3D !== 'undefined' && World3D.refreshShelter) safe(() => World3D.refreshShelter()); // the build outlines appear now, not after the next sleep
     const l = UNLOCK_LABEL[key]; if (!l) return;
-    toast('New: ' + l, 'good'); SFX.play('good');
+    unlockCard(l);
     if (key === 'journal' && D.mm.hidden === false) { D.mm.classList.remove('reveal'); void D.mm.offsetWidth; D.mm.classList.add('reveal'); }
   }
   function timer(label, seconds) {
@@ -11598,7 +11644,10 @@ const UI = (() => {
     if (/^(Digit|Numpad)[1-6]$/.test(c)) { const b = navActs(cur)[+c.slice(-1) - 1]; if (b && !b.disabled) b.click(); else SFX.play('bad'); }
   }
 
+  /* a new journal entry lights the Log button instead of toasting; opening the journal clears it */
+  function journalPing() { const b = document.querySelector('.hb[data-open="journal"]'); if (b) b.classList.add('ping'); }
   function open(panel) {
+    if (panel === 'journal') { const b = document.querySelector('.hb[data-open="journal"]'); if (b) b.classList.remove('ping'); }
     if (S.dlg || S.mg || S.title || S.end) return;
     if (S.panel === panel) { closePanel(); return; }
     if (S.panel) closePanel(true);
@@ -12265,7 +12314,7 @@ const UI = (() => {
   const U = {
     get modal() { return blocking(); },
     init, update, blocking,
-    toast, hint, banner, flash, levelUp, onUnlock, timer, dmgNum, worldBar, vignette,
+    toast, hint, banner, flash, levelUp, onUnlock, timer, dmgNum, worldBar, vignette, journalPing,
     prompt(t, p, at) { S.pr.t = t || null; S.pr.p = p == null ? null : p; S.pr.at = t && at ? at : null; },
     momentPrompt(t, p) { S.mpr = t ? { t, p: p == null ? null : p } : null; },
     dialogue, encounter, scene, summary, final, end,
@@ -12294,13 +12343,14 @@ const Game = {
 };
 
 function wireHooks() {
-  Hooks.log = (msg, cls) => { if (cls === 'story' || cls === 'good' && /Level up|joined|Built|Found the/.test(msg)) UI.toast(msg, cls); };
+  /* "Journal: X" doesn't toast; the Log button lights up until the journal is opened */
+  Hooks.log = (msg, cls) => { if (/^Journal: /.test(msg)) { UI.journalPing && UI.journalPing(); return; } if (cls === 'story' || cls === 'good' && /Level up|joined|Built|Found the/.test(msg)) UI.toast(msg, cls); };
   Hooks.queue = q => Game.Q.push(q);
   Hooks.onDeath = () => { Game.dead = true; };
   Hooks.flash = k => UI.flash(k);
   Hooks.levelUp = () => { UI.levelUp(); SFX.play('levelup'); gesture('cheer'); World3D.burst && World3D.burst(G.p.x, G.p.y, 0xe8742c, 18, 1.2); };
   Hooks.toast = (t, c) => UI.toast(t, c);
-  Hooks.hint = t => UI.hint(t);
+  Hooks.hint = (t, key) => UI.hint(t, { key });
   Hooks.unlock = k => UI.onUnlock && UI.onUnlock(k);
   Hooks.spawnFight = (ids, opts) => Combat.spawnFight(ids, opts);
   Hooks.openTrader = () => Game.Q.unshift({ type: 'trader' });
@@ -12402,7 +12452,7 @@ function interactTarget() {
       const chk = canBuild(k), cost = buildCost(k);
       const costTxt = cost ? Object.keys(cost).map(r => `${cost[r]} ${itemName(r)}`).join(', ') : '';
       out.push({ key: 'build' + k, d: dd, at: { x: s.x, y: s.y, h: 1.4 }, label: chk.ok ? `Build ${bl(k) ? bName(k) + ' ' + (bl(k) + 1) : B.n} · ${costTxt}` : `${B.n}: ${chk.why} (${costTxt})`, time: chk.ok ? 2.5 : -1, hl: ['slot', k],
-        act: () => { if (build(k)) { World3D.refreshShelter(); SFX.play('build'); UI.toast(`Built ${bName(k)}`, 'good'); } } });
+        act: () => { if (build(k)) { World3D.refreshShelter(); SFX.play('build'); } } }); // build() logs "Built X." (one toast)
     }
   }
   return pickTarget(out);
@@ -12426,7 +12476,10 @@ function openContainer(c) {
   const r = searchContainer(c);
   World3D.setContainerOpened(c.id, true); SFX.play('open'); Combat.noise(G.p.x, G.p.y, 3);
   if (r.empty) UI.toast('Nothing left.', 'dim');
-  for (const l of r.loot) UI.toast(l, /left behind|pack full/.test(l) ? 'warn' : 'loot');
+  /* one toast for what you found, a separate one only for what didn't fit */
+  const warn = r.loot.filter(l => /left behind|pack full/.test(l)), got = r.loot.filter(l => !warn.includes(l));
+  if (got.length) UI.toast(got.join(' · '), 'loot');
+  for (const l of warn) UI.toast(l, 'warn');
   if (!r.empty && !r.loot.length) UI.toast('Nothing useful.', 'dim');
   if (r.lore) UI.toast(r.lore.short ? `${r.lore.title}: ${r.lore.short}` : `Note found: ${r.lore.title} (journal)`, 'story');
   if (r.enc) Game.Q.push({ type: 'enc', enc: r.enc });
