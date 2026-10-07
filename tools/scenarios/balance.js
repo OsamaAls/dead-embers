@@ -67,12 +67,12 @@ module.exports = async B => {
           ? `G.buildings.walls = 3; G.buildings.tower = 1; while (G.survivors.length < 6) recruit(); G.survivors.forEach((s, i) => { s.job = i < 4 ? (i ? 'guard' : 'tower') : 'idle'; s.skills.combat = 3; }); G.pack.shotgun = 1; G.pack.shells = 60; G.p.weapon = 'shotgun';`
           : `G.buildings.walls = 1; while (G.survivors.length < 4) recruit(); G.survivors.forEach((s, i) => { s.job = i < 2 ? 'guard' : 'idle'; s.skills.combat = 2; }); G.pack.pistol = 1; G.pack.ammo = 30; G.pack.machete = 1; G.p.weapon = 'pistol';`}
         World3D.refreshShelter(); __skipTo(3); sim(0.3); const plan = finalWavePlan();
-        let got = null; sim(15, j => { const b = dlgButtons().find(b => /Stay/i.test(b.textContent)); if (b) { got = b.textContent; b.click(); return 'stop'; } if (UI.blocking() && j % 6 === 0) { kd('Space'); ku('Space'); } }); sim(0.5);
+        let got = null; sim(15, j => { const b = dlgButtons().find(b => /Hold the bunker/i.test(b.textContent)); if (!b && dlgButtons().length > 1 && j % 6 === 3) { const o = dlgButtons(); o[o.length - 1].click(); return; } // another dialogue first (a shelter event): get it out of the way if (b) { got = b.textContent; b.click(); return 'stop'; } if (UI.blocking() && j % 6 === 0) { kd('Space'); ku('Space'); } }); sim(0.5);
         for (let k = 0; k < 10 && !Combat.wave && UI.blocking(); k++) unblock(4);
         const d = Combat.wave ? defendBot(320) : null; sim(2); for (let k = 0; k < 6 && UI.blocking() && !G.endScene; k++) { skipDlg(); sim(0.5); }
-        return { picked: !!got, D: plan.D, need: plan.need, count: plan.count, end: G.endScene || null, hp: Math.round(G.p.hp), secs: d && d.secs }; })()`);
+        return { picked: !!got, wave: !!d, D: plan.D, need: plan.need, count: plan.count, end: G.endScene || null, hp: Math.round(G.p.hp), secs: d && d.secs }; })()`);
       if (r.end === 'end_stand') won++;
-      rows.push(`${r.end === 'end_stand' ? 'W' : 'L'}(${r.D}/${r.need},${r.count}z,${r.secs}s)`);
+      rows.push(`${r.end === 'end_stand' ? 'W' : 'L'}(${r.D}/${r.need},${r.count}z,${r.secs}s${r.wave ? '' : ',no wave' + (r.picked ? '' : ' (choice not found)') + ',end ' + r.end})`);
     }
     B.log(`BAL stand ${kind}: won ${won}/${N} ${rows.join(' ')}`);
   };

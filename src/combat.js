@@ -244,7 +244,10 @@ const Combat = (function () {
       const k = Math.exp(-7 * dt); PS.kx *= k; PS.ky *= k;
     }
     /* stamina regen */
-    if (PS.staDelay <= 0 && mode !== 'sprint' && !PS.swing) rest((speed > 0.2 ? 7 : 12) * dt * (1 - 0.45 * Math.min(1, coldK(p.x, p.y))));
+    /* in the cold (no coat, no fire, outdoors in snow) you never get your breath back fully: stamina refills only to coldCap() and bleeds down to it */
+    const ck = coldK(p.x, p.y), cap = coldCap(ck);
+    if (p.sta > cap) p.sta = Math.max(cap, p.sta - 3 * dt);
+    else if (PS.staDelay <= 0 && mode !== 'sprint' && !PS.swing) { rest((speed > 0.2 ? 7 : 12) * dt * (1 - 0.45 * Math.min(1, ck))); if (p.sta > cap) p.sta = cap; }
     /* facing */
     if (!usingMouse()) updateLock(prof, dt); else { INPUT.cyclePressed = false; C.target = mouseTarget(prof); }
     if (INPUT.throwPressed) { INPUT.throwPressed = false; if (!PS.dodge && !C.grabbed) throwBottle(prof); }

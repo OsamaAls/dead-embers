@@ -18,7 +18,7 @@ vm.runInContext(src + `
   serialize, listWorlds, loadWorld, deleteWorld, forkWorld, markEnded, hasSave, lastWorldId, recruit, adoptDog, setCompanion, clearCompanion, companionInfo,
   companionHurt, companionCarry, carryCap, hordeWaveSize, barDoor, unbarDoor, doorBlocked, hitDoorBar, siphonCar, fillBottle, cookAt, cookOption, radioBroadcast,
   maybeRequest, requestOf, deliverRequest, chatSurvivor, giftSurvivor, survivorMood, setJob, jobChoices, T_DOOR, T_CAR,
-  weaponCond, wearWeapon, repairCost, repairWeapon, playerHitDamage, actNow, bossHere, bossMet, BOSS_LAIR, buildingAt, endingEpilogue, pickup };`, ctx);
+  coldCap, weaponCond, wearWeapon, repairCost, repairWeapon, playerHitDamage, actNow, bossHere, bossMet, BOSS_LAIR, buildingAt, endingEpilogue, pickup };`, ctx);
 const T = ctx.__T;
 const queued = [];
 T.Hooks.queue = q => queued.push(q);
@@ -145,6 +145,9 @@ try {
   T.weaponProfile();
   fresh(); const o = T.objectiveInfo(); if (!o.text || !o.target) fail('objective', 'first objective needs text and target');
 } catch (err) { fail('rules', err); }
+
+/* ---- cold: stamina only refills to 60% in the snow, 40% in the storm ---- */
+try { fresh(); const m = T.G.p.maxSta; if (T.coldCap(0) !== m || Math.round(T.coldCap(1)) !== Math.round(m * 0.6) || Math.round(T.coldCap(1.5)) !== Math.round(m * 0.4)) fail('cold', [T.coldCap(0), T.coldCap(1), T.coldCap(1.5)].join(' ')); } catch (err) { fail('cold', err); }
 
 /* ---- weapon wear: hits soften with wear, never break, scrap repairs at the bench, a new find is fresh ---- */
 try {

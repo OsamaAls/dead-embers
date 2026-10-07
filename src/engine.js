@@ -568,6 +568,8 @@ function districtAt(x, y) {
   if (bx < 0) bx = clamp(Math.round((x - 28.5) / 12), 0, 4); if (by < 0) by = clamp(Math.round((y - 24) / 10), 0, 3);
   return BLOCK_PLAN[bx + ',' + by] || 'street';
 }
+/* The stamina you can get back while cold: 60% of max in the snow, 40% in the storm (coldK 1 / 1.5); all of it when warm. */
+function coldCap(k) { return G.p.maxSta * (1 - 0.4 * Math.min(1.5, k || 0)); }
 /* Is a biome (or the biome under a POI) open to walk into? Gated ones need G.flags['open_' + gate]. */
 function districtOpen(b) { const g = GATE_OF[b]; return !g || !!(G && G.flags && G.flags['open_' + g]); }
 function poiOpen(p) { return districtOpen(biomeAt(p.x + 0.5, p.y + 0.5)); }
