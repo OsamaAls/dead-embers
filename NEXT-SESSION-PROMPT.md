@@ -4,6 +4,28 @@ Open a new Claude Code session in `C:\Users\computerh\Desktop\Dead Embers` and s
 
 ---
 
+## Progress log: phone UX session (2026-10-07)
+The plan is at `C:/Users/computerh/.claude/plans/the-game-has-a-elegant-stardust.md`.
+
+Osama's phone feedback:
+- the HUD is crowded;
+- objectives don't say how to do them;
+- USE is always lit;
+- too much pops up at once;
+- events have no one in the world.
+
+Phases:
+- [x] **1. Landscape phone HUD.**
+  - Portrait shows a "turn your phone" card.
+  - Buttons appear only when they do something.
+  - `tools/scenarios/layout.js` checks for overlaps at four sizes.
+  - `--mobile` is now 844x390.
+- [ ] 2. Prompts on the object, and fewer of them.
+- [ ] 3. Objectives that say how.
+- [ ] 4. One notice at a time.
+- [ ] 5. Every event is physical (`src/places.js`).
+- [ ] 6. Checks and docs.
+
 ## If a session gets cut off
 The computer may restart or lose internet mid-session (another session shares it). Commit every step locally as soon as it's done and keep a short progress log at the top of this file in the same commit. `git log --oneline origin/main..main` shows what isn't pushed yet.
 
