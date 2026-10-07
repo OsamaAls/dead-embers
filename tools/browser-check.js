@@ -44,6 +44,7 @@ const B = {
   async tap(x, y) { await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await sleep(80); await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); },
   /* resize the emulated phone (touch, mobile metrics) to w x h */
   async viewport(w, h) { await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 2, mobile: true }); await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }); await sleep(300); },
+  async touchHold(x, y, ms) { await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await sleep(ms); await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); },
   wait: sleep,
   async shot(name) { fs.mkdirSync(shotDir, { recursive: true }); const r = await send('Page.captureScreenshot', { format: 'png' }); const f = path.join(shotDir, name + (mobile ? '-mobile' : '') + '.png'); fs.writeFileSync(f, Buffer.from(r.data, 'base64')); console.log('shot', f); return f; },
   log: (...a) => console.log(...a),

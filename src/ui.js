@@ -227,7 +227,7 @@ const UI = (() => {
   /* ---------- dom refs + init ---------- */
   const D = {};
   function init() {
-    for (const id of ['hud', 'vig', 'flash', 'dmg', 'obj', 'timer', 'banner', 'mm', 'toasts', 'wpn', 'barri', 'prompt', 'hint', 'wmark', 'ohps', 'chips', 'clock', 'lvl', 'joy', 'dlg', 'pnl-wrap', 'pnl', 'mg', 'end', 'title', 'lock', 'cmp'])
+    for (const id of ['hud', 'vig', 'flash', 'dmg', 'obj', 'objhow', 'timer', 'banner', 'mm', 'toasts', 'wpn', 'barri', 'prompt', 'hint', 'wmark', 'ohps', 'chips', 'clock', 'lvl', 'joy', 'dlg', 'pnl-wrap', 'pnl', 'mg', 'end', 'title', 'lock', 'cmp'])
       D[id.replace('-', '')] = el(id);
     D.bars = { hp: el('b-hp'), sta: el('b-sta'), food: el('b-food'), water: el('b-water') };
     // damage-number pool
@@ -332,6 +332,8 @@ const UI = (() => {
     hold('t-throw', () => { INPUT.throwPressed = true; });
     hold('t-comp', () => { INPUT.companionCmd = true; });
     hold('t-fetch', () => { INPUT.fetchCmd = true; });
+    /* the floating prompt itself is a button on touch: tap for a quick action, press and hold for a search */
+    hold('prompt', () => { INPUT.interactPressed = true; S.useHeld = true; INPUT.interact = true; }, () => { S.useHeld = false; INPUT.interact = !!K.KeyE; });
   }
 
   /* ---------- HUD ---------- */
@@ -368,7 +370,7 @@ const UI = (() => {
     if (safe(() => isUnlocked('people'), false)) { ppl.hidden = false; setText(ppl.querySelector('b'), 'ppl', String(G.survivors.length)); } else ppl.hidden = true;
     chips(p);
     companionChip();
-    objective();
+    objective(dt);
     weaponChip();
     weatherChip();
     barricade();
@@ -419,16 +421,23 @@ const UI = (() => {
   }
   function curObjective() {
     const m = typeof Moments !== 'undefined' && Moments.active && Moments.target;
-    if (m && m.x != null) return { text: m.label || 'Objective', target: { x: m.x, y: m.y } };
+    if (m && m.x != null) return { text: m.label || 'Objective', how: m.how || '', target: { x: m.x, y: m.y }, moment: true };
     return safe(() => objectiveInfo(), { text: '', target: null }) || { text: '', target: null };
   }
-  function objective() {
+  /* goals that end by being done get a short tick before the next one shows; these just stop applying, so they don't */
+  const NOT_DONE = /^(Horde tonight|Night\.|Scavenge)/;
+  function objective(dt) {
     const o = curObjective(), p = G.p;
     if (S.objText !== o.text) {
-      S.objText = o.text; D.obj.querySelector('.tx').textContent = o.text || '';
-      D.obj.hidden = !o.text; D.obj.classList.remove('new'); void D.obj.offsetWidth; D.obj.classList.add('new');
-      topLayout();
+      const prev = S.objText;
+      if (prev && o.text && !S.objMom && !o.moment && !NOT_DONE.test(prev) && !S.objDone) S.objDone = { t: 1.3, text: prev };
+      S.objText = o.text; S.objMom = !!o.moment;
+      if (S.objDone) { D.obj.querySelector('.tx').textContent = '✓ ' + S.objDone.text; D.obj.classList.add('done'); }
+      else showObjText(o.text);
     }
+    if (S.objDone && (S.objDone.t -= dt || 0) <= 0) { S.objDone = null; D.obj.classList.remove('done'); showObjText(S.objText); }
+    const how = S.objDone ? '' : (o.how ? (INPUT.touch ? touchWords(o.how) : o.how) : '');
+    if (S.c.how !== how) { S.c.how = how; D.objhow.textContent = how; D.objhow.hidden = !how; topLayout(); }
     const t = o.target, ar = D.obj.querySelector('.ar'), ds = D.obj.querySelector('.ds');
     if (!t || !has3D()) { if (S.c.tgt !== 0) { S.c.tgt = 0; ar.style.opacity = 0.25; ds.textContent = ''; D.wmark.hidden = true; } return; }
     S.c.tgt = 1; ar.style.opacity = 1;
@@ -460,9 +469,14 @@ const UI = (() => {
     setText(wm.querySelector('.dl'), 'wdl', ds.textContent);
   }
   /* phones: the objective may take two lines; the status block, minimap and toasts sit below whatever height it has */
+  function showObjText(t) {
+    D.obj.querySelector('.tx').textContent = t || '';
+    D.obj.hidden = !t; D.obj.classList.remove('new'); void D.obj.offsetWidth; D.obj.classList.add('new');
+    topLayout();
+  }
   function topLayout() {
     if (!D.hud) return;
-    const h = D.obj && !D.obj.hidden ? D.obj.offsetHeight : 0, v = (h || 30) + 'px';
+    const h = (D.obj && !D.obj.hidden ? D.obj.offsetHeight : 0) + (D.objhow && !D.objhow.hidden ? D.objhow.offsetHeight + 4 : 0), v = (h || 30) + 'px';
     if (S.c.objh !== v) { S.c.objh = v; D.hud.style.setProperty('--objh', v); }
   }
   /* weather and season next to the clock: an icon and a word (cold and the last-night storm called out) */
@@ -556,6 +570,28 @@ const UI = (() => {
     }
     const pr = src.p == null ? 0 : cl(src.p, 0, 1), q = Math.round(pr * 60);
     if (S.c.prp !== q) { S.c.prp = q; D.prompt.querySelector('rect.pg').style.strokeDashoffset = (100 * (1 - pr)).toFixed(1); }
+    anchorPrompt(src.at);
+  }
+  /* the prompt floats over the thing it is about (a shelf, a car, a person) and follows it as the camera moves; it falls back to the
+     bottom of the screen when the thing is off screen. On a phone it keeps clear of the button arc so it never covers a button. */
+  function anchorPrompt(at) {
+    const P = D.prompt;
+    const pt = at && has3D() ? R.tileToScreen(at.x, at.y, at.h || 1.6) : null;
+    if (!pt || !pt.on) { if (S.c.panch) { S.c.panch = false; P.classList.remove('anch'); P.style.transform = ''; } return; }
+    if (S.prW == null || S.c.prwKey !== S.prKey) { S.c.prwKey = S.prKey; S.prW = P.offsetWidth; S.prH = P.offsetHeight; }
+    const vw = innerWidth, vh = innerHeight, w = S.prW, h = S.prH, m = 8;
+    let x = pt.x - w / 2, y = pt.y - h - 10;
+    const top = S.phone ? 50 : 64;
+    if (y < top) y = pt.y + 18;
+    x = cl(x, m, vw - w - m); y = cl(y, top, vh - h - m);
+    if (S.phone || INPUT.touch) {
+      const armL = vw - 262, armT = vh - 196; /* the button arc's corner */
+      if (x + w > armL && y + h > armT) { if (pt.x - w / 2 > armL - w) y = Math.min(y, armT - h - 6); else x = Math.min(x, armL - w - 6); }
+      if (x < 186 && y + h > vh - 200) x = 186; /* and off the joystick's resting spot */
+      x = cl(x, m, vw - w - m); y = cl(y, top, vh - h - m);
+    }
+    if (!S.c.panch) { S.c.panch = true; P.classList.add('anch'); }
+    P.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`;
   }
 
   /* ---------- minimap / map ---------- */
@@ -789,6 +825,7 @@ const UI = (() => {
     safe(() => hintOnce('points', INPUT.touch ? 'Spend your attribute point: tap CHAR at the top.' : 'Spend your attribute point in the character sheet (B).'));
   }
   function onUnlock(key) {
+    if (key === 'build' && typeof World3D !== 'undefined' && World3D.refreshShelter) safe(() => World3D.refreshShelter()); // the build outlines appear now, not after the next sleep
     const l = UNLOCK_LABEL[key]; if (!l) return;
     toast('New: ' + l, 'good'); SFX.play('good');
     if (key === 'journal' && D.mm.hidden === false) { D.mm.classList.remove('reveal'); void D.mm.offsetWidth; D.mm.classList.add('reveal'); }
@@ -1282,7 +1319,7 @@ const UI = (() => {
           return h;
         }
         const o = curObjective();
-        let h = `<h3>Now</h3><div class="objbig">${esc(o.text || 'Survive.')}</div>`;
+        let h = `<h3>Now</h3><div class="objbig">${esc(o.text || 'Survive.')}${o.how ? `<span class="how">${esc(INPUT.touch ? touchWords(o.how) : o.how)}</span>` : ''}</div>`;
         const notes = [];
         if (G.hordeNight && !G.hordeResult) notes.push('A horde hits the bunker tonight. Be home by 21:00.');
         if (G.flags.q_bus && G.hordeDay) notes.push(`The great horde arrives around day ${G.hordeDay}.`);
@@ -1815,7 +1852,7 @@ const UI = (() => {
     get modal() { return blocking(); },
     init, update, blocking,
     toast, hint, banner, flash, levelUp, onUnlock, timer, dmgNum, worldBar, vignette,
-    prompt(t, p) { S.pr.t = t || null; S.pr.p = p == null ? null : p; },
+    prompt(t, p, at) { S.pr.t = t || null; S.pr.p = p == null ? null : p; S.pr.at = t && at ? at : null; },
     momentPrompt(t, p) { S.mpr = t ? { t, p: p == null ? null : p } : null; },
     dialogue, encounter, scene, summary, final, end,
     open, close() { closeMg(); closeDlg(); closePanel(); }, tollcamp, barter, lockpick, title, talk, radio,

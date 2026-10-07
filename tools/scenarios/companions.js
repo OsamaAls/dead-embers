@@ -96,7 +96,7 @@ module.exports = async B => {
     G.pack.dirtywater=1; const w0=G.pack.water||0; const lb=label(); holdE(3.5); return {label:lb, water:(G.pack.water||0)-w0, dirty:G.pack.dirtywater||0, d:+Math.hypot(f.x-G.p.x,f.y-G.p.y).toFixed(2)}`, '/at the fire/.test(r.label) && r.water===1 && !r.dirty');
   await B.shot('c08-cook');
   await step('barricade a door, a zombie stops at it', `calm(); const isDoor=(x,y)=>tileAt(x,y)===T_DOOR && buildingAt(x+0.5,y+0.5)>=0 && !inShelter(x+0.5,y+0.5) && tileAt(x,y-1)===T_FLOOR && !solidAt(x+0.5,y+1.5) && !!path(x+0.5,y+1.6) && (()=>{ const c=containerNear(x+0.5,y+1.65,1.7); return !c || containerState(c)==='empty'; })();
-    const d=tileNear(isDoor, G.p); goto(d.x+0.5, d.y+1.65, 0.25, 150); calm(); G.pack.wood=4; const lb=label(); holdE(3.5); const barred=doorBarred(d.x,d.y);
+    const d=tileNear(isDoor, G.p); goto(d.x+0.5, d.y+1.65, 0.25, 150); calm(); G.pack.wood=4; G.hour=22; G.minute=0; G.isNight=true; const lb=label(); /* doors offer a barricade only at night or with the dead close */ holdE(3.5); const barred=doorBarred(d.x,d.y);
     const e=Combat.spawnAt('walker', d.x+0.5, d.y-1.5, {aware:true}); const h0=Combat.doorHits; let maxY=-1;
     sim(4, () => { safeHp(); G.encTimer=1e9; if (!e.dead) maxY=Math.max(maxY,e.y); }); const held={hits:Combat.doorHits-h0, inside:maxY < d.y+0.95, hp:G.doorBars[d.y*W+d.x]||0};
     return {label:lb, barred, held, wood:G.pack.wood}`, "/Barricade the door/.test(r.label) && r.barred && r.held.inside && r.held.hits>=1 && r.wood===2");

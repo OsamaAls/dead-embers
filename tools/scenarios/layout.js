@@ -2,6 +2,12 @@
    Puts every HUD piece and touch button on screen at once (needs, chips, companion with FETCH, minimap, toasts, banner, hint,
    USE, TARGET, THROW), then at three landscape phone sizes measures them and fails when two of them overlap, a button is smaller
    than 40 px, or anything leaves the screen. Also checks that portrait shows the "turn your phone" card and pauses. */
+/* press on (x,y) for ms, noting the most hold progress seen while the finger is down */
+async function send0(B, box, ms) {
+  await B.eval(`window.__held=0; window.__hw=setInterval(()=>{ window.__held=Math.max(window.__held, Game.hold||0); }, 50); 1`);
+  await B.touchHold(box.x, box.y, ms);
+  await B.eval(`clearInterval(window.__hw); 1`);
+}
 module.exports = async B => {
   let fails = 0;
   const ok = (name, pass, detail) => { if (!pass) fails++; B.log(`STEP ${name}: ${pass ? 'ok' : 'FAIL'}${detail != null ? ' ' + JSON.stringify(detail) : ''}`); };
@@ -48,12 +54,26 @@ module.exports = async B => {
   await B.viewport(844, 390); await B.eval(`(function(){ Combat.clear && Combat.clear(); G.p.x=WORLD.hatch.x+0.5; G.p.y=WORLD.hatch.y+5.5; return 1; })()`); await B.wait(400);
   const use = await B.eval(`(function(){ const t=interactTarget(); return {t:t&&t.label, act:!!t&&t.time>=0, shown:getComputedStyle(document.getElementById('t-use')).display!=='none'}; })()`);
   ok('USE shows only when there is something to do', use.shown === use.act, use);
+  /* the prompt floats over the container it is about, and tapping it searches */
+  const pr = await B.eval(`(function(){ const c=WORLD.containers.filter(k=>containerState(k)!=='empty' && !inShelter(k.x+0.5,k.y+0.5)).sort((a,b)=>Math.hypot(a.x-G.p.x,a.y-G.p.y)-Math.hypot(b.x-G.p.x,b.y-G.p.y))
+      .find(k=>[[0,1],[1,0],[-1,0],[0,-1]].some(([dx,dy])=>!solidAt(k.x+dx+0.5,k.y+dy+0.5)));
+    const s=[[0,1],[1,0],[-1,0],[0,-1]].find(([dx,dy])=>!solidAt(c.x+dx+0.5,c.y+dy+0.5)); G.p.x=c.x+s[0]+0.5; G.p.y=c.y+s[1]+0.5; G.p.face=Math.atan2(-s[0],-s[1]); window.__c=c; return c.kind; })()`);
+  await B.wait(2500); /* the camera glides after a teleport */
+  const pa = await B.eval(`(function(){ const P=document.getElementById('prompt'), r=P.getBoundingClientRect(), c=window.__c, s=R.tileToScreen(c.x+0.5,c.y+0.5,1.4);
+    return {anch:P.classList.contains('anch'), text:P.textContent.trim(), dx:Math.round(r.left+r.width/2-s.x), dy:Math.round(r.bottom-s.y), pe:getComputedStyle(P).pointerEvents}; })()`);
+  ok('the prompt floats over the container', pa.anch && /Search/.test(pa.text) && Math.abs(pa.dy) < 60 && pa.pe === 'auto', Object.assign({ kind: pr }, pa));
+  await B.shot('layout-prompt');
+  const s0 = await B.eval('G.stats.searches');
+  const box = await B.eval(`(function(){ const r=document.getElementById('prompt').getBoundingClientRect(); return {x:r.left+r.width/2, y:r.top+r.height/2}; })()`);
+  /* SwiftShader runs a few frames a second and the game caps a frame at 50 ms, so check the hold is filling rather than waiting it out */
+  await send0(B, box, 2500);
+  ok('holding the prompt searches', (await B.eval('G.stats.searches')) > s0 || (await B.eval('window.__held')) > 0, await B.eval(`(function(){ const e=document.elementFromPoint(${box.x},${box.y}); return {hit:e&&(e.id||e.className||e.tagName), box:${JSON.stringify(box)}, t:(interactTarget()||{}).label}; })()`));
   /* portrait: the card shows and the game pauses */
   await B.viewport(390, 844); await B.wait(400);
   const port = await B.eval(`({card:getComputedStyle(document.getElementById('rotate')).display, blocking:UI.blocking()})`);
   ok('portrait shows the turn-your-phone card and pauses', port.card === 'flex' && port.blocking, port);
   await B.shot('layout-portrait');
   await B.viewport(844, 390); await B.wait(400);
-  ok('back to landscape resumes', !(await B.eval('UI.blocking()')));
+  ok('back to landscape resumes', !(await B.eval('UI.blocking()')), await B.eval(`({dlg:!!UI.state.dlg, panel:UI.state.panel, mg:!!UI.state.mg, cine:typeof Cine!=='undefined'&&!!Cine.active, q:Game.Q.map(q=>q.type)})`));
   if (fails) throw new Error(fails + ' layout step(s) failed');
 };

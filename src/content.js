@@ -8,7 +8,7 @@
       title: "The Bunker",
       beats: [
         { who: '', line: "Fourteen months since the Grey Fever. The bunker is quiet, {name}. Your throat is dry." },
-        { who: '', line: "Find water and food up top." }
+        { who: '', line: "Two bottles of water left in storage. Find more up top." }
       ],
       paras: [
         "You wake on a steel cot in a metro maintenance bunker, with a taste like old pennies in your mouth. The ceiling has cracked since you last looked. Dust sifts down in the light of one dying lamp.",

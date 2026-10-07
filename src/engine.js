@@ -1262,54 +1262,84 @@ function storyCheck() {
   gateCheck();
 }
 const P_ = p => p ? { x: p.x + 0.5, y: p.y + 0.5 } : null;
-/* Current goal: {text, target:{x,y}|null} in tile coords. One short line; the UI draws a marker + compass arrow. */
+/* Current goal: {text, how, target:{x,y}|null} in tile coords. text is one short line; how (optional) says how to do it, in one more
+   short line. The UI draws a marker + compass arrow at the target. Keyboard wording ("hold E"); the UI swaps in USE on touch. */
 function objectiveInfo() {
   const f = G.flags, home = P_(WORLD.hatch), me = G.p;
   const near = type => P_(nearestPoi(type, me.x, me.y));
-  if (G.hordeNight && !G.hordeResult && !G.atShelter && G.hour >= 12) return { text: 'Horde tonight. Get back to the bunker.', target: home };
-  // first-day chain: loot -> bring it home -> bunks -> rain collector
-  if (G.stats.searches === 0) return { text: 'Find water. Search FreshMart.', target: near('supermarket') };
+  if (G.hordeNight && !G.hordeResult && !G.atShelter && G.hour >= 12) return { text: 'Horde tonight. Get back to the bunker.', how: 'Be inside the yard before dark.', target: home };
+  // first-day chain: water -> bring it home -> bunks -> rain collector
+  if (!f.got_water && (G.pack.water || G.pack.dirtywater || G.day > 1 || bl('bed'))) f.got_water = true;
+  if (!f.got_water) return waterGoal();
   if (!bl('bed')) {
-    if (!G.atShelter && !isUnlocked('build')) return { text: 'Bring your loot home to the bunker.', target: home };
-    return buildGoal('bed', 'Build Bunks in the bunker yard.');
+    if (!G.atShelter && !isUnlocked('build')) return { text: 'Bring it home to the bunker.', how: 'Follow the arrow back to the hatch.', target: home };
+    return buildGoal('bed', 'Build Bunks in the yard.');
   }
   if (!bl('rain')) return buildGoal('rain', 'Build a Rain Collector.');
   if (f.q_bus) {
     const left = G.hordeDay - G.day;
-    if (f.bus_ready) return { text: `The bus is ready. Horde in ${left} days.`, target: home };
-    if (!has('engine_parts') && !G.store.engine_parts && !G.pack.engine_parts) return { text: `Find Engine Parts at the Bus Depot (${left}d).`, target: near('depot') };
-    if (!G.pack.haven_map && !G.store.haven_map) return { text: `Find the route map at Checkpoint Echo (${left}d).`, target: near('military') };
-    if (count('fuel') < 6) return { text: `Gather Fuel ${count('fuel')}/6 (${left}d).`, target: near('gas') };
-    return { text: 'Bring parts and fuel to the bus at the depot.', target: P_(WORLD.bus) };
+    if (f.bus_ready) return { text: `The bus is ready. Horde in ${left} days.`, how: 'Choose how it ends when the horde comes.', target: home };
+    if (!has('engine_parts') && !G.store.engine_parts && !G.pack.engine_parts) return { text: `Find Engine Parts (${left}d).`, how: 'Search the Bus Depot.', target: near('depot') };
+    if (!G.pack.haven_map && !G.store.haven_map) return { text: `Find the route map (${left}d).`, how: 'Search Checkpoint Echo.', target: near('military') };
+    if (count('fuel') < 6) return { text: `Gather Fuel ${count('fuel')}/6 (${left}d).`, how: has('hose') ? 'Gas stations, or hold E at a wreck with your hose.' : 'Gas stations have it. A Siphon Hose drains wrecks.', target: near('gas') };
+    return { text: 'Bring parts and fuel to the bus.', how: 'Hold E at the bus in the depot.', target: P_(WORLD.bus) };
   }
   if (f.radio_built) {
-    if (G.survivors.length < 4) return { text: `Haven wants a community. Survivors ${G.survivors.length}/4.`, target: null };
-    return { text: 'Haven wants walls. Build Barricades.', target: slotCentre('walls') };
+    if (G.survivors.length < 4) return { text: `Haven wants a community. Survivors ${G.survivors.length}/4.`, how: 'Help the people you meet out there.', target: null };
+    return buildGoal('walls', 'Haven wants walls. Build Barricades.');
   }
   if (f.q_radio) {
     const need = ['radio_coil', 'radio_antenna', 'radio_cell'].filter(k => !G.pack[k] && !G.store[k]);
-    if (!need.length) return { text: 'Build the Shortwave Radio at the bunker.', target: slotCentre('radio') };
+    if (!need.length) return { text: 'Build the Shortwave Radio.', how: 'Walk to its outline in the yard and hold E.', target: slotCentre('radio') };
     const where = { radio_coil: ['apartments', 'electronics'], radio_antenna: ['radiotower'], radio_cell: ['police', 'electronics'] }[need[0]];
     const tgt = where.map(near).sort((a, b) => ((a.x - me.x) ** 2 + (a.y - me.y) ** 2) - ((b.x - me.x) ** 2 + (b.y - me.y) ** 2))[0];
-    return { text: `Find the ${itemName(need[0])}.`, target: tgt };
+    return { text: `Find the ${itemName(need[0])}.`, how: `Search ${where.map(t => LOCS[t].n).join(' or ')}.`, target: tgt };
   }
-  if (G.hour >= 19 || G.hour < 6) return { text: 'Night. Sleep in the bunker.', target: home };
+  if (G.hour >= 19 || G.hour < 6) return { text: 'Night. Sleep in the bunker.', how: 'Hold E at the hatch, then Rest.', target: home };
   const nu = nearestUnvisited();
   if (nu) return { text: `Scavenge ${nu.label}.`, target: nu };
   return { text: 'Scavenge, build, find people.', target: null };
 }
 function objective() { return objectiveInfo().text; }
-/* "Build X" when affordable, otherwise name what is missing and point at the nearest unvisited building. */
+/* "Find water": FreshMart's shelves first (the target moves from its door to the nearest unsearched shelf once you are inside);
+   if FreshMart is picked clean, the nearest pump fills the bottles you carry. Done once there is water in your pack. */
+function waterGoal() {
+  const me = G.p, fm = nearestPoi('supermarket', me.x, me.y);
+  const fmKey = fm ? fm.x + ',' + fm.y : null, left = fmKey ? WORLD.containers.filter(c => c.poi === fmKey && containerState(c) !== 'empty') : [];
+  if (fm && left.length) {
+    const bi = buildingAt(me.x, me.y), inside = bi >= 0 && WORLD.roofs[bi].poi === fmKey && indoors(me.x, me.y);
+    if (!inside) return { text: 'Find water.', how: `Search the shelves in ${fm.label}.`, target: P_(fm) };
+    const c = left.sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y))[0];
+    return { text: 'Find water.', how: `Hold E at the ${CONTAINERS[c.kind].n.toLowerCase()} to search it.`, target: P_(c) };
+  }
+  const pump = (WORLD.pumps || []).filter(q => poiOpen(q)).sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y))[0];
+  if (pump && G.pack.bottle > 0) return { text: 'Find water.', how: 'Hold E at the hand pump to fill a bottle.', target: P_(pump) };
+  const nu = nearestWith(['water', 'dirtywater']);
+  return { text: 'Find water.', how: nu ? `${nu.label} should have some. Hold E to search.` : 'Search anywhere with shelves.', target: nu };
+}
+/* "Build X" when affordable (how: walk to its outline), otherwise name what is missing and send you somewhere that has it. */
 function buildGoal(k, text) {
   const c = buildCost(k) || {}, inv = r => (G.pack[r] || 0) + (G.store[r] || 0);
-  const miss = Object.keys(c).filter(r => inv(r) < c[r]).map(r => `${c[r] - inv(r)} ${itemName(r)}`);
-  if (!miss.length) return { text, target: slotCentre(k) };
-  return { text: `${BUILDINGS[k].n} needs ${miss.join(', ')}. Scavenge.`, target: nearestUnvisited() };
+  const short = Object.keys(c).filter(r => inv(r) < c[r]), miss = short.map(r => `${c[r] - inv(r)} ${itemName(r)}`);
+  if (!miss.length) return { text, how: k === 'walls' ? 'Walk to the yard gate and hold E.' : 'Walk to its outline in the yard and hold E.', target: slotCentre(k) };
+  const nu = nearestWith(short);
+  return { text: `${BUILDINGS[k].n} needs ${miss.join(', ')}.`, how: nu ? `${nu.label} should have some. Hold E to search.` : 'Scavenge and bring it home.', target: nu };
+}
+/* the nearest open building (not yet searched first) whose loot can hold one of the items */
+function nearestWith(items) {
+  const me = G.p; let best = null, bd = Infinity;
+  for (const k in WORLD.pois) {
+    const q = WORLD.pois[k], L = LOCS[q.type];
+    if (q.type === 'shelter' || !L || !L.loot || !poiOpen(q) || !L.loot.some(e => items.includes(e[0]))) continue;
+    const d = Math.hypot(q.x - me.x, q.y - me.y) + (G.locs[k] && G.locs[k].visited ? 40 : 0);
+    if (d < bd) { bd = d; best = q; }
+  }
+  return best ? Object.assign(P_(best), { label: best.label }) : null;
 }
 function nearestUnvisited() {
   const me = G.p; let best = null, bd = Infinity;
   for (const k in WORLD.pois) { const q = WORLD.pois[k]; if (q.type === 'shelter' || q.outdoor || !G.locs[k] || G.locs[k].visited || !poiOpen(q)) continue; const d = (q.x - me.x) ** 2 + (q.y - me.y) ** 2; if (d < bd) { bd = d; best = q; } }
-  return P_(best);
+  return best ? Object.assign(P_(best), { label: best.label }) : null;
 }
 /* centre of a shelter build slot in tile coords (walls: the yard gate) */
 function slotCentre(k) {

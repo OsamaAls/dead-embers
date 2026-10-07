@@ -109,6 +109,10 @@ body.lowhp #edge{opacity:1;animation:edgep 1.25s ease-in-out infinite}
 #obj .ar svg{width:16px;height:16px;fill:var(--ember);transition:transform .12s linear}
 #obj .ds{flex:none;font:600 11px var(--mono);color:var(--ember2)}
 #obj.new{animation:objnew 1.2s ease-out}
+#obj.done{border-color:var(--good);color:#d9eac4}
+#obj.done .tx{color:var(--good)}
+#objhow{margin-top:-3px;padding:3px 10px;background:rgba(14,12,10,.62);font:500 13px/1.3 var(--body);color:#d8ccb6;text-align:center;max-width:100%;text-shadow:0 1px 2px #000}
+.objbig .how{display:block;margin-top:4px;font:500 14px/1.4 var(--body);color:var(--dim)}
 @keyframes objnew{0%{border-color:var(--ember);box-shadow:0 0 0 1px var(--ember),0 0 22px var(--emberglow)}100%{box-shadow:none}}
 #timer{display:flex;align-items:baseline;gap:10px;padding:4px 14px;background:rgba(60,14,8,.75);border:1px solid #7a2a1d}
 #timer .lb{font:800 15px/1 var(--display);letter-spacing:.08em;text-transform:uppercase;color:var(--bone)}
@@ -173,6 +177,10 @@ body.lowhp #edge{opacity:1;animation:edgep 1.25s ease-in-out infinite}
 #prompt .ring .pg{stroke:var(--ember2);stroke-dasharray:100;stroke-dashoffset:100}
 #prompt .tx{overflow:hidden;text-overflow:ellipsis}
 #prompt .tx .hl{font:600 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-right:7px}
+#prompt.anch{left:0;top:0;bottom:auto!important;transition:opacity .15s}
+#prompt.anch::after{content:'';position:absolute;left:50%;bottom:-6px;width:10px;height:10px;margin-left:-5px;background:var(--panel);border:solid var(--line2);border-width:0 1px 1px 0;transform:rotate(45deg)}
+body.touch #prompt:not(.info){pointer-events:auto;touch-action:none}
+body.touch #prompt.on{border-color:var(--ember);background:rgba(58,38,24,.95)}
 #prompt.info{border-color:var(--line);color:var(--dim);font-weight:500;padding-left:14px}
 #prompt.info .key{display:none}
 
@@ -592,6 +600,7 @@ body.phone .cmp .md{font-size:10px}
 body.phone .hud-tc{top:calc(var(--sat) + 8px);left:50%;right:auto;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 2 * (var(--sal) + 214px))}
 body.phone #obj{font-size:13px;padding:4px 10px 4px 6px;white-space:nowrap;align-self:center}
 body.phone #obj .tx{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.phone #objhow{font-size:12px;padding:2px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 body.phone #banner{position:absolute;top:calc(var(--objh,30px) + 6px);left:50%;transform:translate(-50%,-6px);width:max-content;max-width:100%;margin:0;background:rgba(12,10,8,.94)}
 body.phone #banner.on{transform:translate(-50%,0)}
 body.phone #banner .t{font-size:17px}
@@ -654,6 +663,7 @@ body.phone #dlg .ch button{min-height:40px;padding:6px 12px}
   </div>
   <div class="hud-tc">
     <div id="obj"><span class="ar"><svg viewBox="0 0 16 16"><path d="M8 1 14 14 8 10.5 2 14Z"/></svg></span><span class="tx"></span><span class="ds"></span></div>
+    <div id="objhow" hidden></div>
     <div id="timer" hidden><span class="lb"></span><span class="t"></span></div>
     <div id="banner"><div class="t"></div><div class="l"></div></div>
   </div>
@@ -944,7 +954,7 @@ const BUILD_SLOTS = {
       title: "The Bunker",
       beats: [
         { who: '', line: "Fourteen months since the Grey Fever. The bunker is quiet, {name}. Your throat is dry." },
-        { who: '', line: "Find water and food up top." }
+        { who: '', line: "Two bottles of water left in storage. Find more up top." }
       ],
       paras: [
         "You wake on a steel cot in a metro maintenance bunker, with a taste like old pennies in your mouth. The ceiling has cracked since you last looked. Dust sifts down in the light of one dying lamp.",
@@ -4148,54 +4158,84 @@ function storyCheck() {
   gateCheck();
 }
 const P_ = p => p ? { x: p.x + 0.5, y: p.y + 0.5 } : null;
-/* Current goal: {text, target:{x,y}|null} in tile coords. One short line; the UI draws a marker + compass arrow. */
+/* Current goal: {text, how, target:{x,y}|null} in tile coords. text is one short line; how (optional) says how to do it, in one more
+   short line. The UI draws a marker + compass arrow at the target. Keyboard wording ("hold E"); the UI swaps in USE on touch. */
 function objectiveInfo() {
   const f = G.flags, home = P_(WORLD.hatch), me = G.p;
   const near = type => P_(nearestPoi(type, me.x, me.y));
-  if (G.hordeNight && !G.hordeResult && !G.atShelter && G.hour >= 12) return { text: 'Horde tonight. Get back to the bunker.', target: home };
-  // first-day chain: loot -> bring it home -> bunks -> rain collector
-  if (G.stats.searches === 0) return { text: 'Find water. Search FreshMart.', target: near('supermarket') };
+  if (G.hordeNight && !G.hordeResult && !G.atShelter && G.hour >= 12) return { text: 'Horde tonight. Get back to the bunker.', how: 'Be inside the yard before dark.', target: home };
+  // first-day chain: water -> bring it home -> bunks -> rain collector
+  if (!f.got_water && (G.pack.water || G.pack.dirtywater || G.day > 1 || bl('bed'))) f.got_water = true;
+  if (!f.got_water) return waterGoal();
   if (!bl('bed')) {
-    if (!G.atShelter && !isUnlocked('build')) return { text: 'Bring your loot home to the bunker.', target: home };
-    return buildGoal('bed', 'Build Bunks in the bunker yard.');
+    if (!G.atShelter && !isUnlocked('build')) return { text: 'Bring it home to the bunker.', how: 'Follow the arrow back to the hatch.', target: home };
+    return buildGoal('bed', 'Build Bunks in the yard.');
   }
   if (!bl('rain')) return buildGoal('rain', 'Build a Rain Collector.');
   if (f.q_bus) {
     const left = G.hordeDay - G.day;
-    if (f.bus_ready) return { text: `The bus is ready. Horde in ${left} days.`, target: home };
-    if (!has('engine_parts') && !G.store.engine_parts && !G.pack.engine_parts) return { text: `Find Engine Parts at the Bus Depot (${left}d).`, target: near('depot') };
-    if (!G.pack.haven_map && !G.store.haven_map) return { text: `Find the route map at Checkpoint Echo (${left}d).`, target: near('military') };
-    if (count('fuel') < 6) return { text: `Gather Fuel ${count('fuel')}/6 (${left}d).`, target: near('gas') };
-    return { text: 'Bring parts and fuel to the bus at the depot.', target: P_(WORLD.bus) };
+    if (f.bus_ready) return { text: `The bus is ready. Horde in ${left} days.`, how: 'Choose how it ends when the horde comes.', target: home };
+    if (!has('engine_parts') && !G.store.engine_parts && !G.pack.engine_parts) return { text: `Find Engine Parts (${left}d).`, how: 'Search the Bus Depot.', target: near('depot') };
+    if (!G.pack.haven_map && !G.store.haven_map) return { text: `Find the route map (${left}d).`, how: 'Search Checkpoint Echo.', target: near('military') };
+    if (count('fuel') < 6) return { text: `Gather Fuel ${count('fuel')}/6 (${left}d).`, how: has('hose') ? 'Gas stations, or hold E at a wreck with your hose.' : 'Gas stations have it. A Siphon Hose drains wrecks.', target: near('gas') };
+    return { text: 'Bring parts and fuel to the bus.', how: 'Hold E at the bus in the depot.', target: P_(WORLD.bus) };
   }
   if (f.radio_built) {
-    if (G.survivors.length < 4) return { text: `Haven wants a community. Survivors ${G.survivors.length}/4.`, target: null };
-    return { text: 'Haven wants walls. Build Barricades.', target: slotCentre('walls') };
+    if (G.survivors.length < 4) return { text: `Haven wants a community. Survivors ${G.survivors.length}/4.`, how: 'Help the people you meet out there.', target: null };
+    return buildGoal('walls', 'Haven wants walls. Build Barricades.');
   }
   if (f.q_radio) {
     const need = ['radio_coil', 'radio_antenna', 'radio_cell'].filter(k => !G.pack[k] && !G.store[k]);
-    if (!need.length) return { text: 'Build the Shortwave Radio at the bunker.', target: slotCentre('radio') };
+    if (!need.length) return { text: 'Build the Shortwave Radio.', how: 'Walk to its outline in the yard and hold E.', target: slotCentre('radio') };
     const where = { radio_coil: ['apartments', 'electronics'], radio_antenna: ['radiotower'], radio_cell: ['police', 'electronics'] }[need[0]];
     const tgt = where.map(near).sort((a, b) => ((a.x - me.x) ** 2 + (a.y - me.y) ** 2) - ((b.x - me.x) ** 2 + (b.y - me.y) ** 2))[0];
-    return { text: `Find the ${itemName(need[0])}.`, target: tgt };
+    return { text: `Find the ${itemName(need[0])}.`, how: `Search ${where.map(t => LOCS[t].n).join(' or ')}.`, target: tgt };
   }
-  if (G.hour >= 19 || G.hour < 6) return { text: 'Night. Sleep in the bunker.', target: home };
+  if (G.hour >= 19 || G.hour < 6) return { text: 'Night. Sleep in the bunker.', how: 'Hold E at the hatch, then Rest.', target: home };
   const nu = nearestUnvisited();
   if (nu) return { text: `Scavenge ${nu.label}.`, target: nu };
   return { text: 'Scavenge, build, find people.', target: null };
 }
 function objective() { return objectiveInfo().text; }
-/* "Build X" when affordable, otherwise name what is missing and point at the nearest unvisited building. */
+/* "Find water": FreshMart's shelves first (the target moves from its door to the nearest unsearched shelf once you are inside);
+   if FreshMart is picked clean, the nearest pump fills the bottles you carry. Done once there is water in your pack. */
+function waterGoal() {
+  const me = G.p, fm = nearestPoi('supermarket', me.x, me.y);
+  const fmKey = fm ? fm.x + ',' + fm.y : null, left = fmKey ? WORLD.containers.filter(c => c.poi === fmKey && containerState(c) !== 'empty') : [];
+  if (fm && left.length) {
+    const bi = buildingAt(me.x, me.y), inside = bi >= 0 && WORLD.roofs[bi].poi === fmKey && indoors(me.x, me.y);
+    if (!inside) return { text: 'Find water.', how: `Search the shelves in ${fm.label}.`, target: P_(fm) };
+    const c = left.sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y))[0];
+    return { text: 'Find water.', how: `Hold E at the ${CONTAINERS[c.kind].n.toLowerCase()} to search it.`, target: P_(c) };
+  }
+  const pump = (WORLD.pumps || []).filter(q => poiOpen(q)).sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y))[0];
+  if (pump && G.pack.bottle > 0) return { text: 'Find water.', how: 'Hold E at the hand pump to fill a bottle.', target: P_(pump) };
+  const nu = nearestWith(['water', 'dirtywater']);
+  return { text: 'Find water.', how: nu ? `${nu.label} should have some. Hold E to search.` : 'Search anywhere with shelves.', target: nu };
+}
+/* "Build X" when affordable (how: walk to its outline), otherwise name what is missing and send you somewhere that has it. */
 function buildGoal(k, text) {
   const c = buildCost(k) || {}, inv = r => (G.pack[r] || 0) + (G.store[r] || 0);
-  const miss = Object.keys(c).filter(r => inv(r) < c[r]).map(r => `${c[r] - inv(r)} ${itemName(r)}`);
-  if (!miss.length) return { text, target: slotCentre(k) };
-  return { text: `${BUILDINGS[k].n} needs ${miss.join(', ')}. Scavenge.`, target: nearestUnvisited() };
+  const short = Object.keys(c).filter(r => inv(r) < c[r]), miss = short.map(r => `${c[r] - inv(r)} ${itemName(r)}`);
+  if (!miss.length) return { text, how: k === 'walls' ? 'Walk to the yard gate and hold E.' : 'Walk to its outline in the yard and hold E.', target: slotCentre(k) };
+  const nu = nearestWith(short);
+  return { text: `${BUILDINGS[k].n} needs ${miss.join(', ')}.`, how: nu ? `${nu.label} should have some. Hold E to search.` : 'Scavenge and bring it home.', target: nu };
+}
+/* the nearest open building (not yet searched first) whose loot can hold one of the items */
+function nearestWith(items) {
+  const me = G.p; let best = null, bd = Infinity;
+  for (const k in WORLD.pois) {
+    const q = WORLD.pois[k], L = LOCS[q.type];
+    if (q.type === 'shelter' || !L || !L.loot || !poiOpen(q) || !L.loot.some(e => items.includes(e[0]))) continue;
+    const d = Math.hypot(q.x - me.x, q.y - me.y) + (G.locs[k] && G.locs[k].visited ? 40 : 0);
+    if (d < bd) { bd = d; best = q; }
+  }
+  return best ? Object.assign(P_(best), { label: best.label }) : null;
 }
 function nearestUnvisited() {
   const me = G.p; let best = null, bd = Infinity;
   for (const k in WORLD.pois) { const q = WORLD.pois[k]; if (q.type === 'shelter' || q.outdoor || !G.locs[k] || G.locs[k].visited || !poiOpen(q)) continue; const d = (q.x - me.x) ** 2 + (q.y - me.y) ** 2; if (d < bd) { bd = d; best = q; } }
-  return P_(best);
+  return best ? Object.assign(P_(best), { label: best.label }) : null;
 }
 /* centre of a shelter build slot in tile coords (walls: the yard gate) */
 function slotCentre(k) {
@@ -10604,7 +10644,7 @@ const UI = (() => {
   /* ---------- dom refs + init ---------- */
   const D = {};
   function init() {
-    for (const id of ['hud', 'vig', 'flash', 'dmg', 'obj', 'timer', 'banner', 'mm', 'toasts', 'wpn', 'barri', 'prompt', 'hint', 'wmark', 'ohps', 'chips', 'clock', 'lvl', 'joy', 'dlg', 'pnl-wrap', 'pnl', 'mg', 'end', 'title', 'lock', 'cmp'])
+    for (const id of ['hud', 'vig', 'flash', 'dmg', 'obj', 'objhow', 'timer', 'banner', 'mm', 'toasts', 'wpn', 'barri', 'prompt', 'hint', 'wmark', 'ohps', 'chips', 'clock', 'lvl', 'joy', 'dlg', 'pnl-wrap', 'pnl', 'mg', 'end', 'title', 'lock', 'cmp'])
       D[id.replace('-', '')] = el(id);
     D.bars = { hp: el('b-hp'), sta: el('b-sta'), food: el('b-food'), water: el('b-water') };
     // damage-number pool
@@ -10709,6 +10749,8 @@ const UI = (() => {
     hold('t-throw', () => { INPUT.throwPressed = true; });
     hold('t-comp', () => { INPUT.companionCmd = true; });
     hold('t-fetch', () => { INPUT.fetchCmd = true; });
+    /* the floating prompt itself is a button on touch: tap for a quick action, press and hold for a search */
+    hold('prompt', () => { INPUT.interactPressed = true; S.useHeld = true; INPUT.interact = true; }, () => { S.useHeld = false; INPUT.interact = !!K.KeyE; });
   }
 
   /* ---------- HUD ---------- */
@@ -10745,7 +10787,7 @@ const UI = (() => {
     if (safe(() => isUnlocked('people'), false)) { ppl.hidden = false; setText(ppl.querySelector('b'), 'ppl', String(G.survivors.length)); } else ppl.hidden = true;
     chips(p);
     companionChip();
-    objective();
+    objective(dt);
     weaponChip();
     weatherChip();
     barricade();
@@ -10796,16 +10838,23 @@ const UI = (() => {
   }
   function curObjective() {
     const m = typeof Moments !== 'undefined' && Moments.active && Moments.target;
-    if (m && m.x != null) return { text: m.label || 'Objective', target: { x: m.x, y: m.y } };
+    if (m && m.x != null) return { text: m.label || 'Objective', how: m.how || '', target: { x: m.x, y: m.y }, moment: true };
     return safe(() => objectiveInfo(), { text: '', target: null }) || { text: '', target: null };
   }
-  function objective() {
+  /* goals that end by being done get a short tick before the next one shows; these just stop applying, so they don't */
+  const NOT_DONE = /^(Horde tonight|Night\.|Scavenge)/;
+  function objective(dt) {
     const o = curObjective(), p = G.p;
     if (S.objText !== o.text) {
-      S.objText = o.text; D.obj.querySelector('.tx').textContent = o.text || '';
-      D.obj.hidden = !o.text; D.obj.classList.remove('new'); void D.obj.offsetWidth; D.obj.classList.add('new');
-      topLayout();
+      const prev = S.objText;
+      if (prev && o.text && !S.objMom && !o.moment && !NOT_DONE.test(prev) && !S.objDone) S.objDone = { t: 1.3, text: prev };
+      S.objText = o.text; S.objMom = !!o.moment;
+      if (S.objDone) { D.obj.querySelector('.tx').textContent = '✓ ' + S.objDone.text; D.obj.classList.add('done'); }
+      else showObjText(o.text);
     }
+    if (S.objDone && (S.objDone.t -= dt || 0) <= 0) { S.objDone = null; D.obj.classList.remove('done'); showObjText(S.objText); }
+    const how = S.objDone ? '' : (o.how ? (INPUT.touch ? touchWords(o.how) : o.how) : '');
+    if (S.c.how !== how) { S.c.how = how; D.objhow.textContent = how; D.objhow.hidden = !how; topLayout(); }
     const t = o.target, ar = D.obj.querySelector('.ar'), ds = D.obj.querySelector('.ds');
     if (!t || !has3D()) { if (S.c.tgt !== 0) { S.c.tgt = 0; ar.style.opacity = 0.25; ds.textContent = ''; D.wmark.hidden = true; } return; }
     S.c.tgt = 1; ar.style.opacity = 1;
@@ -10837,9 +10886,14 @@ const UI = (() => {
     setText(wm.querySelector('.dl'), 'wdl', ds.textContent);
   }
   /* phones: the objective may take two lines; the status block, minimap and toasts sit below whatever height it has */
+  function showObjText(t) {
+    D.obj.querySelector('.tx').textContent = t || '';
+    D.obj.hidden = !t; D.obj.classList.remove('new'); void D.obj.offsetWidth; D.obj.classList.add('new');
+    topLayout();
+  }
   function topLayout() {
     if (!D.hud) return;
-    const h = D.obj && !D.obj.hidden ? D.obj.offsetHeight : 0, v = (h || 30) + 'px';
+    const h = (D.obj && !D.obj.hidden ? D.obj.offsetHeight : 0) + (D.objhow && !D.objhow.hidden ? D.objhow.offsetHeight + 4 : 0), v = (h || 30) + 'px';
     if (S.c.objh !== v) { S.c.objh = v; D.hud.style.setProperty('--objh', v); }
   }
   /* weather and season next to the clock: an icon and a word (cold and the last-night storm called out) */
@@ -10933,6 +10987,28 @@ const UI = (() => {
     }
     const pr = src.p == null ? 0 : cl(src.p, 0, 1), q = Math.round(pr * 60);
     if (S.c.prp !== q) { S.c.prp = q; D.prompt.querySelector('rect.pg').style.strokeDashoffset = (100 * (1 - pr)).toFixed(1); }
+    anchorPrompt(src.at);
+  }
+  /* the prompt floats over the thing it is about (a shelf, a car, a person) and follows it as the camera moves; it falls back to the
+     bottom of the screen when the thing is off screen. On a phone it keeps clear of the button arc so it never covers a button. */
+  function anchorPrompt(at) {
+    const P = D.prompt;
+    const pt = at && has3D() ? R.tileToScreen(at.x, at.y, at.h || 1.6) : null;
+    if (!pt || !pt.on) { if (S.c.panch) { S.c.panch = false; P.classList.remove('anch'); P.style.transform = ''; } return; }
+    if (S.prW == null || S.c.prwKey !== S.prKey) { S.c.prwKey = S.prKey; S.prW = P.offsetWidth; S.prH = P.offsetHeight; }
+    const vw = innerWidth, vh = innerHeight, w = S.prW, h = S.prH, m = 8;
+    let x = pt.x - w / 2, y = pt.y - h - 10;
+    const top = S.phone ? 50 : 64;
+    if (y < top) y = pt.y + 18;
+    x = cl(x, m, vw - w - m); y = cl(y, top, vh - h - m);
+    if (S.phone || INPUT.touch) {
+      const armL = vw - 262, armT = vh - 196; /* the button arc's corner */
+      if (x + w > armL && y + h > armT) { if (pt.x - w / 2 > armL - w) y = Math.min(y, armT - h - 6); else x = Math.min(x, armL - w - 6); }
+      if (x < 186 && y + h > vh - 200) x = 186; /* and off the joystick's resting spot */
+      x = cl(x, m, vw - w - m); y = cl(y, top, vh - h - m);
+    }
+    if (!S.c.panch) { S.c.panch = true; P.classList.add('anch'); }
+    P.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`;
   }
 
   /* ---------- minimap / map ---------- */
@@ -11166,6 +11242,7 @@ const UI = (() => {
     safe(() => hintOnce('points', INPUT.touch ? 'Spend your attribute point: tap CHAR at the top.' : 'Spend your attribute point in the character sheet (B).'));
   }
   function onUnlock(key) {
+    if (key === 'build' && typeof World3D !== 'undefined' && World3D.refreshShelter) safe(() => World3D.refreshShelter()); // the build outlines appear now, not after the next sleep
     const l = UNLOCK_LABEL[key]; if (!l) return;
     toast('New: ' + l, 'good'); SFX.play('good');
     if (key === 'journal' && D.mm.hidden === false) { D.mm.classList.remove('reveal'); void D.mm.offsetWidth; D.mm.classList.add('reveal'); }
@@ -11659,7 +11736,7 @@ const UI = (() => {
           return h;
         }
         const o = curObjective();
-        let h = `<h3>Now</h3><div class="objbig">${esc(o.text || 'Survive.')}</div>`;
+        let h = `<h3>Now</h3><div class="objbig">${esc(o.text || 'Survive.')}${o.how ? `<span class="how">${esc(INPUT.touch ? touchWords(o.how) : o.how)}</span>` : ''}</div>`;
         const notes = [];
         if (G.hordeNight && !G.hordeResult) notes.push('A horde hits the bunker tonight. Be home by 21:00.');
         if (G.flags.q_bus && G.hordeDay) notes.push(`The great horde arrives around day ${G.hordeDay}.`);
@@ -12192,7 +12269,7 @@ const UI = (() => {
     get modal() { return blocking(); },
     init, update, blocking,
     toast, hint, banner, flash, levelUp, onUnlock, timer, dmgNum, worldBar, vignette,
-    prompt(t, p) { S.pr.t = t || null; S.pr.p = p == null ? null : p; },
+    prompt(t, p, at) { S.pr.t = t || null; S.pr.p = p == null ? null : p; S.pr.at = t && at ? at : null; },
     momentPrompt(t, p) { S.mpr = t ? { t, p: p == null ? null : p } : null; },
     dialogue, encounter, scene, summary, final, end,
     open, close() { closeMg(); closeDlg(); closePanel(); }, tollcamp, barter, lockpick, title, talk, radio,
@@ -12302,21 +12379,22 @@ function interactTarget() {
   const p = G.p, out = [];
   const d2 = (x, y) => (x - p.x) ** 2 + (y - p.y) ** 2;
   const drop = Combat.nearestDrop(p.x, p.y, 1.3);
-  if (drop) out.push({ key: 'drop' + drop.uid, d: d2(drop.x, drop.y), label: `Pick up ${itemName(drop.id)}${drop.qty > 1 ? ' ×' + drop.qty : ''}`, time: 0, act: () => { Combat.pickupDrop(drop); gesture(ITEMS[drop.id] && ITEMS[drop.id].c === 'weapon' ? 'inspect' : 'pickup'); } });
+  if (drop) out.push({ key: 'drop' + drop.uid, d: d2(drop.x, drop.y), at: { x: drop.x, y: drop.y, h: 0.9 }, label: `Pick up ${itemName(drop.id)}${drop.qty > 1 ? ' ×' + drop.qty : ''}`, time: 0, act: () => { Combat.pickupDrop(drop); gesture(ITEMS[drop.id] && ITEMS[drop.id].c === 'weapon' ? 'inspect' : 'pickup'); } });
   const c = containerNear(p.x, p.y, 1.45);
   if (c) {
     const st = containerState(c), K = CONTAINERS[c.kind];
-    if (st === 'empty') out.push({ key: c.id, d: d2(c.x + 0.5, c.y + 0.5) + 0.2, label: `${K.n} (searched)`, time: -1 });
-    else out.push({ key: c.id, d: d2(c.x + 0.5, c.y + 0.5), label: `Search ${K.n}`, time: searchTime(c), hl: ['container', c.id], act: () => openContainer(c) });
+    /* a searched container says nothing: its lid hangs open */
+    if (st !== 'empty') out.push({ key: c.id, d: d2(c.x + 0.5, c.y + 0.5), at: { x: c.x + 0.5, y: c.y + 0.5, h: 1.4 }, label: `Search ${K.n}`, time: searchTime(c), hl: ['container', c.id], act: () => openContainer(c) });
   }
   const h = WORLD.hatch;
-  if (d2(h.x + 0.5, h.y + 0.5) < 1.6 * 1.6) out.push({ key: 'hatch', d: d2(h.x + 0.5, h.y + 0.5), label: 'Enter the bunker', time: 0, act: () => UI.open('shelter') });
+  if (d2(h.x + 0.5, h.y + 0.5) < 1.6 * 1.6) out.push({ key: 'hatch', d: d2(h.x + 0.5, h.y + 0.5), at: { x: h.x + 0.5, y: h.y + 0.5, h: 1.2 }, label: 'Enter the bunker', time: 0, act: () => UI.open('shelter') });
   const g = WORLD.gate;
-  if (g && d2(g.x + 0.5, g.y + 0.5) < 1.8 * 1.8) out.push({ key: 'gate', d: d2(g.x + 0.5, g.y + 0.5), label: 'Hail the Tollmen gate', time: 0, act: () => UI.open('tollcamp') });
+  if (g && d2(g.x + 0.5, g.y + 0.5) < 1.8 * 1.8) out.push({ key: 'gate', d: d2(g.x + 0.5, g.y + 0.5), at: { x: g.x + 0.5, y: g.y + 0.5, h: 2.6 }, label: 'Hail the Tollmen gate', time: 0, act: () => UI.open('tollcamp') });
   const b = WORLD.bus;
   if (b && G.flags.q_bus && !G.flags.bus_ready && d2(b.x + 0.5, b.y + 0.5) < 2.2 * 2.2) {
-    if (canRepairBus()) out.push({ key: 'bus', d: d2(b.x + 0.5, b.y + 0.5), label: 'Repair the bus', time: 5, act: () => { repairBus(); SFX.play('build'); } });
-    else out.push({ key: 'bus', d: d2(b.x + 0.5, b.y + 0.5), label: 'Bus: needs Engine Parts + 6 Fuel', time: -1 });
+    const ab = { x: b.x + 0.5, y: b.y + 0.5, h: 2.6 };
+    if (canRepairBus()) out.push({ key: 'bus', d: d2(b.x + 0.5, b.y + 0.5), at: ab, label: 'Repair the bus', time: 5, act: () => { repairBus(); SFX.play('build'); } });
+    else out.push({ key: 'bus', d: d2(b.x + 0.5, b.y + 0.5), at: ab, label: 'Bus: needs Engine Parts + 6 Fuel', time: -1 });
   }
   for (const t of extraTargets(p, d2)) out.push(t);
   if (G.atShelter && isUnlocked('build')) {
@@ -12326,12 +12404,26 @@ function interactTarget() {
       const s = slotCentre(k), dd = d2(s.x, s.y); if (dd > 1.7 * 1.7) continue;
       const chk = canBuild(k), cost = buildCost(k);
       const costTxt = cost ? Object.keys(cost).map(r => `${cost[r]} ${itemName(r)}`).join(', ') : '';
-      out.push({ key: 'build' + k, d: dd, label: chk.ok ? `Build ${bl(k) ? bName(k) + ' ' + (bl(k) + 1) : B.n} · ${costTxt}` : `${B.n}: ${chk.why} (${costTxt})`, time: chk.ok ? 2.5 : -1, hl: ['slot', k],
+      out.push({ key: 'build' + k, d: dd, at: { x: s.x, y: s.y, h: 1.4 }, label: chk.ok ? `Build ${bl(k) ? bName(k) + ' ' + (bl(k) + 1) : B.n} · ${costTxt}` : `${B.n}: ${chk.why} (${costTxt})`, time: chk.ok ? 2.5 : -1, hl: ['slot', k],
         act: () => { if (build(k)) { World3D.refreshShelter(); SFX.play('build'); UI.toast(`Built ${bName(k)}`, 'good'); } } });
     }
   }
-  out.sort((a, b2) => a.d - b2.d);
-  return out[0] || null;
+  return pickTarget(out);
+}
+/* The nearest target wins, but the one in front of you gets a head start (about a third of a tile), and the current one is kept
+   unless another is clearly better, so the prompt doesn't flicker between two things as you walk past them. */
+function pickTarget(out) {
+  if (!out.length) return null;
+  const p = G.p, mv = Math.hypot(INPUT.mx || 0, INPUT.my || 0) > 0.1, fx = mv ? INPUT.mx : Math.sin(p.face || 0), fy = mv ? INPUT.my : Math.cos(p.face || 0), fl = Math.hypot(fx, fy) || 1;
+  let best = null, bs = Infinity, cur = null, cs = Infinity;
+  for (const t of out) {
+    let sc;
+    if (t.d < 0) sc = -9;
+    else { const a = t.at || p, dx = a.x - p.x, dy = a.y - p.y, d = Math.hypot(dx, dy); sc = Math.sqrt(t.d) - (d > 0.05 ? 0.35 * Math.max(0, (dx * fx + dy * fy) / (d * fl)) : 0.35); }
+    if (sc < bs) { bs = sc; best = t; }
+    if (t.key === Game.lastTarget) { cur = t; cs = sc; }
+  }
+  return cur && cs <= bs + 0.3 ? cur : best;
 }
 function openContainer(c) {
   const r = searchContainer(c);
@@ -12347,16 +12439,22 @@ function openContainer(c) {
 }
 /* a one-off player gesture (Actors.GESTURES): cheer on level-up, pickup / inspect a new weapon */
 function gesture(name) { const pl = typeof Combat !== 'undefined' && Combat.player; if (pl && pl.anim && !Combat.inFight()) pl.anim(name); }
+/* the dead are close (alive and within r tiles), it's dark, or a horde is due: time to think about doors */
+function deadNear(r) {
+  if (G.isNight || (G.hordeNight && !G.hordeResult && G.hour >= 18)) return true;
+  for (const e of Combat.enemies) if (!e.dead && !e.gone && Math.hypot(e.x - G.p.x, e.y - G.p.y) < r) return true;
+  return false;
+}
 /* everything else E can do: revive or talk to people, siphon wrecks, fill bottles, cook at fires, barricade doors,
    rest on searched furniture, listen to the bunker radio, and (when world.js provides them) notes, bodies, pumps and beds */
 function extraTargets(p, d2) {
   const out = [], fx = Math.floor(p.x), fy = Math.floor(p.y), fight = Combat.inFight(), cc = Combat.companion;
   const pt = (x, y) => ({ x: x + 0.5, y: y + 0.5 });
-  if (cc && cc.mode === 'downed' && d2(cc.x, cc.y) < 1.7 * 1.7) out.push({ key: 'revive', d: -1, label: `Help ${cc.name} up`, time: 2, act: () => { if (Combat.reviveCompanion()) SFX.play('good'); } });
+  if (cc && cc.mode === 'downed' && d2(cc.x, cc.y) < 1.7 * 1.7) out.push({ key: 'revive', d: -1, at: { x: cc.x, y: cc.y, h: 1.6 }, label: `Help ${cc.name} up`, time: 2, act: () => { if (Combat.reviveCompanion()) SFX.play('good'); } });
   if (!fight) {
-    for (const s of Combat.survivors) { const dd = d2(s.x, s.y); if (dd < 1.35 * 1.35 && s.ref) out.push({ key: 'talk' + s.id, d: dd + 0.1, label: `Talk to ${s.ref.name}`, time: 0, act: () => UI.talk(s.ref) }); }
+    for (const s of Combat.survivors) { const dd = d2(s.x, s.y); if (dd < 1.35 * 1.35 && s.ref) out.push({ key: 'talk' + s.id, d: dd + 0.1, at: { x: s.x, y: s.y, h: 2.3 }, label: `Talk to ${s.ref.name}`, time: 0, act: () => UI.talk(s.ref) }); }
     const cs = cc && cc.kind === 'survivor' && cc.mode !== 'downed' ? companionSurvivor() : null;
-    if (cs && d2(cc.x, cc.y) < 1.3 * 1.3) out.push({ key: 'talkc', d: d2(cc.x, cc.y) + 0.35, label: `Talk to ${cs.name}`, time: 0, act: () => UI.talk(cs) });
+    if (cs && d2(cc.x, cc.y) < 1.3 * 1.3) out.push({ key: 'talkc', d: d2(cc.x, cc.y) + 0.35, at: { x: cc.x, y: cc.y, h: 2.3 }, label: `Talk to ${cs.name}`, time: 0, act: () => UI.talk(cs) });
   }
   let car = null, water = null, door = null;
   for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
@@ -12365,10 +12463,12 @@ function extraTargets(p, d2) {
     if ((t === T_WATER || t === T_SHALLOW) && dd < 1.6 * 1.6 && (!water || dd < water.d)) water = { tx, ty, d: dd };
     if (t === T_DOOR && dd < 1.45 * 1.45 && buildingAt(tx + 0.5, ty + 0.5) >= 0 && !inShelter(tx + 0.5, ty + 0.5) && (!door || dd < door.d)) door = { tx, ty, d: dd };
   }
-  if (car && !fight) out.push({ key: `car${car.tx},${car.ty}`, d: car.d + 0.3, label: has('hose') ? 'Siphon fuel (hose)' : 'Siphon fuel from the wreck', time: 3, hl: ['point', pt(car.tx, car.ty)],
+  /* wrecks only offer fuel when you can get it (a hose) or need it (the bus); otherwise walking past cars stays quiet */
+  const wantFuel = has('hose') || (G.flags.q_bus && !G.flags.bus_ready);
+  if (car && !fight && wantFuel) out.push({ key: `car${car.tx},${car.ty}`, d: car.d + 0.3, at: { x: car.tx + 0.5, y: car.ty + 0.5, h: 1.5 }, label: has('hose') ? 'Siphon fuel (hose)' : 'Siphon fuel from the wreck', time: 3, hl: ['point', pt(car.tx, car.ty)],
     act: () => { const r = siphonCar(car.tx, car.ty); Combat.noise(G.p.x, G.p.y, 4); UI.toast(r.text, r.ok ? 'loot' : 'dim'); SFX.play(r.ok ? 'pickup' : 'ui'); if (!r.ok && !has('hose')) hintOnce('hose', 'A Siphon Hose gets fuel out of every wreck. Look in garages and gas stations.'); } });
   const pump = propNear(WORLD.pumps, p.x, p.y, 1.4);
-  if ((water || pump) && G.pack.bottle > 0 && !fight) out.push({ key: 'water', d: (pump ? d2(pump.x + 0.5, pump.y + 0.5) : water.d) + 0.5, label: pump ? 'Pump clean water into a bottle' : 'Fill a bottle with dirty water', time: 1.5,
+  if ((water || pump) && G.pack.bottle > 0 && !fight) out.push({ key: 'water', d: (pump ? d2(pump.x + 0.5, pump.y + 0.5) : water.d) + 0.5, at: pump ? { x: pump.x + 0.5, y: pump.y + 0.5, h: 1.5 } : { x: water.tx + 0.5, y: water.ty + 0.5, h: 0.8 }, label: pump ? 'Pump clean water into a bottle' : 'Fill a bottle with dirty water', time: 1.5,
     hl: pump ? ['point', pt(pump.x, pump.y)] : undefined,
     act: () => { const l = fillBottle(!!pump); if (l && pump) Combat.noise(G.p.x, G.p.y, 2); UI.toast(l ? l + (pump ? '' : ' (boil it at a fire)') : 'No room in your pack.', l ? 'loot' : 'warn'); SFX.play(l ? 'pickup' : 'bad'); } });
   const cook = cookOption();
@@ -12376,29 +12476,32 @@ function extraTargets(p, d2) {
     let fire = null, fd = 1.9 * 1.9;
     for (const f of WORLD.fires || []) { const dd = d2(f.x, f.y); if (dd < fd) { fd = dd; fire = f; } }
     const kit = G.atShelter && bl('kitchen') ? slotCentre('kitchen') : null, kd = kit ? d2(kit.x, kit.y) : 99;
-    if (fire || kd < 1.6 * 1.6) out.push({ key: 'cook', d: fire ? fd : kd - 0.2, label: `${cook.label} ${fire ? 'at the fire' : 'on the stove'}`, time: 2.5,
+    if (fire || kd < 1.6 * 1.6) out.push({ key: 'cook', d: fire ? fd : kd - 0.2, at: fire ? { x: fire.x, y: fire.y, h: 1.2 } : { x: kit.x, y: kit.y, h: 1.4 }, label: `${cook.label} ${fire ? 'at the fire' : 'on the stove'}`, time: 2.5,
       act: () => { const l = cookAt(); if (l) { UI.toast(l, 'loot'); SFX.play('pickup'); } } });
   }
   if (door) {
     const bar = doorBarred(door.tx, door.ty), inWay = [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]].some(([a, b]) => Math.floor(p.x + a) === door.tx && Math.floor(p.y + b) === door.ty);
-    if (bar) out.push({ key: 'door', d: door.d + 0.2, label: 'Take down the barricade', time: 1.5, hl: ['point', pt(door.tx, door.ty)],
+    const ad = { x: door.tx + 0.5, y: door.ty + 0.5, h: 2.2 };
+    if (bar) out.push({ key: 'door', d: door.d + 0.2, at: ad, label: 'Take down the barricade', time: 1.5, hl: ['point', pt(door.tx, door.ty)],
       act: () => { if (unbarDoor(door.tx, door.ty)) { SFX.play('build'); UI.toast('Barricade down. +1 Wood back', 'dim'); if (World3D.setDoorBar) World3D.setDoorBar(door.tx, door.ty, false); } } });
-    else if ((G.pack.wood || 0) >= 2) out.push({ key: 'door', d: door.d + 0.6, label: inWay ? 'Step out of the doorway to barricade it' : 'Barricade the door · 2 Wood', time: inWay ? -1 : 2.5, hl: ['point', pt(door.tx, door.ty)],
+    /* barricading a door is for when the dead are coming (or it's dark), not something to offer at every shop on a quiet day */
+    else if ((G.pack.wood || 0) >= 2 && !inWay && deadNear(10)) out.push({ key: 'door', d: door.d + 0.6, at: ad, label: 'Barricade the door · 2 Wood', time: 2.5, hl: ['point', pt(door.tx, door.ty)],
       act: () => { if (barDoor(door.tx, door.ty)) { SFX.play('build'); Combat.noise(G.p.x, G.p.y, 3); UI.toast('Door barricaded. Nothing gets through for a while.', 'good'); hintOnce('doorbar', 'Barricaded doors hold the dead back for a few seconds each. E again to take it down.'); if (World3D.setDoorBar) World3D.setDoorBar(door.tx, door.ty, true); } } });
   }
   /* rest an hour on searched furniture (or a bed) inside a building: heals a little, risks an ambush */
-  if (!fight && !G.atShelter && indoors(p.x, p.y)) {
-    const c = containerNear(p.x, p.y, 1.45), bed = propNear(WORLD.beds, p.x, p.y, 1.4);
-    const spot = bed || (c && containerState(c) === 'empty' ? c : null);
-    if (spot) out.push({ key: 'rest', d: d2(spot.x + 0.5, spot.y + 0.5) + 0.1, label: bed ? (bed.kind === 'couch' ? 'Rest on the couch an hour' : bed.kind === 'cot' ? 'Rest on the cot an hour' : 'Sleep in the bed an hour') : 'Rest here an hour', time: 1.5,
+  /* rest only on a bed, couch or cot, and only when it would help */
+  const tired = p.hp < (p.maxHp || 100) * 0.85 || p.sta < (p.maxSta || 100) * 0.5 || G.isNight;
+  if (!fight && !G.atShelter && tired && indoors(p.x, p.y)) {
+    const bed = propNear(WORLD.beds, p.x, p.y, 1.4), spot = bed;
+    if (spot) out.push({ key: 'rest', d: d2(spot.x + 0.5, spot.y + 0.5) + 0.1, at: { x: spot.x + 0.5, y: spot.y + 0.5, h: 1.1 }, label: bed ? (bed.kind === 'couch' ? 'Rest on the couch an hour' : bed.kind === 'cot' ? 'Rest on the cot an hour' : 'Sleep in the bed an hour') : 'Rest here an hour', time: 1.5,
       hl: bed ? ['point', pt(bed.x, bed.y)] : undefined,
       act: () => { UI.flash('sleep'); const enc = restOutside(); heal(6); UI.toast('An hour of shallow sleep. +6 HP', 'dim'); if (enc) { UI.toast('Something wakes you.', 'warn'); Game.Q.push({ type: 'enc', enc }); } } });
   }
-  if (G.atShelter && bl('radio')) { const r = slotCentre('radio'), dd = d2(r.x, r.y); if (dd < 1.6 * 1.6) out.push({ key: 'radio', d: dd, label: 'Listen to the radio', time: 0, act: () => UI.radio() }); }
+  if (G.atShelter && bl('radio')) { const r = slotCentre('radio'), dd = d2(r.x, r.y); if (dd < 1.6 * 1.6) out.push({ key: 'radio', d: dd, at: { x: r.x, y: r.y, h: 1.6 }, label: 'Listen to the radio', time: 0, act: () => UI.radio() }); }
   const note = propNear(WORLD.notes, p.x, p.y, 1.4);
-  if (note) out.push({ key: `note${note.x},${note.y}`, d: d2(note.x + 0.5, note.y + 0.5) + 0.2, label: 'Read the writing', time: 0, hl: ['point', pt(note.x, note.y)], act: () => UI.toast(readNote(note), 'story') });
+  if (note) out.push({ key: `note${note.x},${note.y}`, d: d2(note.x + 0.5, note.y + 0.5) + 0.2, at: { x: note.x + 0.5, y: note.y + 0.5, h: 1.8 }, label: 'Read the writing', time: 0, hl: ['point', pt(note.x, note.y)], act: () => UI.toast(readNote(note), 'story') });
   const body = propNear(WORLD.bodies, p.x, p.y, 1.4);
-  if (body && !(G.bodies && G.bodies[body.x + ',' + body.y]) && !fight) out.push({ key: `body${body.x},${body.y}`, d: d2(body.x + 0.5, body.y + 0.5), label: 'Search the body', time: 2, hl: ['point', pt(body.x, body.y)],
+  if (body && !(G.bodies && G.bodies[body.x + ',' + body.y]) && !fight) out.push({ key: `body${body.x},${body.y}`, d: d2(body.x + 0.5, body.y + 0.5), at: { x: body.x + 0.5, y: body.y + 0.5, h: 0.9 }, label: 'Search the body', time: 2, hl: ['point', pt(body.x, body.y)],
     act: () => { const l = searchBody(body); for (const x of l) UI.toast(x, 'loot'); if (!l.length) UI.toast('Nothing on them.', 'dim'); Combat.noise(G.p.x, G.p.y, 2); if (World3D.setBodySearched) World3D.setBodySearched(body, true); } });
   return out;
 }
@@ -12413,9 +12516,9 @@ function updateInteraction(dt) {
   const key = t ? t.key : '';
   if (key !== Game.lastTarget) { holdAnim(null); Game.hold = 0; Game.lastTarget = key; World3D.highlight(t && t.hl ? t.hl[0] : null, t && t.hl ? t.hl[1] : null); }
   if (!t) { UI.prompt(null); return; }
-  if (t.time < 0) { UI.prompt(t.label, null); INPUT.interactPressed = false; return; }
+  if (t.time < 0) { UI.prompt(t.label, null, t.at); INPUT.interactPressed = false; return; }
   if (t.time === 0) {
-    UI.prompt('E  ' + t.label, null);
+    UI.prompt('E  ' + t.label, null, t.at);
     if (INPUT.interactPressed) { INPUT.interactPressed = false; t.act(); }
     return;
   }
@@ -12423,10 +12526,10 @@ function updateInteraction(dt) {
   if (INPUT.interact) {
     Game.hold += dt;
     if (Math.floor(Game.hold * 4) !== Math.floor((Game.hold - dt) * 4)) SFX.play('step');
-    UI.prompt('Hold E  ' + t.label, Math.min(1, Game.hold / t.time));
+    UI.prompt('Hold E  ' + t.label, Math.min(1, Game.hold / t.time), t.at);
     holdAnim(/^(build|bus|door)/.test(t.key) ? 'hammer' : 'search');
     if (Game.hold >= t.time) { Game.hold = 0; INPUT.interactPressed = false; holdAnim(null); t.act(); Game.lastTarget = ''; }
-  } else { Game.hold = Math.max(0, Game.hold - dt * 2); holdAnim(null); UI.prompt('Hold E  ' + t.label, Game.hold > 0 ? Game.hold / t.time : null); }
+  } else { Game.hold = Math.max(0, Game.hold - dt * 2); holdAnim(null); UI.prompt('Hold E  ' + t.label, Game.hold > 0 ? Game.hold / t.time : null, t.at); }
   INPUT.interactPressed = false;
 }
 
