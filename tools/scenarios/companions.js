@@ -41,10 +41,10 @@ module.exports = async B => {
     const btn=document.getElementById('t-fetch');
     return {started:!!F, kind:k&&k.kind, near:+near.toFixed(1), back, got:tot()-n0, stays:k&&containerState(k)===st0, btnShown:INPUT.touch?!btn.hidden:null, unlocked:isUnlocked('fetch')}`, 'r.started && r.back && r.got===1 && r.near<1.6 && r.stays && r.unlocked');
   await B.shot('c02b-dog-fetched');
-  await step('fetch has a cooldown', `calm(); kd('KeyR'); ku('KeyR'); sim(0.3); const now=!!Combat.companion.fetch; sim(95, () => { clearFoes(); G.encTimer=1e9; safeHp(); }); kd('KeyR'); ku('KeyR'); sim(0.3); const later=!!Combat.companion.fetch; Combat.companion.fetch=null; return {now, later}`, '!r.now && r.later');
+  await step('fetch has a cooldown', `calm(); kd('KeyR'); ku('KeyR'); sim(0.3); const now=!!Combat.companion.fetch; sim(95, () => { clearFoes(); G.encTimer=1e9; safeHp(); }); kd('KeyR'); ku('KeyR'); sim(0.3); const later=!!Combat.companion.fetch; sim(30, () => { calm(); safeHp(); if (!Combat.companion.fetch) return 'stop'; }); return {now, later, done:!Combat.companion.fetch}`, '!r.now && r.later && r.done');
   await step('dog warns and bites (stun)', `calm(); const p=G.p; const sp=tileNear((x,y)=>!solidAt(x+0.5,y+0.5)&&Math.hypot(x-p.x,y-p.y)>3&&Math.hypot(x-p.x,y-p.y)<5, p);
-    const e=Combat.spawnAt('walker', sp.x+0.5, sp.y+0.5, {aware:true}); e.hp=e.maxHp=60; const c=Combat.companion; const w0=c.warned, b0=c.bites; let stun=0;
-    sim(12, () => { safeHp(); G.encTimer=1e9; if (c.bites>b0 && !stun) { stun=e.stun; return 'stop'; } }); return {warned:c.warned-w0, bites:c.bites-b0, stun:+stun.toFixed(2)}`, 'r.warned>=1 && r.bites>=1 && r.stun>0.3');
+    const g0=ENEMIES.walker.grab; ENEMIES.walker.grab=0; const e=Combat.spawnAt('walker', sp.x+0.5, sp.y+0.5, {aware:true}); e.hp=e.maxHp=60; const c=Combat.companion; const w0=c.warned, b0=c.bites; let stun=0;
+    sim(12, () => { safeHp(); G.encTimer=1e9; if (c.bites>b0 && !stun) { stun=e.stun; return 'stop'; } }); ENEMIES.walker.grab=g0; return {warned:c.warned-w0, bites:c.bites-b0, stun:+stun.toFixed(2)}`, 'r.warned>=1 && r.bites>=1 && r.stun>0.3');
   await B.shot('c03-dog-bite');
   await step('dog pulls a walker off you', `clearFoes(); const g0=ENEMIES.walker.grab; ENEMIES.walker.grab=1; const p=G.p; const e=Combat.spawnAt('walker', p.x+1.1, p.y, {aware:true}); e.hp=e.maxHp=80; const c=Combat.companion, k0=c.pulls; let grabbed=false;
     sim(15, () => { if (G.p.hp<30) safeHp(); if (!grabbed) c.cd=9; if (Combat.grabbed && !grabbed) { grabbed=true; c.cd=0; } if (c.pulls>k0) return 'stop'; }); ENEMIES.walker.grab=g0; clearFoes(); return {grabbed, pulls:c.pulls-k0}`, 'r.grabbed && r.pulls>=1');

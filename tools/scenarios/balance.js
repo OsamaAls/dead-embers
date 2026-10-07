@@ -1,4 +1,4 @@
-/* Balance measurements for a whole run on the big map (not a pass/fail check):
+/* Balance measurements for a whole run on the big map (not a pass/fail check). fresh() goes through the title like endings.js, which also closes the last run's end screen:
    node tools/browser-check.js --scenario tools/scenarios/balance.js        (BAL_N=10 for more stand runs; default 6)
    1. travel: walking minutes from the bunker to each biome's landmark and back, against hunger and thirst per trip
    2. ambient zombies: average alive around a landmark, by day and by night, per biome
@@ -12,7 +12,7 @@ module.exports = async B => {
   for (let i = 0; i < 120 && !(await ev(`typeof Game!=='undefined' && !!(R && R.renderer && R.scene)`)); i++) await B.wait(500);
   await ev(fs.readFileSync(path.join(__dirname, '..', 'harness.js'), 'utf8'));
   await ev(`localStorage.setItem('deadembers_seen_intro','1'); 1`);
-  await ev(`window.fresh = () => { Game.newGame('T','soldier'); sim(0.3); for (let i = 0; i < 14 && (UI.blocking() || Game.Q.length); i++) { skipDlg(); sim(0.5); } G.encTimer = 1e9; INPUT.aimX = INPUT.aimY = null; INPUT.mouseAim = false; };
+  await ev(`window.fresh = () => { UI.title('new'); const tb = [...document.querySelectorAll('#title button')].find(b => /^start/i.test(b.textContent.trim())); if (tb) tb.click(); else Game.newGame('T','soldier'); sim(0.3); for (let i = 0; i < 14 && (UI.blocking() || Game.Q.length); i++) { skipDlg(); sim(0.5); } G.encTimer = 1e9; INPUT.aimX = INPUT.aimY = null; INPUT.mouseAim = false; };
     window.openAll = () => { for (const id of ['forest', 'docks', 'pass']) openDistrict(id); sim(0.2); unblock(10); };
     window.LANDMARKS = { oldtown: 'Bus Depot', farm: "Teodor's Farm", suburbs: 'Blue House', flooded: 'Sunken House', forest: 'Ranger Station', docks: 'Container Yard', pass: 'Checkpoint Echo' };
     window.poiByLabel = l => Object.values(WORLD.pois).find(p => p.label === l) || Object.values(WORLD.pois).find(p => p.type === 'military' && /Echo/.test(l)) || Object.values(WORLD.pois).find(p => biomeAt(p.x, p.y) === 'suburbs' && /House/.test(l) && p.type === 'house');
